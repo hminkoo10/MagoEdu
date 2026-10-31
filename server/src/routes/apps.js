@@ -225,6 +225,7 @@ function register(router, deps) {
       name: '마고에듀 통합 클라우드',
       developer: '구현민',
       version: deps.version,
+      build: deps.build,
       serverId: svc.meta('server_id'),
       keys: deps.trustKeys(),
       time: Date.now(),

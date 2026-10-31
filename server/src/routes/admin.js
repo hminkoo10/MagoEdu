@@ -192,7 +192,7 @@ function register(router, deps) {
         evictedFiles: count('SELECT COUNT(*) AS n FROM files WHERE deleted = 0 AND evicted = 1'),
         diskBytes: deps.blobs.diskUsage(),
       },
-      server: { version: deps.version, startedAt: deps.startedAt },
+      server: { version: deps.version, build: deps.build, startedAt: deps.startedAt },
     };
   });
 

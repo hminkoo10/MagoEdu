@@ -15,6 +15,15 @@ const { Catalog } = require('./catalog');
 const { createJobs } = require('./jobs');
 
 const VERSION = require('../package.json').version;
+// 자동 배포 때 넣는 빌드 정보 (어느 커밋인지) — 배포 후 새 코드가 켜졌는지 확인하는 데 씀
+const BUILD = (() => {
+  try {
+    const b = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'build.json'), 'utf8'));
+    return { commit: String(b.commit || ''), builtAt: b.builtAt || null };
+  } catch {
+    return null;
+  }
+})();
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const ADMIN_PASSWORD_FILE = 'INITIAL_ADMIN_PASSWORD.txt';
 
@@ -76,6 +85,7 @@ function createCloudServer(config = loadConfig()) {
     log,
     nextSeq,
     version: VERSION,
+    build: BUILD,
     startedAt: Date.now(),
     trustKeys: () => [{ kid: keys.kid, alg: 'Ed25519', x: keys.x }],
     onPasswordChanged(user) {
@@ -214,4 +224,4 @@ function seedAdmin(db, config, log) {
   return { username, password, generated };
 }
 
-module.exports = { createCloudServer, loadConfig, VERSION };
+module.exports = { createCloudServer, loadConfig, VERSION, BUILD };

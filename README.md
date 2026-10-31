@@ -60,9 +60,44 @@ git clone https://github.com/hminkoo10/MagoEdu.git && cd MagoEdu/server/deploy &
   ```bash
   sudo cat /var/lib/magoedu-cloud/INITIAL_ADMIN_PASSWORD.txt
   ```
-- 업데이트: `git pull` 한 뒤 `sudo ./install.sh` 를 다시 실행 (데이터·설정은 그대로)
+- 업데이트는 아래 **자동 배포**로 해요. (손으로 하려면 `git pull` 한 뒤 `sudo ./install.sh` 를 다시 실행 — 데이터·설정은 그대로)
 - 상태와 기록: `systemctl status magoedu-cloud`, `journalctl -u magoedu-cloud -f`
 - 설정을 바꾼 뒤에는 `sudo systemctl restart magoedu-cloud` (설정 항목은 `server/.env.example` 참고)
+
+### 자동 배포 (GitHub Actions → Ubuntu)
+
+main 에 `server/` 가 바뀌어 올라오면 GitHub Actions 가 시험한 뒤 SSH 로 서버에 올려서 적용해요.
+서버에서는 **DB 백업 → 교체 → 다시 켜기 → 새 버전이 잘 켜졌는지 확인**까지 하고, 안 켜지면 **바로 예전 버전으로 되돌려요**. (Actions 에는 실패로 표시)
+
+처음 한 번만 설정해요.
+
+1. 배포용 키를 만들어요. (아무 컴퓨터에서나)
+   ```bash
+   ssh-keygen -t ed25519 -N "" -C magoedu-deploy -f magoedu-deploy
+   ```
+2. 서버에서 배포용 계정(`deploy`)을 만들고 공개 키를 넣어요. 이 계정은 배포 명령 하나만 관리자 권한으로 실행할 수 있어요.
+   ```bash
+   sudo ./install.sh --deploy-user deploy --deploy-key "$(cat magoedu-deploy.pub)"
+   ```
+3. 서버 열쇠 지문을 받아 둬요. (다른 서버로 바꿔치기되는 것을 막음)
+   ```bash
+   ssh-keyscan -p 22 서버주소
+   ```
+4. GitHub 저장소 → **Settings → Secrets and variables → Actions → New repository secret**
+
+   | 이름 | 값 |
+   | --- | --- |
+   | `DEPLOY_HOST` | 서버 주소 (도메인 또는 IP) |
+   | `DEPLOY_SSH_KEY` | 1번에서 만든 `magoedu-deploy` 파일 내용 (개인 키) |
+   | `DEPLOY_USER` | `deploy` (비우면 deploy) |
+   | `DEPLOY_PORT` | SSH 포트 (비우면 22) |
+   | `DEPLOY_KNOWN_HOSTS` | 3번 결과 |
+
+   **Variables** 탭에 `MAGOEDU_SERVER_URL`(예: `https://cloud.mago.example`)을 넣으면 배포 뒤 공개 주소로도 새 버전을 확인하고, 통합 클라우드 설치 파일에도 기본 서버 주소로 들어가요.
+5. 끝. 이제 main 에 올리면 자동으로 배포돼요. 손으로 하려면 **Actions → Deploy (서버) → Run workflow**.
+
+- GitHub 서버가 SSH 로 들어와야 해서, 서버의 SSH 포트가 인터넷에서 열려 있어야 해요. (학원 공유기 뒤라면 포트 포워딩)
+- DB 백업은 `/var/lib/magoedu-cloud/backups` 에 최근 10개를 남겨요. 직전 버전 프로그램은 `/opt/magoedu-cloud.prev` 에 있어요.
 
 ### Docker 로
 
@@ -120,14 +155,14 @@ docker logs magoedu-cloud
   서버가 이 Release 를 찾아서 설치된 통합 클라우드에 넘겨 주고, 켜진 프로그램이 없고 창이 닫혀 있을 때 조용히 업데이트해요.
 - **프로그램**: 각 저장소의 Release 에 `이름-x.y.z-win-x64.zip` 을 올리면 서버가 10분 안에 찾아내고, 통합 클라우드가 받아서 설치해요.
   켜져 있는 프로그램은 다음에 켤 때 새 버전으로 바뀌어요. 자세한 것은 [docs/INTEGRATION.md](docs/INTEGRATION.md).
-- **서버**: `server/` 를 고쳐서 main 에 올리면 Docker 이미지(`ghcr.io/hminkoo10/magoedu-cloud`)가 만들어져요.
+- **서버**: `server/` 를 고쳐서 main 에 올리면 Ubuntu 서버에 자동으로 배포되고(위 ‘자동 배포’), Docker 이미지(`ghcr.io/hminkoo10/magoedu-cloud`)도 만들어져요.
 
 ## 개발
 
 | 위치 | 명령 | 내용 |
 | --- | --- | --- |
 | `server` | `npm start` | 서버 켜기 (`server/.env` 읽음, 개발용) |
-| `server` | `npm test` | 계정·가입 코드·동기화·보관 기간·프로그램 목록·허가증 시험 |
+| `server` | `npm test` | 계정·가입 코드·동기화·보관 기간·프로그램 목록·허가증·자동 배포(되돌리기 포함) 시험 |
 | `launcher` | `npm install` → `npm start` | 통합 클라우드 개발 모드 |
 | `launcher` | `npm test` | 설치·업데이트·두 컴퓨터 동기화·충돌·보관 기간·예전 데이터·실행 시험 (실제 서버와 함께) |
 | `launcher` | `npm run test:ui` | 화면 전체 흐름 (리눅스는 `xvfb-run` 필요, 화면은 `test/out/`) |

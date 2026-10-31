@@ -9,7 +9,8 @@ async function main() {
   const config = loadConfig();
   const app = createCloudServer(config);
   const addr = await app.listen();
-  app.deps.log.info(`마고에듀 통합 클라우드 서버 ${VERSION} - 구현민 개발`);
+  const build = app.deps.build?.commit ? ` (${app.deps.build.commit.slice(0, 7)})` : '';
+  app.deps.log.info(`마고에듀 통합 클라우드 서버 ${VERSION}${build} - 구현민 개발`);
   app.deps.log.info(`http://${addr.address === '0.0.0.0' ? 'localhost' : addr.address}:${addr.port} 에서 실행 중 · 데이터: ${config.dataDir}`);
 
   let closing = false;

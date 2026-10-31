@@ -1,0 +1,127 @@
+# 서버 자동 배포: GitHub Actions → Ubuntu 서버 (SSH)
+#
+# main 에 server/ 가 바뀌어 올라오면 자동으로:
+#   1) 서버 시험  2) 배포본(tar.gz) 만들기  3) SSH 로 서버에 올리기
+#   4) 서버에서 magoedu-cloud-deploy 실행 — DB 백업 → 교체 → 다시 켜기 → 새 버전이 잘 켜졌는지 확인
+#      (안 켜지면 예전 버전으로 되돌리고 이 워크플로가 실패로 표시돼요)
+# 손으로 배포: Actions → "Deploy (서버)" → Run workflow
+#
+# 처음 한 번 설정 (README 의 ‘자동 배포’):
+#   서버:   sudo ./install.sh --deploy-user deploy --deploy-key "<공개 키>"
+#   GitHub: Settings → Secrets and variables → Actions 에
+#     DEPLOY_HOST (서버 주소), DEPLOY_SSH_KEY (개인 키), DEPLOY_USER (기본 deploy),
+#     DEPLOY_PORT (기본 22), DEPLOY_KNOWN_HOSTS (ssh-keyscan 결과, 넣으면 더 안전)
+#   설정이 없으면 시험과 배포본 만들기까지만 하고 배포는 건너뛰어요.
+name: Deploy (서버)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/deploy-server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      HAS_TARGET: ${{ secrets.DEPLOY_HOST != '' && secrets.DEPLOY_SSH_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: 서버 시험
+        working-directory: server
+        run: npm test
+
+      - name: 배포본 만들기
+        run: |
+          v="$(node -p "require('./server/package.json').version")"
+          name="magoedu-cloud-server-$v-${GITHUB_SHA::7}.tar.gz"
+          mkdir -p out/magoedu-cloud-server
+          cp -r server/src server/public server/deploy out/magoedu-cloud-server/
+          cp server/package.json server/catalog.default.json server/.env.example out/magoedu-cloud-server/
+          node -e "require('fs').writeFileSync('out/magoedu-cloud-server/build.json', JSON.stringify({ version: process.argv[1], commit: process.env.GITHUB_SHA, builtAt: Date.now() }))" "$v"
+          tar -czf "out/$name" -C out magoedu-cloud-server
+          sha="$(sha256sum "out/$name" | awk '{print $1}')"
+          {
+            echo "VERSION=$v"
+            echo "TARBALL=out/$name"
+            echo "TARBALL_NAME=$name"
+            echo "TARBALL_SHA=$sha"
+          } >> "$GITHUB_ENV"
+          echo "배포본: $name ($sha)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: magoedu-cloud-server
+          path: ${{ env.TARBALL }}
+          retention-days: 14
+
+      - name: 배포 설정 확인
+        if: env.HAS_TARGET != 'true'
+        run: echo "::notice::DEPLOY_HOST / DEPLOY_SSH_KEY 가 없어서 서버 배포는 건너뛰었어요. README 의 ‘자동 배포’를 참고해 넣어 주세요."
+
+      - name: SSH 준비
+        if: env.HAS_TARGET == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "$DEPLOY_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${DEPLOY_PORT:-22}" -T 15 "$DEPLOY_HOST" > ~/.ssh/known_hosts 2>/dev/null
+            echo "::warning::DEPLOY_KNOWN_HOSTS 를 넣으면 다른 서버로 바뀌어 들어가는 것을 막을 수 있어요."
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: 서버에 올리고 적용
+        if: env.HAS_TARGET == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          port="${DEPLOY_PORT:-22}"
+          remote="${DEPLOY_USER:-deploy}@$DEPLOY_HOST"
+          opts=(-i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=15)
+          ssh "${opts[@]}" -p "$port" "$remote" 'mkdir -p ~/.magoedu-deploy'
+          scp "${opts[@]}" -P "$port" "$TARBALL" "$remote:.magoedu-deploy/$TARBALL_NAME"
+          ssh "${opts[@]}" -p "$port" "$remote" \
+            "sudo -n /usr/local/sbin/magoedu-cloud-deploy ~/.magoedu-deploy/$TARBALL_NAME $TARBALL_SHA; rc=\$?; rm -f ~/.magoedu-deploy/$TARBALL_NAME; exit \$rc"
+
+      - name: 결과
+        if: env.HAS_TARGET == 'true'
+        env:
+          SERVER_URL: ${{ vars.MAGOEDU_SERVER_URL }}
+        run: |
+          {
+            echo "### 서버 배포 완료"
+            echo "- 버전: $VERSION (${GITHUB_SHA::7})"
+            echo "- 배포본: $TARBALL_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$SERVER_URL" ]; then
+            if curl -fsS -m 15 "$SERVER_URL/api/meta" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const m=JSON.parse(s);console.log('- 확인:',m.version,m.build&&m.build.commit&&m.build.commit.slice(0,7));process.exit(m.build&&m.build.commit===process.env.GITHUB_SHA?0:1)})" >> "$GITHUB_STEP_SUMMARY"; then
+              echo "공개 주소에서도 새 버전을 확인했어요."
+            else
+              echo "::warning::$SERVER_URL 에서 새 버전을 확인하지 못했어요. (프록시·방화벽 확인)"
+            fi
+          fi
