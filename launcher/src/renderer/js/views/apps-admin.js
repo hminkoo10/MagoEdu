@@ -65,15 +65,15 @@ export class AppsAdminView {
           { class: 'card' },
           h(
             'div',
-            { style: { display: 'flex', gap: '14px', alignItems: 'center' } },
+            { style: { display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center' } },
             h('div', { class: 'app-icon', style: a.color ? { background: a.color } : {} }, a.name[0]),
             h(
               'div',
-              { style: { flex: 1, minWidth: 0 } },
+              { style: { flex: '1 1 160px', minWidth: 0 } }, // 좁은 화면에서는 오른쪽 조작부가 아래 줄로
               h('div', { class: 'app-name', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, a.name, h('span', { class: 'subtle mono' }, a.id), a.enabled ? null : pill('숨김', 'grey')),
               h('div', { class: 'muted' }, src),
             ),
-            h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center' } }, h('span', { class: 'muted' }, '목록에 보이기'), enabled, btn('', { variant: 'subtle', iconName: 'edit', title: '고치기', onClick: () => this.edit(a) })),
+            h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' } }, h('span', { class: 'muted' }, '목록에 보이기'), enabled, btn('', { variant: 'subtle', iconName: 'edit', title: '고치기', onClick: () => this.edit(a) })),
           ),
           h(
             'div',
@@ -91,10 +91,7 @@ export class AppsAdminView {
             'div',
             { class: 'row' },
             h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '오래 안 쓰면 서버에서 정리'), h('div', { class: 'row-desc' }, '정한 기간 동안 쓰지 않은 큰 데이터(예: 오답노트 문제집)는 서버에서만 지우고, 그 데이터를 쓰던 컴퓨터에는 남겨 둬요.')),
-            h('span', { class: 'muted' }, '기간'),
-            days,
-            h('span', { class: 'muted' }, '일'),
-            cold,
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: '16px', flex: 'none' } }, h('span', { class: 'muted' }, '기간'), days, h('span', { class: 'muted' }, '일'), cold),
           ),
         );
       }),

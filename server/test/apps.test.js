@@ -12,7 +12,7 @@ const { verifyTicket } = require('../src/security');
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
 test('프로그램: 직접 올린 묶음 파일, 내려받기, 실행 허가증', async (t) => {
-  const s = await startServer();
+  const s = await startServer({ webDir: null }); // / 에서 내려받기 안내 페이지를 확인함
   t.after(() => s.close());
   const { request: rq } = s;
   const admin = await s.login('admin', ADMIN_PASSWORD, 'admin-pc');

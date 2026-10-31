@@ -233,11 +233,17 @@ export function notify(title, sub) {
   return dialog({ title, sub, ok: '확인', cancel: null });
 }
 
+// 웹에는 window.cloud 가 없어서 app.js 가 넘겨준다
+let bridge = null;
+export function useCloud(cloud) {
+  bridge = cloud;
+}
+
 /** 만든 비밀번호처럼 한 번만 보여 줄 값 */
 export function secretDialog(title, sub, value) {
   const copy = btn('복사', { variant: 'white', size: 'sm', iconName: 'copy' });
   copy.addEventListener('click', async () => {
-    await window.cloud.copy(value);
+    await (bridge || window.cloud).copy(value);
     toast('복사했어요', 'success', 1600);
   });
   return dialog({
@@ -279,6 +285,7 @@ export function menu(anchor, items) {
   let left = r.right - mw;
   let top = r.bottom + 6;
   if (left < 8) left = r.left;
+  left = Math.min(left, window.innerWidth - mw - 8); // 좁은 화면에서 오른쪽으로 넘치지 않게
   if (top + mh > window.innerHeight - 8) top = r.top - mh - 6;
   m.style.left = `${Math.max(8, left)}px`;
   m.style.top = `${Math.max(8, top)}px`;

@@ -25,6 +25,8 @@ const BUILD = (() => {
   }
 })();
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+// 웹 화면 폴더: 배포본은 server/web, 저장소에서 개발할 때는 launcher/src/renderer
+const WEB_DIRS = [path.join(__dirname, '..', 'web'), path.join(__dirname, '..', '..', 'launcher', 'src', 'renderer')];
 const ADMIN_PASSWORD_FILE = 'INITIAL_ADMIN_PASSWORD.txt';
 
 function loadConfig(env = process.env, overrides = {}) {
@@ -41,6 +43,8 @@ function loadConfig(env = process.env, overrides = {}) {
     catalogRefreshMinutes: intOr(env.CATALOG_REFRESH_MINUTES, 10, 1, 24 * 60),
     maxFileBytes: intOr(env.MAX_FILE_MB, 2048, 1) * 1024 * 1024,
     catalogFile: env.CATALOG_FILE || path.join(__dirname, '..', 'catalog.default.json'),
+    // 없으면 내려받기 안내 페이지(public)만
+    webDir: WEB_DIRS.find((d) => fs.existsSync(path.join(d, 'index.html'))) || null,
     background: true, // 주기 작업·프로그램 목록 자동 새로 고침
     quiet: false,
     ...overrides,
@@ -127,6 +131,8 @@ function createCloudServer(config = loadConfig()) {
       if (!m) {
         if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) {
           const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
+          // 웹 화면 먼저, 그다음 public
+          if (config.webDir && serveStatic(res, config.webDir, rel)) return;
           if (serveStatic(res, PUBLIC_DIR, rel)) return;
         }
         throw new HttpError(404, '찾을 수 없어요.', 'not_found');

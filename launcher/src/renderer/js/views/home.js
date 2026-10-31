@@ -40,6 +40,16 @@ export async function askLegacy(cloud, id, list, store) {
   return ok;
 }
 
+/** 웹: magoedu:// 로 PC 앱을 연다 (id 가 있으면 그 프로그램 실행). 안 열리면 내려받기 안내. */
+export async function openInApp(cloud, store, id) {
+  const r = await (id ? cloud.launch(id) : cloud.openApp());
+  if (r?.opened) return;
+  const title = '통합 클라우드가 열리지 않았나요?';
+  const sub = '이 PC에 통합 클라우드 앱이 설치되어 있어야 해요.';
+  if (!store.state.launcher) return notify(title, sub);
+  if (await dialog({ title, sub, ok: '앱 내려받기', cancel: '닫기' })) location.href = '/download/launcher';
+}
+
 export class HomeView {
   constructor({ cloud, store, go }) {
     this.cloud = cloud;
@@ -47,9 +57,10 @@ export class HomeView {
     this.go = go;
     this.cards = new Map();
     const s = store.state;
+    this.web = !!s.web;
     this.sub = h('div', { class: 'subtitle' });
-    const syncAll = btn('모두 동기화', { variant: 'white', iconName: 'refresh' });
-    syncAll.addEventListener('click', () =>
+    const syncAll = this.web ? null : btn('모두 동기화', { variant: 'white', iconName: 'refresh' });
+    syncAll?.addEventListener('click', () =>
       busy(syncAll, async () => {
         await cloud.syncAll();
         toast('동기화했어요', 'success', 1800);
@@ -58,6 +69,7 @@ export class HomeView {
     const reload = btn('', { variant: 'white', iconName: 'rotate', title: '목록 새로 고침' });
     reload.addEventListener('click', () => busy(reload, () => cloud.refreshApps().catch((e) => toast(e.message, 'error'))));
     this.notice = h('div');
+    this.webNote = this.web ? this.makeWebNote(s) : null;
     this.grid = h('div', { class: 'apps-grid' });
     this.empty = h(
       'div',
@@ -71,10 +83,31 @@ export class HomeView {
       {},
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '프로그램'), this.sub), h('div', { class: 'right' }, reload, syncAll)),
       this.notice,
+      this.webNote,
       this.grid,
       this.empty,
     );
     this.update(s);
+  }
+
+  makeWebNote(s) {
+    if (!s.client?.canOpenApp) {
+      return h('div', { class: 'note', style: { marginBottom: '16px' } }, ic('info', 18), h('span', {}, '프로그램은 Windows PC의 통합 클라우드 앱에서 쓸 수 있어요. 여기서는 공지·계정·관리 기능을 쓸 수 있어요.'));
+    }
+    const open = btn('통합 클라우드 열기', { variant: 'primary', size: 'sm', iconName: 'cloud' });
+    open.addEventListener('click', () => openInApp(this.cloud, this.store).catch((e) => toast(e.message, 'error')));
+    const download = s.launcher ? h('a', { class: 'btn white sm', href: '/download/launcher' }, ic('download', 16), '앱 내려받기') : null;
+    return h(
+      'div',
+      { class: 'note', style: { marginBottom: '16px' } },
+      ic('info', 18),
+      h(
+        'div',
+        { style: { flex: 1, minWidth: 0 } },
+        h('div', {}, '프로그램 설치·실행과 데이터 동기화는 PC의 통합 클라우드 앱에서 해요. ‘앱에서 열기’를 누르면 앱이 열리고 바로 실행돼요.'),
+        h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' } }, open, download),
+      ),
+    );
   }
 
   update(s) {
@@ -157,11 +190,18 @@ export class HomeView {
     const iconKey = a.icon || a.name;
     if (c._icon !== iconKey) {
       c._icon = iconKey;
-      c.icon.style.background = a.icon ? '#fff' : a.color ? `linear-gradient(135deg, ${a.color}cc, ${a.color})` : '';
-      put(c.icon, a.icon ? h('img', { src: a.icon, alt: '' }) : (a.name || '?')[0]);
+      const letter = () => {
+        c.icon.style.background = a.color ? `linear-gradient(135deg, ${a.color}cc, ${a.color})` : '';
+        put(c.icon, (a.name || '?')[0]);
+      };
+      if (a.icon) {
+        c.icon.style.background = '#fff';
+        put(c.icon, h('img', { src: a.icon, alt: '', onError: letter })); // 웹: 아이콘이 없으면(404) 글자로
+      } else letter();
     }
     c.name.textContent = a.name;
     c.desc.textContent = a.description || '';
+    if (this.web) return this.fillWebCard(c, a);
 
     const ver = [];
     if (a.running) ver.push(h('span', { class: 'dot pulse' }), h('span', { style: { color: 'var(--success)', fontWeight: 600 } }, '실행 중'), h('span', {}, '·'));
@@ -244,8 +284,29 @@ export class HomeView {
     c.more.style.display = a.installed || a.release ? '' : 'none';
   }
 
+  // 웹: 설치·동기화 상태는 없고, Windows PC 면 ‘앱에서 열기’만
+  fillWebCard(c, a) {
+    put(c.ver, h('span', {}, a.release ? `최신 ${a.release.version}` : '아직 배포 전'));
+    c.task.style.display = 'none';
+    put(c.sync);
+    const canOpen = !!this.store.state.client?.canOpenApp;
+    const key = `web|${canOpen}|${!!a.release}`;
+    if (c._primary !== key) {
+      c._primary = key;
+      c.primary.className = 'btn primary';
+      c.primary.style.display = canOpen ? '' : 'none';
+      c.primary.disabled = !a.release;
+      put(c.primary, ...(a.release ? [ic('play', 18)] : []), document.createTextNode(a.release ? '앱에서 열기' : '준비 중'));
+    }
+    c.more.style.display = a.release?.notes ? '' : 'none';
+  }
+
   async primary(a) {
     try {
+      if (this.web) {
+        if (a.release) await openInApp(this.cloud, this.store, a.id);
+        return;
+      }
       if (!a.installed || a.updateAvailable) {
         await this.cloud.install(a.id);
         return;

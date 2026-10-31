@@ -9,6 +9,8 @@ WORKDIR /app
 COPY package.json catalog.default.json ./
 COPY src ./src
 COPY public ./public
+# 웹 화면 (Server image 워크플로가 launcher/src/renderer 를 넣어 줘요. 비어 있으면 내려받기 안내 페이지만)
+COPY web ./web
 
 ENV NODE_ENV=production \
     DATA_DIR=/data \

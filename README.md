@@ -114,9 +114,16 @@ docker compose up -d
 
 ## 2. 통합 클라우드 설치
 
-- `https://mago.milky.kr` 을 브라우저로 열면 설치 파일 받는 화면이 나와요.
+- 웹 버전 로그인 화면의 **Windows 프로그램 내려받기**(`https://mago.milky.kr/download/launcher`)를 눌러요.
 - 또는 [Releases](https://github.com/hminkoo10/MagoEdu/releases) 에서 `MagoEduCloud-Setup-x.y.z.exe`.
 - 서버 주소 `https://mago.milky.kr` 이 미리 들어 있어서 바로 로그인하면 돼요. (다른 주소를 쓰려면 로그인 화면 아래의 서버 주소를 눌러 바꿔요)
+
+### 웹에서 쓰기
+
+- `https://mago.milky.kr` 을 브라우저로 열면 앱과 같은 화면의 **웹 버전**이 나와요. 같은 아이디로 로그인해요.
+- **웹에서 되는 것**: 공지, 내 계정(아이디·비밀번호·이름, 로그인 기기), 선생님·계정 관리, 가입 코드, 프로그램 목록·활동 기록·서버 설정
+- **앱에서만 되는 것**: 프로그램 설치·실행·업데이트, 데이터 동기화, 예전 데이터 가져오기. Windows PC 브라우저에서 **앱에서 열기**를 누르면 통합 클라우드 앱이 열리고 바로 실행돼요.
+- 휴대폰·태블릿에서도 화면에 맞게 쓸 수 있어요. (메뉴는 왼쪽 위 버튼)
 
 ## 3. 처음 쓰는 순서
 
@@ -146,14 +153,14 @@ docker compose up -d
   서버가 이 Release 를 찾아서 설치된 통합 클라우드에 넘겨 주고, 켜진 프로그램이 없고 창이 닫혀 있을 때 조용히 업데이트해요.
 - **프로그램**: 각 저장소의 Release 에 `이름-x.y.z-win-x64.zip` 을 올리면 서버가 10분 안에 찾아내고, 통합 클라우드가 받아서 설치해요.
   켜져 있는 프로그램은 다음에 켤 때 새 버전으로 바뀌어요. 자세한 것은 [docs/INTEGRATION.md](docs/INTEGRATION.md).
-- **서버**: `server/` 를 고쳐서 main 에 올리면 `mago.milky.kr` 서버에 자동으로 배포돼요. (위 ‘서버 설치’)
+- **서버**: `server/` 나 화면(`launcher/src/renderer`)을 고쳐서 main 에 올리면 `mago.milky.kr` 서버에 자동으로 배포돼요. 화면은 웹 버전으로 같이 올라가요. (위 ‘서버 설치’)
 
 ## 개발
 
 | 위치 | 명령 | 내용 |
 | --- | --- | --- |
-| `server` | `npm start` | 서버 켜기 (`server/.env` 읽음, 개발용) |
-| `server` | `npm test` | 계정·가입 코드·동기화·보관 기간·프로그램 목록·허가증·자동 배포(되돌리기 포함) 시험 |
+| `server` | `npm start` | 서버 켜기 (`server/.env` 읽음, 개발용). `launcher/src/renderer` 를 웹 버전으로 내보내요 (글꼴은 `launcher` 에서 `npm install` 한 번) |
+| `server` | `npm test` | 계정·가입 코드·동기화·보관 기간·프로그램 목록·허가증·자동 배포(되돌리기 포함)·웹 화면 시험 |
 | `launcher` | `npm install` → `npm start` | 통합 클라우드 개발 모드 |
 | `launcher` | `npm test` | 설치·업데이트·두 컴퓨터 동기화·충돌·보관 기간·예전 데이터·실행 시험 (실제 서버와 함께) |
 | `launcher` | `npm run test:ui` | 화면 전체 흐름 (리눅스는 `xvfb-run` 필요, 화면은 `test/out/`) |

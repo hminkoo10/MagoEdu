@@ -1,5 +1,5 @@
 // 마고에듀 통합 클라우드 화면 - 구현민 개발
-import { h, ic, btn, busy, field, input, passwordInput, toast, dialog, notify, reveal, initial, ROLE, put } from './ui.js';
+import { h, ic, btn, busy, field, input, passwordInput, toast, dialog, notify, reveal, initial, ROLE, put, useCloud } from './ui.js';
 import { HomeView, askLegacy } from './views/home.js';
 import { NoticesView } from './views/notices.js';
 import { AccountView } from './views/account.js';
@@ -10,7 +10,9 @@ import { AuditView } from './views/audit.js';
 import { ServerView } from './views/server.js';
 import { SettingsView } from './views/settings.js';
 
-const cloud = window.cloud;
+// 앱은 preload 의 window.cloud, 웹은 같은 서버 API 로 바로
+const cloud = window.cloud || (await import('./web-cloud.js')).createWebCloud();
+useCloud(cloud);
 const root = document.getElementById('root');
 
 export const store = {
@@ -64,20 +66,39 @@ class Shell {
     this.view = null;
     this.current = 'home';
     this.navEls = new Map();
+    const web = store.state.web;
     this.page = h('div', { class: 'page' });
-    this.offline = h('div', { class: 'offline-bar', style: { display: 'none' } }, ic('cloudOff', 16), '서버에 연결되지 않았어요. 설치한 프로그램은 그대로 쓸 수 있고, 연결되면 알아서 동기화해요.');
+    this.offline = h(
+      'div',
+      { class: 'offline-bar', style: { display: 'none' } },
+      ic('cloudOff', 16),
+      web ? '서버에 연결되지 않았어요. 인터넷 연결을 확인해 주세요.' : '서버에 연결되지 않았어요. 설치한 프로그램은 그대로 쓸 수 있고, 연결되면 알아서 동기화해요.',
+    );
     this.pill = h('div', { class: 'nav-pill' });
     this.nav = h('nav', { class: 'nav' }, this.pill);
     this.foot = h('div', { class: 'sidebar-foot' });
     this.sidebar = h(
       'aside',
       { class: 'sidebar' },
-      h('div', { class: 'brand' }, h('div', { class: 'logo' }, ic('cloud', 22, 2.2)), h('div', {}, h('div', { class: 'brand-title' }, '마고에듀 클라우드'), h('div', { class: 'brand-sub' }, `버전 ${store.state.version}`))),
+      h('div', { class: 'brand' }, h('div', { class: 'logo' }, ic('cloud', 22, 2.2)), h('div', {}, h('div', { class: 'brand-title' }, '마고에듀 클라우드'), h('div', { class: 'brand-sub' }, web ? '웹' : `버전 ${store.state.version}`))),
       this.nav,
       this.foot,
     );
-    this.el = h('div', { class: 'shell' }, this.sidebar, h('main', { class: 'main' }, this.offline, this.page));
+    // 휴대폰·태블릿(960px 이하): 위 막대 + 왼쪽에서 나오는 메뉴
+    this.menuBtn = btn('', { variant: 'subtle', iconName: 'menu', title: '메뉴', onClick: () => this.toggleNav() });
+    this.menuBtn.setAttribute('aria-expanded', 'false');
+    this.topTitle = h('div', { class: 'topbar-title' });
+    this.topNotice = btn('', { variant: 'subtle', iconName: 'megaphone', title: '새 공지', cls: 'topbar-notice', onClick: () => this.go('notices') });
+    this.topNotice.style.display = 'none';
+    this.topbar = h('header', { class: 'topbar' }, this.menuBtn, h('div', { class: 'logo sm' }, ic('cloud', 18, 2.2)), this.topTitle, this.topNotice);
+    this.scrim = h('div', { class: 'scrim', onClick: () => this.toggleNav(false) });
+    this.el = h('div', { class: 'shell' }, this.sidebar, this.scrim, h('main', { class: 'main' }, this.topbar, this.offline, this.page));
     this.buildNav();
+  }
+
+  toggleNav(open = !this.el.classList.contains('nav-open')) {
+    this.el.classList.toggle('nav-open', open);
+    this.menuBtn.setAttribute('aria-expanded', String(open));
   }
 
   buildNav() {
@@ -130,6 +151,7 @@ class Shell {
   markNav(animate = true) {
     const el = this.navEls.get(this.current) || this.navEls.get(this.current === 'people' ? 'teachers' : 'home');
     for (const [, n] of this.navEls) n.classList.toggle('active', n === el);
+    this.topTitle.textContent = el?.querySelector('span')?.textContent || '';
     if (!el) return;
     if (!animate) this.pill.style.transition = 'none';
     this.pill.style.transform = `translateY(${el.offsetTop + 2}px)`;
@@ -141,6 +163,15 @@ class Shell {
     if (id === 'people' && store.state.user.role === 'director') id = 'teachers';
     const same = id === this.current && this.view;
     this.current = id;
+    this.toggleNav(false);
+    if (store.state.web && !opts.fromHistory) {
+      // 웹: 주소에 화면을 남겨 뒤로 가기가 되게
+      const hash = `#/${id}`;
+      if (location.hash !== hash) {
+        if (opts.replace) history.replaceState(null, '', hash);
+        else history.pushState(null, '', hash);
+      }
+    }
     this.markNav();
     if (same && !opts.force) {
       this.view.onNav?.(opts);
@@ -163,6 +194,9 @@ class Shell {
       nEl.querySelector('.badge-num')?.remove();
       if (n > 0) nEl.append(h('span', { class: 'badge-num' }, n > 9 ? '9+' : n));
     }
+    this.topNotice.querySelector('.badge-num')?.remove();
+    this.topNotice.style.display = n > 0 ? '' : 'none';
+    if (n > 0) this.topNotice.append(h('span', { class: 'badge-num' }, n > 9 ? '9+' : n));
     const sEl = this.navEls.get('settings');
     if (sEl) {
       sEl.querySelector('.badge-dot')?.remove();
@@ -178,9 +212,11 @@ async function logoutFlow() {
   const running = store.state.apps.filter((a) => a.running);
   const ok = await dialog({
     title: '로그아웃할까요?',
-    sub: running.length
-      ? `켜져 있는 프로그램(${running.map((a) => a.name).join(', ')})은 계속 돌아가지만, 다시 로그인할 때까지 동기화하지 않아요.`
-      : '이 컴퓨터에 받아 둔 데이터는 그대로 남아요.',
+    sub: store.state.web
+      ? '이 브라우저에서만 로그아웃해요. 다른 기기는 그대로예요.'
+      : running.length
+        ? `켜져 있는 프로그램(${running.map((a) => a.name).join(', ')})은 계속 돌아가지만, 다시 로그인할 때까지 동기화하지 않아요.`
+        : '이 컴퓨터에 받아 둔 데이터는 그대로 남아요.',
     ok: '로그아웃',
   });
   if (ok) await cloud.logout();
@@ -261,6 +297,11 @@ function loginView() {
   server.addEventListener('click', () => mount(serverView({ back: () => render(true) })));
   const signup = h('button', { class: 'link' }, '원장 가입 코드가 있어요');
   signup.addEventListener('click', () => mount(signupView()));
+  // 웹: 서버 주소는 이 페이지 주소라 바꿀 수 없음, 대신 앱 내려받기
+  const download =
+    s.web && s.launcher
+      ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, h('a', { class: 'link', href: '/download/launcher', style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } }, ic('download', 14), 'Windows 프로그램 내려받기'))
+      : null;
   const view = authFrame(
     authHead('마고에듀 통합 클라우드', '학원 계정으로 로그인해 주세요.'),
     s.authMessage ? h('div', { class: 'note warn', style: { marginBottom: '16px' } }, ic('warning', 18), h('span', {}, s.authMessage)) : null,
@@ -270,7 +311,8 @@ function loginView() {
     err,
     h('div', { style: { height: '20px' } }),
     go,
-    h('div', { class: 'auth-links' }, signup, server),
+    s.web ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, signup) : h('div', { class: 'auth-links' }, signup, server),
+    download,
   );
   setTimeout(() => (user.value ? pw.input : user).focus(), 50);
   return view;
@@ -394,11 +436,17 @@ function render(force = false) {
   if (s.phase === 'boot') return;
   if (s.phase === 'setup') return mount(serverView());
   if (s.phase === 'login') return mount(loginView());
-  const prev = shell?.current || 'home';
+  const prev = shell?.current || (s.web && hashView(s.user)) || 'home';
   shell = new Shell();
   put(root, shell.el);
-  shell.go(prev, { force: true });
+  shell.go(prev, { force: true, replace: true });
   shell.update(s);
+}
+
+/** 웹: 주소 해시(#/notices)가 가리키는 화면 (이 계정 메뉴에 있을 때만) */
+function hashView(user) {
+  const m = /^#\/([\w-]+)$/.exec(location.hash);
+  return m && navFor(user).some((it) => it.id === m[1]) ? m[1] : null;
 }
 
 async function start() {
@@ -415,6 +463,14 @@ async function start() {
     if (!shell) return;
     shell.go(n.view || 'home');
     if (n.legacyFor && n.legacy) await askLegacy(cloud, n.legacyFor, n.legacy, store);
+  });
+  if (store.state.web) {
+    window.addEventListener('popstate', () => {
+      if (shell && store.state.phase === 'ready') shell.go(hashView(store.state.user) || 'home', { fromHistory: true });
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && shell?.el.classList.contains('nav-open')) shell.toggleNav(false);
   });
   if (store.state.phase === 'ready' && store.state.user?.mustChangePassword) forcePasswordChange();
 }

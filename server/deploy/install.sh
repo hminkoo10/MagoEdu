@@ -76,8 +76,14 @@ if ! id magoedu >/dev/null 2>&1; then
 fi
 install -d -m 750 -o magoedu -g magoedu "$DATA_DIR"
 install -d -m 755 "$APP_DIR"
-rm -rf "$APP_DIR/src" "$APP_DIR/public" "$APP_DIR/deploy"
+rm -rf "$APP_DIR/src" "$APP_DIR/public" "$APP_DIR/deploy" "$APP_DIR/web"
 cp -r "$SRC/src" "$SRC/public" "$SRC/deploy" "$APP_DIR/"
+# 웹 화면: 배포본이면 web/, 저장소에서 설치하면 launcher/src/renderer
+if [ -f "$SRC/web/index.html" ]; then
+  cp -r "$SRC/web" "$APP_DIR/web"
+elif [ -f "$SRC/../launcher/src/renderer/index.html" ]; then
+  cp -r "$SRC/../launcher/src/renderer" "$APP_DIR/web"
+fi
 cp "$SRC/package.json" "$SRC/catalog.default.json" "$SRC/.env.example" "$APP_DIR/"
 if [ -f "$SRC/build.json" ]; then cp "$SRC/build.json" "$APP_DIR/"; fi
 chown -R root:root "$APP_DIR"

@@ -128,6 +128,7 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; colo
   display: flex; align-items: center; gap: 8px; padding: 9px 28px; background: var(--warning-soft); color: #A86800;
   font-size: 13px; font-weight: 600;
 }
+.topbar, .scrim { display: none; } /* 960px 이하에서만 */
 
 /* 화면이 바뀔 때 블록이 차례로 살짝 올라온다 */
 .reveal > * { animation: rise .34s var(--ease) both; animation-delay: calc(var(--i, 0) * 35ms + 40ms); }
@@ -139,7 +140,7 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; colo
 .card + .card { margin-top: 16px; }
 .card-title { font-size: 17px; font-weight: 700; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
 .card-desc { font-size: 13px; color: var(--grey500); margin: 0 0 10px; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; align-items: start; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 16px; align-items: start; }
 .grid2 > .card + .card { margin-top: 0; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .stack > .card + .card { margin-top: 0; }
@@ -187,6 +188,7 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; colo
 .btn.danger-solid:hover { background: #E63A48; }
 .link { color: var(--accent-text); font-weight: 600; cursor: pointer; background: none; border: 0; padding: 0; }
 .link:hover { text-decoration: underline; }
+a.btn, a.link { text-decoration: none; }
 
 /* ------------------------------------------------------------ 입력 */
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -307,7 +309,7 @@ select.input {
 .table tbody tr:hover { background: var(--grey50); }
 .table .num { text-align: right; }
 .table .acts { width: 1%; white-space: nowrap; text-align: right; }
-.table-wrap { background: #fff; border-radius: 16px; overflow: hidden; }
+.table-wrap { background: #fff; border-radius: 16px; overflow: hidden; overflow-x: auto; }
 .empty { padding: 48px 20px; text-align: center; color: var(--grey500); }
 .empty .ic { margin: 0 auto 10px; color: var(--grey300); }
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
@@ -315,7 +317,7 @@ select.input {
 .toolbar .spacer { flex: 1; }
 
 /* ------------------------------------------------------------ 프로그램 카드 */
-.apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 16px; }
 .app-card { background: #fff; border-radius: 20px; padding: 22px; display: flex; flex-direction: column; gap: 14px; min-height: 214px; }
 .app-head { display: flex; gap: 14px; align-items: center; }
 .app-icon {
@@ -435,3 +437,84 @@ select.input {
 .update-card:hover { background: var(--accent-soft); }
 
 .boot { height: 100%; display: grid; place-items: center; }
+
+/* ------------------------------------------------------------ 태블릿·휴대폰 (PC 앱 창은 980px 이상이라 바뀌지 않음) */
+@media (max-width: 960px) {
+  #root { height: 100dvh; }
+  /* 사이드바 → 왼쪽에서 나오는 서랍 */
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 40; width: min(280px, 86vw); border-right: 0;
+    padding: calc(22px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+    overflow-y: auto; overscroll-behavior: contain;
+    transform: translateX(-100%); visibility: hidden; transition: transform .26s var(--ease), visibility 0s linear .26s;
+  }
+  .shell.nav-open .sidebar { transform: none; visibility: visible; transition: transform .26s var(--ease); box-shadow: 0 10px 40px rgba(0, 29, 58, .16); }
+  .scrim {
+    display: block; position: fixed; inset: 0; z-index: 39; background: rgba(0, 0, 0, .28); opacity: 0; pointer-events: none;
+    transition: opacity .2s; touch-action: none;
+  }
+  .shell.nav-open .scrim { opacity: 1; pointer-events: auto; }
+  .shell.nav-open .page { overflow: hidden; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 10px; flex: none; background: #fff; border-bottom: 1px solid var(--grey150);
+    height: calc(56px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) calc(12px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));
+  }
+  .logo.sm { width: 30px; height: 30px; border-radius: 9px; }
+  .topbar-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .topbar-notice { width: auto; padding: 0 10px; gap: 6px; color: var(--accent-text); }
+  .topbar .topbar-notice .badge-num { margin-left: 0; }
+
+  .page { padding: 20px calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left)); }
+  .offline-bar { padding: 9px calc(20px + env(safe-area-inset-right)) 9px calc(20px + env(safe-area-inset-left)); }
+  .page-head, .page-head .right { flex-wrap: wrap; }
+  .page-head .right { max-width: 100%; }
+  .table { min-width: 720px; }
+  .auth { padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 640px) {
+  .page { padding: 16px calc(14px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); }
+  .offline-bar { padding: 9px calc(14px + env(safe-area-inset-right)) 9px calc(14px + env(safe-area-inset-left)); }
+  .page-head { margin-bottom: 14px; }
+  .page-head .tt { flex: 1 1 220px; }
+  .title { font-size: 22px; }
+  .card { padding: 18px 16px; border-radius: 16px; }
+  .apps-grid { gap: 12px; }
+  .app-card { padding: 18px; border-radius: 16px; min-height: 0; }
+  /* 오른쪽 조작부가 좁으면 아래 줄로 */
+  .row { flex-wrap: wrap; gap: 10px 16px; }
+  .row .grow { flex: 1 1 160px; }
+  .row > :last-child:not(.grow) { margin-left: auto; }
+  .notice-meta { flex-wrap: wrap; }
+
+  /* iOS 가 입력칸을 확대하지 않게 16px 이상, 코드에 박힌 폭도 넘치지 않게 */
+  .input, select.input, textarea.input, .input.lg { font-size: 16px; }
+  .input { max-width: 100%; }
+  .toolbar .search { width: auto; flex: 1 1 200px; }
+  .form-row { flex-wrap: wrap; gap: 14px 10px; }
+  .form-row > * { flex: 1 1 200px; }
+
+  .auth { padding: calc(16px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom)); }
+  .auth-card { padding: 28px 20px 22px; border-radius: 20px; }
+
+  /* 대화상자 → 아래에서 올라오는 시트 */
+  .dim { padding: 0; place-items: end center; }
+  .dialog, .dialog.wide {
+    max-width: none; max-height: 92vh; max-height: 92dvh; border-radius: 22px 22px 0 0;
+    padding: 22px 18px calc(18px + env(safe-area-inset-bottom));
+  }
+  .dialog-head { margin-bottom: 16px; }
+  .dialog-title { font-size: 18px; }
+  .dialog-foot { flex-wrap: wrap; margin-top: 20px; }
+  .dialog-foot .left { flex-basis: 100%; margin-right: 0; }
+  .dialog-foot > .btn { flex: 1; }
+  .dialog-foot .btn, .dialog-foot .btn.primary, .dialog-foot .btn.danger-solid { min-width: 0; }
+  .secret .mono { font-size: 18px; word-break: break-all; }
+
+  .menu { max-width: calc(100vw - 16px); }
+  .menu-item { padding: 11px 12px; }
+  .toasts { bottom: calc(16px + env(safe-area-inset-bottom)); padding: 0 12px; }
+  .toast { max-width: 100%; }
+}

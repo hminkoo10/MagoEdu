@@ -132,11 +132,20 @@ function serveStatic(res, dir, rel) {
     return false;
   }
   if (!stat.isFile()) return false;
-  res.writeHead(200, {
-    'content-type': STATIC_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
+  const ext = path.extname(file).toLowerCase();
+  const headers = {
+    'content-type': STATIC_MIME[ext] || 'application/octet-stream',
     'content-length': stat.size,
-    'cache-control': 'no-cache',
-  });
+    // 글꼴은 거의 안 바뀌니 일주일 보관, 나머지는 매번 새 버전인지 확인
+    'cache-control': ext === '.woff2' ? 'public, max-age=604800' : 'no-cache',
+  };
+  if (ext === '.html') {
+    // 다른 사이트가 이 화면을 틀(iframe)에 넣지 못하게
+    headers['x-frame-options'] = 'DENY';
+    headers['content-security-policy'] = "frame-ancestors 'none'";
+    headers['referrer-policy'] = 'same-origin';
+  }
+  res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
   return true;
 }

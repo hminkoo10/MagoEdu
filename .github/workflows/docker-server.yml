@@ -20,9 +20,18 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
       - name: 서버 시험
         working-directory: server
         run: npm test
+      - name: 웹 화면 넣기
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          (cd launcher && npm ci --ignore-scripts && node scripts/copy-vendor.mjs)
+          test -f launcher/src/renderer/vendor/fonts/PretendardVariable.woff2
+          cp -r launcher/src/renderer/. server/web/
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io

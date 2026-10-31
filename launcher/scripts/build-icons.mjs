@@ -59,6 +59,8 @@ const MAP = {
   drive: 'hard-drive',
   ban: 'ban',
   list: 'list-checks',
+  menu: 'menu',
+  globe: 'globe',
 };
 
 const out = {};

@@ -4,6 +4,7 @@
 #   1) 서버 시험  2) 배포본(tar.gz) 만들기  3) SSH 로 서버에 올리기
 #   4) 서버에서 magoedu-cloud-deploy 실행 — DB 백업 → 교체 → 다시 켜기 → 새 버전이 잘 켜졌는지 확인
 #      (안 켜지면 예전 버전으로 되돌리고 이 워크플로가 실패로 표시돼요)
+#   웹 화면(launcher/src/renderer)도 배포본의 web/ 으로 같이 배포돼요 — 화면만 바뀌어도 배포
 # 손으로 배포: Actions → "Deploy (서버)" → Run workflow
 #
 # 처음 한 번 설정 (README 의 ‘서버 설치’):
@@ -19,6 +20,7 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      - 'launcher/src/renderer/**'
       - '.github/workflows/deploy-server.yml'
   workflow_dispatch:
 
@@ -44,10 +46,21 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
 
       - name: 서버 시험
         working-directory: server
         run: npm test
+
+      - name: 웹 화면 글꼴 준비
+        working-directory: launcher
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          npm ci --ignore-scripts
+          node scripts/copy-vendor.mjs
+          test -f src/renderer/vendor/fonts/PretendardVariable.woff2
 
       - name: 배포본 만들기
         run: |
@@ -56,6 +69,7 @@ jobs:
           mkdir -p out/magoedu-cloud-server
           cp -r server/src server/public server/deploy out/magoedu-cloud-server/
           cp server/package.json server/catalog.default.json server/.env.example out/magoedu-cloud-server/
+          cp -r launcher/src/renderer out/magoedu-cloud-server/web
           node -e "require('fs').writeFileSync('out/magoedu-cloud-server/build.json', JSON.stringify({ version: process.argv[1], commit: process.env.GITHUB_SHA, builtAt: Date.now() }))" "$v"
           tar -czf "out/$name" -C out magoedu-cloud-server
           sha="$(sha256sum "out/$name" | awk '{print $1}')"

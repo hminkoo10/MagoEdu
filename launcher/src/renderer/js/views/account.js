@@ -11,7 +11,7 @@ export class AccountView {
     this.el = h(
       'div',
       {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '내 계정'), h('div', { class: 'subtitle' }, '아이디와 비밀번호를 바꾸고, 로그인한 컴퓨터를 관리해요.'))),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '내 계정'), h('div', { class: 'subtitle' }, '아이디와 비밀번호를 바꾸고, 로그인한 기기를 관리해요.'))),
       h('div', { class: 'grid2' }, h('div', { class: 'stack' }, this.profile, this.usernameCard(), this.passwordCard()), h('div', { class: 'stack' }, this.storage, this.devices)),
     );
     this.renderProfile(store.state.user);
@@ -76,7 +76,7 @@ export class AccountView {
       'div',
       { class: 'card' },
       h('h2', { class: 'card-title' }, ic('user', 18), '아이디 바꾸기'),
-      h('p', { class: 'card-desc' }, '아이디를 바꿔도 데이터는 그대로예요. 다른 컴퓨터에서는 새 아이디로 로그인해요.'),
+      h('p', { class: 'card-desc' }, '아이디를 바꿔도 데이터는 그대로예요. 다른 기기에서는 새 아이디로 로그인해요.'),
       field('새 아이디', nu, '영어 소문자·숫자·._- 로 3~32자'),
       field('지금 비밀번호', pw),
       h('div', { style: { marginTop: '16px', display: 'flex', justifyContent: 'flex-end' } }, go),
@@ -110,7 +110,7 @@ export class AccountView {
       field('지금 비밀번호', cur),
       field('새 비밀번호', pw),
       field('새 비밀번호 확인', pw2),
-      h('div', { style: { marginTop: '16px', display: 'flex', alignItems: 'center', gap: '10px' } }, checkbox('다른 컴퓨터에서는 로그아웃', true, (v) => (others = v)), h('div', { style: { flex: 1 } }), go),
+      h('div', { style: { marginTop: '16px', display: 'flex', alignItems: 'center', gap: '10px' } }, checkbox('다른 기기에서는 로그아웃', true, (v) => (others = v)), h('div', { style: { flex: 1 } }), go),
     );
   }
 
@@ -155,10 +155,10 @@ export class AccountView {
     try {
       const r = await this.cloud.api('GET', '/api/me/devices');
       const rows = r.devices.map((d) => {
-        const out = d.current ? pill('지금 이 컴퓨터', 'green') : btn('로그아웃', { size: 'sm' });
+        const out = d.current ? pill('지금 이 기기', 'green') : btn('로그아웃', { size: 'sm' });
         if (!d.current) {
           out.addEventListener('click', async () => {
-            if (!(await confirmDialog(`${d.deviceName}에서 로그아웃할까요?`, '그 컴퓨터에서는 다시 로그인해야 해요.', '로그아웃'))) return;
+            if (!(await confirmDialog(`${d.deviceName}에서 로그아웃할까요?`, '그 기기에서는 다시 로그인해야 해요.', '로그아웃'))) return;
             await this.cloud.api('DELETE', `/api/me/devices/${d.id}`);
             toast('로그아웃했어요', 'success');
             this.loadDevices();
@@ -167,26 +167,26 @@ export class AccountView {
         return h(
           'div',
           { class: 'row' },
-          h('div', { style: { color: 'var(--grey500)' } }, ic(/win/i.test(d.platform) ? 'monitor' : 'laptop', 22)),
+          h('div', { style: { color: 'var(--grey500)' } }, ic(d.platform === 'web' ? 'globe' : /win/i.test(d.platform) ? 'monitor' : 'laptop', 22)),
           h('div', { class: 'grow' }, h('div', { class: 'row-title' }, d.deviceName), h('div', { class: 'row-desc' }, `${ago(d.lastSeenAt)} 사용${d.ip ? ` · ${d.ip}` : ''}${d.clientVersion ? ` · 버전 ${d.clientVersion}` : ''}`)),
           out,
         );
       });
-      const others = btn('다른 컴퓨터 모두 로그아웃', { size: 'sm', variant: 'subtle' });
+      const others = btn('다른 기기 모두 로그아웃', { size: 'sm', variant: 'subtle' });
       others.addEventListener('click', async () => {
-        if (!(await confirmDialog('다른 컴퓨터에서 모두 로그아웃할까요?', '이 컴퓨터만 로그인 상태로 남아요.', '로그아웃'))) return;
+        if (!(await confirmDialog('다른 기기에서 모두 로그아웃할까요?', '이 기기만 로그인 상태로 남아요.', '로그아웃'))) return;
         await this.cloud.api('POST', '/api/me/devices/logout-others', {});
-        toast('다른 컴퓨터에서 로그아웃했어요', 'success');
+        toast('다른 기기에서 로그아웃했어요', 'success');
         this.loadDevices();
       });
       put(this.devices, 
-        h('div', { style: { display: 'flex', alignItems: 'center' } }, h('h2', { class: 'card-title', style: { flex: 1 } }, ic('monitor', 18), '로그인한 컴퓨터'), r.devices.length > 1 ? others : null),
-        h('p', { class: 'card-desc' }, '모르는 컴퓨터가 있으면 로그아웃하고 비밀번호를 바꿔 주세요.'),
+        h('div', { style: { display: 'flex', alignItems: 'center' } }, h('h2', { class: 'card-title', style: { flex: 1 } }, ic('monitor', 18), '로그인한 기기'), r.devices.length > 1 ? others : null),
+        h('p', { class: 'card-desc' }, '모르는 기기가 있으면 로그아웃하고 비밀번호를 바꿔 주세요.'),
         ...rows,
       );
       reveal(this.devices);
     } catch (e) {
-      put(this.devices, h('h2', { class: 'card-title' }, '로그인한 컴퓨터'), h('div', { class: 'muted' }, e.message));
+      put(this.devices, h('h2', { class: 'card-title' }, '로그인한 기기'), h('div', { class: 'muted' }, e.message));
     }
   }
 }
