@@ -187,7 +187,8 @@ function register(router, deps) {
       size = same.size;
       checkQuota(user, cur, size);
     } else {
-      const declared = Number(ctx.req.headers['content-length']);
+      // 스트림으로 올리면 content-length 가 없을 수 있어 x-content-size 도 본다 (미리 용량 확인용)
+      const declared = Number(ctx.req.headers['content-length'] ?? ctx.req.headers['x-content-size']);
       if (Number.isFinite(declared)) checkQuota(user, cur, declared);
       const got = await blobs.receive(ctx.req, config.maxFileBytes);
       tmp = got.file;
