@@ -49,7 +49,7 @@ class Installer {
    * app: 서버의 프로그램 정보 (id, name, exe, release{version, sha256, size})
    * onProgress({ phase: 'download'|'extract', done, total })
    */
-  async install(api, app, { onProgress, signal } = {}) {
+  async install(api, app, { onProgress, signal, keep = [] } = {}) {
     const rel = app.release;
     if (!rel) throw new Error('아직 배포된 버전이 없어요.');
     const ap = this.paths.app(app.id);
@@ -75,7 +75,9 @@ class Installer {
       });
       const manifest = readManifest(partDir, { id: app.id, version, exe: app.exe });
       if (!manifest.exe) throw new Error('실행 파일 이름을 알 수 없어요. (magoedu-app.json)');
-      if (!fs.existsSync(path.join(partDir, manifest.exe))) throw new Error(`실행 파일(${manifest.exe})이 묶음 안에 없어요.`);
+      const exePath = path.join(partDir, ...manifest.exe.split('/'));
+      if (!fs.existsSync(exePath)) throw new Error(`실행 파일(${manifest.exe})이 묶음 안에 없어요.`);
+      if (process.platform !== 'win32') await fsp.chmod(exePath, 0o755); // zip 에는 실행 권한이 없음 (Windows 는 상관없음)
       await fsp.rm(finalDir, { recursive: true, force: true });
       await fsp.rename(partDir, finalDir);
       await writeJson(ap.installed, {
@@ -92,12 +94,12 @@ class Installer {
     } finally {
       await fsp.rm(zipFile, { force: true });
     }
-    await this.cleanup(app.id);
+    await this.cleanup(app.id, keep);
     return this.installed(app.id);
   }
 
-  /** 지금 버전이 아닌 폴더를 지운다 (켜져 있어서 못 지우면 다음에) */
-  async cleanup(appId) {
+  /** 지금 버전이 아닌 폴더를 지운다. keep: 켜져 있는 버전처럼 남겨 둘 버전 */
+  async cleanup(appId, keep = []) {
     const ap = this.paths.app(appId);
     const cur = await readJson(ap.installed, null);
     let names = [];
@@ -107,7 +109,7 @@ class Installer {
       return;
     }
     for (const n of names) {
-      if (n === 'installed.json' || n === 'running.json' || (cur && n === cur.version)) continue;
+      if (n === 'installed.json' || n === 'running.json' || (cur && n === cur.version) || keep.includes(n)) continue;
       const full = path.join(ap.root, n);
       try {
         if ((await fsp.stat(full)).isDirectory()) await fsp.rm(full, { recursive: true, force: true, maxRetries: 2 });

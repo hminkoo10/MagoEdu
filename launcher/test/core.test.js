@@ -258,7 +258,6 @@ test('통합 클라우드 핵심: 설치·동기화·보관 기간·예전 데�
     assert.equal((await store.get('notes', meta.keys)).ticket, ticket);
 
     if (process.platform === 'win32') return;
-    fs.chmodSync(path.join(installed.dir, 'bin', 'notes.sh'), 0o755);
     const runner = new Runner({ paths: A.paths, log: { warn() {} } });
     fs.mkdirSync(a.dirs.local, { recursive: true });
     const env = buildEnv({
