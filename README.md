@@ -37,100 +37,89 @@ docs/       INTEGRATION.md — 오답노트·마고 타종을 연결하는 방�
  [마고 타종] [오답노트] …
 ```
 
-## 1. 서버 켜기 (리눅스)
+## 1. 서버 설치 (Ubuntu, `mago.milky.kr`)
 
-**Node.js 22.13 이상**만 있으면 돼요. 따로 설치할 라이브러리나 데이터베이스는 없어요. (SQLite 가 Node 에 들어 있음)
+처음 한 번만 하면 돼요. 그 뒤로는 main 에 올리면 GitHub Actions 가 알아서 서버를 업데이트해요.
 
-### systemd 서비스로 (추천)
+### 준비
+
+- **DNS**: `mago.milky.kr` 의 **A 레코드**를 서버의 공인 IP 로 정해 주세요.
+- **포트**: 서버(또는 클라우드 보안 그룹·공유기)에서 **80, 443**(HTTPS)과 **22**(자동 배포용 SSH)를 열어 주세요.
+
+### 설치 명령
+
+서버에 SSH 로 들어가서:
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+git clone -b feature/magoedu-cloud https://github.com/hminkoo10/MagoEdu.git
 ```
 
 ```bash
-sudo apt-get install -y nodejs git
+sudo bash MagoEdu/server/deploy/install.sh --domain mago.milky.kr --setup-deploy
 ```
 
-```bash
-git clone https://github.com/hminkoo10/MagoEdu.git && cd MagoEdu/server/deploy && sudo ./install.sh
-```
+> 지금은 서버 파일이 `feature/magoedu-cloud` 브랜치에 있어서 `-b feature/magoedu-cloud` 가 필요해요. main 에 합친 뒤에는 빼도 돼요.
 
-- 프로그램은 `/opt/magoedu-cloud`, **데이터는 `/var/lib/magoedu-cloud`**, 설정은 `/etc/magoedu-cloud.env` 에 들어가고, 컴퓨터를 켜면 자동으로 켜져요.
-- 처음 켜면 **운영자 계정**(아이디 `admin`)을 만들고 비밀번호를 알려 줘요. 다시 보려면:
-  ```bash
-  sudo cat /var/lib/magoedu-cloud/INITIAL_ADMIN_PASSWORD.txt
-  ```
-- 업데이트는 아래 **자동 배포**로 해요. (손으로 하려면 `git pull` 한 뒤 `sudo ./install.sh` 를 다시 실행 — 데이터·설정은 그대로)
-- 상태와 기록: `systemctl status magoedu-cloud`, `journalctl -u magoedu-cloud -f`
-- 설정을 바꾼 뒤에는 `sudo systemctl restart magoedu-cloud` (설정 항목은 `server/.env.example` 참고)
+이 명령 하나가 알아서 해요.
 
-### 자동 배포 (GitHub Actions → Ubuntu)
+1. Node.js 22 설치 (없으면)
+2. 서버 설치 → `/opt/magoedu-cloud`, 데이터 → `/var/lib/magoedu-cloud`, 설정 → `/etc/magoedu-cloud.env`, 컴퓨터를 켜면 자동 실행
+3. HTTPS: Caddy 를 설치하고 `https://mago.milky.kr` 인증서를 자동으로 받아요
+4. 자동 배포 준비: 배포 전용 계정(`deploy`)과 접속 열쇠를 만들어요
+5. 마지막에 **운영자 계정**과 **GitHub 에 넣을 값 두 개**를 화면에 보여 줘요
 
-main 에 `server/` 가 바뀌어 올라오면 GitHub Actions 가 시험한 뒤 SSH 로 서버에 올려서 적용해요.
-서버에서는 **DB 백업 → 교체 → 다시 켜기 → 새 버전이 잘 켜졌는지 확인**까지 하고, 안 켜지면 **바로 예전 버전으로 되돌려요**. (Actions 에는 실패로 표시)
+### GitHub 에 값 두 개 넣기
 
-처음 한 번만 설정해요.
+GitHub 의 MagoEdu 저장소 → **Settings → Secrets and variables → Actions → New repository secret** 에서, 설치 화면 마지막에 나온 값을 그대로 붙여 넣어요.
 
-1. 배포용 키를 만들어요. (아무 컴퓨터에서나)
-   ```bash
-   ssh-keygen -t ed25519 -N "" -C magoedu-deploy -f magoedu-deploy
-   ```
-2. 서버에서 배포용 계정(`deploy`)을 만들고 공개 키를 넣어요. 이 계정은 배포 명령 하나만 관리자 권한으로 실행할 수 있어요.
-   ```bash
-   sudo ./install.sh --deploy-user deploy --deploy-key "$(cat magoedu-deploy.pub)"
-   ```
-3. 서버 열쇠 지문을 받아 둬요. (다른 서버로 바꿔치기되는 것을 막음)
-   ```bash
-   ssh-keyscan -p 22 서버주소
-   ```
-4. GitHub 저장소 → **Settings → Secrets and variables → Actions → New repository secret**
+| 이름 | 무엇인가요 |
+| --- | --- |
+| `DEPLOY_SSH_KEY` | GitHub 가 서버에 들어올 때 쓰는 **열쇠**예요. `-----BEGIN` 줄부터 `-----END` 줄까지 전부 넣어요. |
+| `DEPLOY_KNOWN_HOSTS` | 서버의 **지문**이에요. GitHub 가 접속할 때 "이게 진짜 mago.milky.kr 서버가 맞는지" 확인하는 데 써요. 누가 중간에서 가짜 서버로 바꿔치기해도 배포 파일을 넘기지 않게 막아 줘요. |
 
-   | 이름 | 값 |
-   | --- | --- |
-   | `DEPLOY_HOST` | 서버 주소 (도메인 또는 IP) |
-   | `DEPLOY_SSH_KEY` | 1번에서 만든 `magoedu-deploy` 파일 내용 (개인 키) |
-   | `DEPLOY_USER` | `deploy` (비우면 deploy) |
-   | `DEPLOY_PORT` | SSH 포트 (비우면 22) |
-   | `DEPLOY_KNOWN_HOSTS` | 3번 결과 |
+> `ssh-keyscan` 은 이 "서버 지문"을 밖에서 받아 오는 명령이에요. 설치 스크립트가 서버 안에서 지문을 바로 읽어 보여 주니까 직접 쓸 필요는 없어요.
 
-   **Variables** 탭에 `MAGOEDU_SERVER_URL`(예: `https://cloud.mago.example`)을 넣으면 배포 뒤 공개 주소로도 새 버전을 확인하고, 통합 클라우드 설치 파일에도 기본 서버 주소로 들어가요.
-5. 끝. 이제 main 에 올리면 자동으로 배포돼요. 손으로 하려면 **Actions → Deploy (서버) → Run workflow**.
+다 넣었으면 끝이에요. 이제 main 에 `server/` 가 바뀌어 올라오면 자동으로 배포돼요. 손으로 하려면 **Actions → Deploy (서버) → Run workflow**.
 
-- GitHub 서버가 SSH 로 들어와야 해서, 서버의 SSH 포트가 인터넷에서 열려 있어야 해요. (학원 공유기 뒤라면 포트 포워딩)
+### 자동 배포는 이렇게 동작해요
+
+1. GitHub Actions 가 서버 시험을 돌리고 배포본을 만들어요.
+2. SSH 로 서버에 올리고, 서버에서 **DB 백업 → 교체 → 다시 켜기 → 새 버전이 잘 켜졌는지 확인**까지 해요.
+3. 새 버전이 안 켜지면 **바로 예전 버전으로 되돌리고** Actions 에 실패로 표시돼요. 서비스는 끊기지 않아요.
+
 - DB 백업은 `/var/lib/magoedu-cloud/backups` 에 최근 10개를 남겨요. 직전 버전 프로그램은 `/opt/magoedu-cloud.prev` 에 있어요.
+- `deploy` 계정은 배포 명령 하나만 관리자 권한으로 실행할 수 있어요. 그래도 `DEPLOY_SSH_KEY` 와 main 에 올릴 권한은 서버 관리자 권한처럼 다뤄 주세요.
 
-### Docker 로
+### 자주 쓰는 명령
+
+| 하고 싶은 것 | 명령 |
+| --- | --- |
+| 처음 운영자 비밀번호 다시 보기 | `sudo cat /var/lib/magoedu-cloud/INITIAL_ADMIN_PASSWORD.txt` |
+| 서버 상태 | `systemctl status magoedu-cloud` |
+| 서버 기록 보기 | `journalctl -u magoedu-cloud -f` |
+| 설정 바꾼 뒤 다시 켜기 | `sudo systemctl restart magoedu-cloud` (설정 항목은 `server/.env.example`) |
+| GitHub 값 다시 보기 | `sudo bash MagoEdu/server/deploy/install.sh --domain mago.milky.kr --setup-deploy` 를 다시 실행 (데이터·설정은 그대로) |
+
+**백업**: 데이터 폴더 `/var/lib/magoedu-cloud` 하나만 복사하면 돼요. 안의 `keys/` 는 실행 허가증 서명 키라서 잃어버리면 모든 컴퓨터가 다시 로그인해야 해요.
+
+### Docker 로 돌리고 싶다면
 
 ```bash
 docker run -d --name magoedu-cloud --restart unless-stopped -p 8470:8470 -v magoedu-data:/data ghcr.io/hminkoo10/magoedu-cloud
 ```
 
-```bash
-docker logs magoedu-cloud
-```
-
-처음 운영자 비밀번호는 로그에 나와요. (이미지는 main 에 서버가 올라가면 만들어져요. 그 전에는 `server` 폴더에서 `docker compose up -d`)
-
-### 밖에서 접속하기 (HTTPS)
-
-집에서도 쓰려면 도메인을 연결하고 HTTPS 로 여는 것을 추천해요. `server/deploy/Caddyfile` 예시대로 Caddy 를 두면 인증서를 알아서 받아요.
-이때 `/etc/magoedu-cloud.env` 에 `HOST=127.0.0.1`, `TRUST_PROXY=1` 을 넣으면 서버가 Caddy 뒤에서만 열리고 접속 IP 도 제대로 기록돼요.
-(nginx 를 쓰면 큰 파일이 올라가도록 `client_max_body_size 0;` 을 넣어 주세요)
-
-학원 안에서만 쓰면 `http://서버IP:8470` 로 바로 써도 돼요. 방화벽을 쓰면 `sudo ufw allow 8470/tcp`.
-
-**백업**: 데이터 폴더(`/var/lib/magoedu-cloud` 또는 Docker 볼륨) 하나만 복사하면 돼요. 안의 `keys/` 는 실행 허가증 서명 키라서 잃어버리면 모든 컴퓨터가 다시 로그인해야 해요.
+(이미지는 main 에 서버가 올라가면 만들어져요. 이 방법은 위의 자동 배포 대신 이미지를 다시 받아서 업데이트해요.)
 
 ## 2. 통합 클라우드 설치
 
-- 서버 주소(`http://서버:8470`)를 브라우저로 열면 설치 파일 받는 화면이 나와요.
+- `https://mago.milky.kr` 을 브라우저로 열면 설치 파일 받는 화면이 나와요.
 - 또는 [Releases](https://github.com/hminkoo10/MagoEdu/releases) 에서 `MagoEduCloud-Setup-x.y.z.exe`.
-- 처음 켜면 서버 주소를 넣고 로그인해요. (저장소 변수 `MAGOEDU_SERVER_URL` 을 넣고 배포하면 서버 주소가 미리 들어가요)
+- 서버 주소 `https://mago.milky.kr` 이 미리 들어 있어서 바로 로그인하면 돼요. (다른 주소를 쓰려면 로그인 화면 아래의 서버 주소를 눌러 바꿔요)
 
 ## 3. 처음 쓰는 순서
 
 1. 운영자 계정으로 로그인 → 비밀번호 새로 정하기
-2. **원장 가입 코드** 만들기 → 원장님께 코드와 서버 주소 전달 (또는 **계정 관리**에서 원장 계정을 직접 만들기)
+2. **원장 가입 코드** 만들기 → 원장님께 코드 전달 (또는 **계정 관리**에서 원장 계정을 직접 만들기)
 3. 원장님이 통합 클라우드에서 **원장 가입 코드가 있어요** 로 가입 → **선생님 관리**에서 선생님 계정 만들기
 4. 모두 **프로그램** 화면에서 필요한 프로그램을 설치하고 열기
 
@@ -155,7 +144,7 @@ docker logs magoedu-cloud
   서버가 이 Release 를 찾아서 설치된 통합 클라우드에 넘겨 주고, 켜진 프로그램이 없고 창이 닫혀 있을 때 조용히 업데이트해요.
 - **프로그램**: 각 저장소의 Release 에 `이름-x.y.z-win-x64.zip` 을 올리면 서버가 10분 안에 찾아내고, 통합 클라우드가 받아서 설치해요.
   켜져 있는 프로그램은 다음에 켤 때 새 버전으로 바뀌어요. 자세한 것은 [docs/INTEGRATION.md](docs/INTEGRATION.md).
-- **서버**: `server/` 를 고쳐서 main 에 올리면 Ubuntu 서버에 자동으로 배포되고(위 ‘자동 배포’), Docker 이미지(`ghcr.io/hminkoo10/magoedu-cloud`)도 만들어져요.
+- **서버**: `server/` 를 고쳐서 main 에 올리면 `mago.milky.kr` 서버에 자동으로 배포되고(위 ‘서버 설치’), Docker 이미지(`ghcr.io/hminkoo10/magoedu-cloud`)도 만들어져요.
 
 ## 개발
 

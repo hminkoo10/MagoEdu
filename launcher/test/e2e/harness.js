@@ -28,6 +28,9 @@ async function startAll({ adminPassword } = {}) {
     await server.app.deps.catalog.refreshApp(id);
   }
   const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'magoedu-ui-'));
+  // 설치 파일에 들어가는 기본 서버 주소(mago.milky.kr) 대신, 서버 연결 화면부터 시험
+  fs.mkdirSync(path.join(userRoot, 'roaming'), { recursive: true });
+  fs.writeFileSync(path.join(userRoot, 'roaming', 'config.json'), JSON.stringify({ serverUrl: '' }));
   const app = await electron.launch({
     executablePath: require('electron'),
     args: [ROOT, '--no-sandbox'],

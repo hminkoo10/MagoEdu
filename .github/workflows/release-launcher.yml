@@ -74,7 +74,7 @@ jobs:
           cur="$(node -p "require('./package.json').version")"
           echo "PREV_TAG=$(git describe --tags --abbrev=0 --match 'cloud-v*' 2>/dev/null || true)" >> "$GITHUB_ENV"
           if [ "$BUMP" = "auto" ]; then
-            if git rev-parse -q --verify "refs/tags/cloud-v$cur" > /dev/null; then BUMP=patch; else BUMP=none; fi
+            if git rev-parse -q --verify "refs/tags/cloud-v$cur" > /dev/null; then BUMP="patch"; else BUMP="none"; fi
           fi
           if [ "$BUMP" != "none" ]; then
             npm version "$BUMP" --no-git-tag-version
