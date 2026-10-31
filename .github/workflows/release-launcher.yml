@@ -95,7 +95,8 @@ jobs:
         working-directory: launcher
         env:
           URL: ${{ vars.MAGOEDU_SERVER_URL }}
-        run: node -e "require('fs').writeFileSync('src/main/defaults.json', JSON.stringify({ serverUrl: process.env.URL }, null, 2) + '\n')"
+        run: |
+          node -e "require('fs').writeFileSync('src/main/defaults.json', JSON.stringify({ serverUrl: process.env.URL }, null, 2) + '\n')"
 
       - name: 설치 파일 만들기
         working-directory: launcher
