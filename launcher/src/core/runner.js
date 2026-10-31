@@ -5,6 +5,7 @@
 //   - 끝나면 알려 준다(동기화). 끝난 코드가 75 면 바로 다시 켠다(새 버전 적용).
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
@@ -44,6 +45,12 @@ class Runner extends EventEmitter {
     // 통합 클라우드를 다시 켰을 때, 그 전에 켜 둔 프로그램이 아직 돌고 있는지
     const rec = readJsonSync(this.paths.app(appId).running, null);
     if (!rec?.pid) return false;
+    // 컴퓨터를 다시 켠 뒤라면 예전 기록 (같은 번호를 다른 프로그램이 쓰고 있을 수 있음)
+    const bootedAt = Date.now() - os.uptime() * 1000;
+    if (rec.startedAt && rec.startedAt < bootedAt - 60 * 1000) {
+      fs.rmSync(this.paths.app(appId).running, { force: true });
+      return false;
+    }
     try {
       process.kill(rec.pid, 0);
       return true;

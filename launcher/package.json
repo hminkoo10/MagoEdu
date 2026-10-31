@@ -17,7 +17,8 @@
     "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"test/**/*.test.js\"",
     "icons": "node scripts/build-icons.mjs",
     "app-icon": "node scripts/build-app-icon.mjs",
-    "dist": "electron-builder --win --x64 --publish never"
+    "dist": "electron-builder --win --x64 --publish never",
+    "test:ui": "xvfb-run -a node test/e2e/ui-e2e.js"
   },
   "dependencies": {
     "electron-log": "5.4.4",
@@ -29,5 +30,66 @@
     "electron-builder": "26.17.0",
     "lucide-static": "1.56.0",
     "pretendard": "1.3.9"
+  },
+  "build": {
+    "appId": "io.github.hminkoo10.magoedu.cloud",
+    "productName": "MagoEduCloud",
+    "copyright": "Copyright © 2026 구현민",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "build/tray.png",
+      "package.json",
+      "!src/**/*.map"
+    ],
+    "asar": true,
+    "protocols": [
+      {
+        "name": "MagoEdu",
+        "schemes": [
+          "magoedu"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "executableName": "MagoEduCloud"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "마고에듀 통합 클라우드",
+      "uninstallDisplayName": "마고에듀 통합 클라우드",
+      "artifactName": "MagoEduCloud-Setup-${version}.${ext}",
+      "installerLanguages": [
+        "ko_KR",
+        "en_US"
+      ],
+      "language": "1042",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hminkoo10",
+        "repo": "MagoEdu",
+        "releaseType": "release"
+      }
+    ]
   }
 }

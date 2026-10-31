@@ -256,9 +256,14 @@ if (!isTest && !app.requestSingleInstanceLock()) {
     const paths = makePaths({ userData, localData });
     const store = new Store({ paths, safeStorage, defaults: loadDefaults() });
     cloud = new Cloud({ paths, store, version: app.getVersion(), log });
+    let trayKey = '';
     cloud.on('state', (s) => {
       send('state', s);
-      if (tray) tray.setContextMenu(buildTrayMenu(s));
+      const key = JSON.stringify([s.phase, s.apps.filter((a) => a.installed).map((a) => [a.id, a.name, a.running])]);
+      if (tray && key !== trayKey) {
+        trayKey = key;
+        tray.setContextMenu(buildTrayMenu(s));
+      }
     });
     cloud.on('toast', (t) => send('toast', t));
     cloud.on('config', (cfg) => applyAutoStart(cfg));

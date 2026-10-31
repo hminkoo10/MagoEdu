@@ -15,7 +15,7 @@ async function startAll({ adminPassword } = {}) {
   fs.mkdirSync(OUT, { recursive: true });
   const server = await startServer(adminPassword === undefined ? {} : { adminPassword });
   // 시험용 프로그램 두 개
-  const exe = '#!/bin/sh\nsleep 2\nexit 0\n';
+  const exe = '#!/bin/sh\nsleep 6\nexit 0\n';
   for (const [id, name, file, desc, color] of [
     ['tajong', '마고 타종', 'MaplTajong', '정해진 시간에 학원 종을 울려 주는 타종 프로그램', '#F76B15'],
     ['ohdapnote', '오답노트', 'OhdapNote', '문제집과 답지를 올리면 틀린 문제만 모아 PDF로 만들어 주는 오답노트', '#FF8A33'],
