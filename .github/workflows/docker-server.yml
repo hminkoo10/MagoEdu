@@ -1,11 +1,11 @@
-# 서버 Docker 이미지 (ghcr.io/hminkoo10/magoedu-cloud)
-#   server/ 가 바뀌어 main 에 올라오면 이미지를 만들어 GitHub Packages 에 올려요.
+# 서버 Docker 이미지 (ghcr.io/hminkoo10/magoedu-cloud) — 필요할 때만 손으로 실행
+#   Actions → Server image → Run workflow
+#   (서버는 systemd 로 돌리고 Deploy (서버) 워크플로가 자동 배포하므로, 이 이미지는 Docker 로 돌릴 때만 필요해요)
+#   처음 올릴 때 "denied" 가 나오면: GitHub → 내 프로필 → Packages → magoedu-cloud → Package settings 에서
+#   MagoEdu 저장소에 Write 권한(Manage Actions access)을 주세요.
 name: Server image
 
 on:
-  push:
-    branches: [main]
-    paths: ['server/**', '.github/workflows/docker-server.yml']
   workflow_dispatch:
 
 permissions:

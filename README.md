@@ -104,11 +104,13 @@ GitHub 의 MagoEdu 저장소 → **Settings → Secrets and variables → Action
 
 ### Docker 로 돌리고 싶다면
 
+위의 설치 명령 대신 저장소의 `server` 폴더에서:
+
 ```bash
-docker run -d --name magoedu-cloud --restart unless-stopped -p 8470:8470 -v magoedu-data:/data ghcr.io/hminkoo10/magoedu-cloud
+docker compose up -d
 ```
 
-(이미지는 main 에 서버가 올라가면 만들어져요. 이 방법은 위의 자동 배포 대신 이미지를 다시 받아서 업데이트해요.)
+처음 운영자 비밀번호는 `docker compose logs` 에 나와요. (이 방법은 자동 배포 대신 `git pull` 후 `docker compose up -d --build` 로 업데이트해요)
 
 ## 2. 통합 클라우드 설치
 
@@ -144,7 +146,7 @@ docker run -d --name magoedu-cloud --restart unless-stopped -p 8470:8470 -v mago
   서버가 이 Release 를 찾아서 설치된 통합 클라우드에 넘겨 주고, 켜진 프로그램이 없고 창이 닫혀 있을 때 조용히 업데이트해요.
 - **프로그램**: 각 저장소의 Release 에 `이름-x.y.z-win-x64.zip` 을 올리면 서버가 10분 안에 찾아내고, 통합 클라우드가 받아서 설치해요.
   켜져 있는 프로그램은 다음에 켤 때 새 버전으로 바뀌어요. 자세한 것은 [docs/INTEGRATION.md](docs/INTEGRATION.md).
-- **서버**: `server/` 를 고쳐서 main 에 올리면 `mago.milky.kr` 서버에 자동으로 배포되고(위 ‘서버 설치’), Docker 이미지(`ghcr.io/hminkoo10/magoedu-cloud`)도 만들어져요.
+- **서버**: `server/` 를 고쳐서 main 에 올리면 `mago.milky.kr` 서버에 자동으로 배포돼요. (위 ‘서버 설치’)
 
 ## 개발
 
