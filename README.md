@@ -37,23 +37,34 @@ docs/       INTEGRATION.md — 오답노트·마고 타종을 연결하는 방�
  [마고 타종] [오답노트] …
 ```
 
-## 1. 서버 켜기
+## 1. 서버 켜기 (리눅스)
 
-서버는 학원 컴퓨터 한 대나 클라우드 서버(VPS)에 두면 돼요. **Node.js 22.13 이상**만 있으면 돼요.
+**Node.js 22.13 이상**만 있으면 돼요. 따로 설치할 라이브러리나 데이터베이스는 없어요. (SQLite 가 Node 에 들어 있음)
 
-### 학원 컴퓨터 (Windows)
+### systemd 서비스로 (추천)
 
-1. [Node.js](https://nodejs.org/) LTS 를 설치해요.
-2. 이 저장소를 받아서 `server` 폴더에서:
-   ```bash
-   npm start
-   ```
-3. 처음 켜면 **운영자 계정**을 만들고 화면과 `server/data/INITIAL_ADMIN_PASSWORD.txt` 에 아이디(`admin`)와 비밀번호를 알려 줘요.
-4. 다른 컴퓨터에서는 `http://이-컴퓨터-IP:8470` 로 접속해요. (Windows 방화벽에서 8470 포트를 열어 주세요)
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+```
 
-설정은 `server/.env.example` 을 `server/.env` 로 복사해서 고쳐요. (포트, 데이터 폴더, 처음 운영자 비밀번호, GitHub 토큰 등)
+```bash
+sudo apt-get install -y nodejs git
+```
 
-### Docker
+```bash
+git clone https://github.com/hminkoo10/MagoEdu.git && cd MagoEdu/server/deploy && sudo ./install.sh
+```
+
+- 프로그램은 `/opt/magoedu-cloud`, **데이터는 `/var/lib/magoedu-cloud`**, 설정은 `/etc/magoedu-cloud.env` 에 들어가고, 컴퓨터를 켜면 자동으로 켜져요.
+- 처음 켜면 **운영자 계정**(아이디 `admin`)을 만들고 비밀번호를 알려 줘요. 다시 보려면:
+  ```bash
+  sudo cat /var/lib/magoedu-cloud/INITIAL_ADMIN_PASSWORD.txt
+  ```
+- 업데이트: `git pull` 한 뒤 `sudo ./install.sh` 를 다시 실행 (데이터·설정은 그대로)
+- 상태와 기록: `systemctl status magoedu-cloud`, `journalctl -u magoedu-cloud -f`
+- 설정을 바꾼 뒤에는 `sudo systemctl restart magoedu-cloud` (설정 항목은 `server/.env.example` 참고)
+
+### Docker 로
 
 ```bash
 docker run -d --name magoedu-cloud --restart unless-stopped -p 8470:8470 -v magoedu-data:/data ghcr.io/hminkoo10/magoedu-cloud
@@ -63,12 +74,17 @@ docker run -d --name magoedu-cloud --restart unless-stopped -p 8470:8470 -v mago
 docker logs magoedu-cloud
 ```
 
-처음 운영자 비밀번호는 로그에 나와요. 이미지를 직접 만들려면 `server` 폴더에서 `docker compose up -d`.
+처음 운영자 비밀번호는 로그에 나와요. (이미지는 main 에 서버가 올라가면 만들어져요. 그 전에는 `server` 폴더에서 `docker compose up -d`)
 
-> 집에서도 쓰려면 서버를 인터넷에서 접속할 수 있게 하고(공유기 포트 포워딩 또는 클라우드 서버), 가능하면 HTTPS(예: Caddy, nginx) 뒤에 두세요.
-> 프록시 뒤에 두면 `TRUST_PROXY=1` 로 접속 IP 가 제대로 기록돼요.
+### 밖에서 접속하기 (HTTPS)
 
-**백업**: 서버의 데이터 폴더(`server/data` 또는 Docker 볼륨) 하나만 복사하면 돼요. 안의 `keys/` 는 실행 허가증 서명 키라서 바뀌면 모든 컴퓨터가 다시 로그인해야 해요.
+집에서도 쓰려면 도메인을 연결하고 HTTPS 로 여는 것을 추천해요. `server/deploy/Caddyfile` 예시대로 Caddy 를 두면 인증서를 알아서 받아요.
+이때 `/etc/magoedu-cloud.env` 에 `HOST=127.0.0.1`, `TRUST_PROXY=1` 을 넣으면 서버가 Caddy 뒤에서만 열리고 접속 IP 도 제대로 기록돼요.
+(nginx 를 쓰면 큰 파일이 올라가도록 `client_max_body_size 0;` 을 넣어 주세요)
+
+학원 안에서만 쓰면 `http://서버IP:8470` 로 바로 써도 돼요. 방화벽을 쓰면 `sudo ufw allow 8470/tcp`.
+
+**백업**: 데이터 폴더(`/var/lib/magoedu-cloud` 또는 Docker 볼륨) 하나만 복사하면 돼요. 안의 `keys/` 는 실행 허가증 서명 키라서 잃어버리면 모든 컴퓨터가 다시 로그인해야 해요.
 
 ## 2. 통합 클라우드 설치
 
@@ -110,7 +126,7 @@ docker logs magoedu-cloud
 
 | 위치 | 명령 | 내용 |
 | --- | --- | --- |
-| `server` | `npm start` | 서버 켜기 (`.env` 읽음) |
+| `server` | `npm start` | 서버 켜기 (`server/.env` 읽음, 개발용) |
 | `server` | `npm test` | 계정·가입 코드·동기화·보관 기간·프로그램 목록·허가증 시험 |
 | `launcher` | `npm install` → `npm start` | 통합 클라우드 개발 모드 |
 | `launcher` | `npm test` | 설치·업데이트·두 컴퓨터 동기화·충돌·보관 기간·예전 데이터·실행 시험 (실제 서버와 함께) |
