@@ -1,0 +1,32 @@
+[
+  {
+    "id": "tajong",
+    "name": "마고 타종",
+    "description": "정해진 시간에 학원 종을 울려 주는 타종 프로그램",
+    "color": "#F76B15",
+    "source": {
+      "type": "github",
+      "repo": "hminkoo10/Mapl-Tajong",
+      "asset": "^MaplTajong-(\\d+\\.\\d+\\.\\d+)-win-x64\\.zip$"
+    },
+    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/Mapl-Tajong/main/app/assets/ui/app.ico",
+    "exe": "Mataf.exe",
+    "coldStorage": { "enabled": false, "days": 30 },
+    "autoLaunchDefault": true
+  },
+  {
+    "id": "ohdapnote",
+    "name": "오답노트",
+    "description": "문제집과 답지를 올리면 틀린 문제만 모아 PDF로 만들어 주는 오답노트",
+    "color": "#FF8A33",
+    "source": {
+      "type": "github",
+      "repo": "hminkoo10/ohdapnote",
+      "asset": "^OhdapNote-(\\d+\\.\\d+\\.\\d+)-win-x64\\.zip$"
+    },
+    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/ohdapnote/main/build/icon.png",
+    "exe": "OhdapNote.exe",
+    "coldStorage": { "enabled": true, "days": 30 },
+    "autoLaunchDefault": false
+  }
+]

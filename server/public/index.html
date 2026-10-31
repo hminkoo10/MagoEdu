@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마고에듀 통합 클라우드</title>
+<style>
+  :root {
+    --bg: #F2F4F6; --surface: #FFFFFF; --g100: #F2F4F6; --g200: #E5E8EB; --g500: #8B95A1; --g600: #6B7684;
+    --g700: #4E5968; --g900: #191F28; --accent: #F76B15; --accent-hover: #EB600D; --accent-soft: #FFF4EC;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--g900);
+    font-family: Pretendard, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+  }
+  .card {
+    width: 100%; max-width: 460px; background: var(--surface); border-radius: 24px; padding: 40px 32px 28px;
+    text-align: center; animation: up .4s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .logo {
+    width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 20px;
+    background: linear-gradient(135deg, #FFA352, #F76B15); display: grid; place-items: center;
+  }
+  h1 { font-size: 24px; margin: 0 0 8px; font-weight: 700; letter-spacing: -0.02em; }
+  p { margin: 0; color: var(--g600); font-size: 15px; line-height: 1.6; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 28px; width: 100%;
+    height: 52px; border-radius: 14px; background: var(--accent); color: #fff; font-size: 16px; font-weight: 600;
+    text-decoration: none; transition: background .15s, transform .1s;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:active { transform: scale(.98); }
+  .btn.disabled { background: var(--g200); color: var(--g500); pointer-events: none; }
+  .meta { margin-top: 14px; font-size: 13px; color: var(--g500); }
+  .steps { text-align: left; margin-top: 28px; padding: 18px 20px; background: var(--g100); border-radius: 16px; }
+  .steps b { display: block; font-size: 14px; margin-bottom: 8px; color: var(--g700); }
+  .steps ol { margin: 0; padding-left: 18px; color: var(--g600); font-size: 14px; line-height: 1.8; }
+  .server { font-family: ui-monospace, Consolas, monospace; background: var(--accent-soft); color: #E05A00; padding: 1px 6px; border-radius: 6px; }
+  footer { margin-top: 24px; font-size: 12.5px; color: var(--g500); }
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="logo" aria-hidden="true">
+    <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+  </div>
+  <h1>마고에듀 통합 클라우드</h1>
+  <p>로그인 한 번으로 학원 프로그램을 설치하고,<br>어느 컴퓨터에서든 같은 데이터로 이어서 써요.</p>
+  <a id="dl" class="btn disabled" href="/download/launcher">확인하는 중…</a>
+  <div id="ver" class="meta">Windows 10 이상</div>
+  <div class="steps">
+    <b>처음 쓰는 방법</b>
+    <ol>
+      <li>위 버튼으로 설치 파일을 받아 실행해요.</li>
+      <li>서버 주소에 <span class="server" id="addr"></span> 를 넣어요.</li>
+      <li>받은 아이디로 로그인하거나, 가입 코드로 원장 가입을 해요.</li>
+    </ol>
+  </div>
+  <footer>구현민 개발</footer>
+</main>
+<script>
+  document.getElementById('addr').textContent = location.origin;
+  fetch('/api/launcher').then(function (r) { return r.json(); }).then(function (d) {
+    var a = document.getElementById('dl');
+    if (d && d.version) {
+      a.textContent = '통합 클라우드 내려받기';
+      a.classList.remove('disabled');
+      document.getElementById('ver').textContent = '버전 ' + d.version + ' · Windows 10 이상';
+    } else {
+      a.textContent = '아직 배포된 설치 파일이 없어요';
+    }
+  }).catch(function () {
+    document.getElementById('dl').textContent = '서버에 연결하지 못했어요';
+  });
+</script>
+</body>
+</html>
