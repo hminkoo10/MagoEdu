@@ -1,5 +1,5 @@
 // build/icon.svg → build/icon.png (512), build/tray.png (32), build/icon.ico (16~256)
-// 32px 이하(트레이·작은 아이콘)는 글자 없는 build/icon-small.svg 로 그린다
+// 32px 이하(트레이·작은 아이콘)는 '마고' 선을 굵게 한 build/icon-small.svg 로 그린다
 // 사용: node scripts/build-app-icon.mjs   (Playwright Chromium 필요)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

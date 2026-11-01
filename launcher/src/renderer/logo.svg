@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- 앱 아이콘(build/icon.svg)을 여백 없이 꽉 차게: 화면 안 로고용. 16px 파비콘은 글자 없는 favicon.svg -->
+  <!-- 앱 아이콘(build/icon.svg)을 여백 없이 꽉 차게: 화면 안 로고용. 파비콘(favicon.svg)은 같은 그림에 '마고' 선만 굵게 -->
   <rect width="512" height="512" rx="116" fill="#F76B15"/>
   <g transform="translate(256 256) scale(1.0667) translate(-256 -256)">
     <g fill="#fff">

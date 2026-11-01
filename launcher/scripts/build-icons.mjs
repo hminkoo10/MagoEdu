@@ -73,14 +73,20 @@ for (const [key, name] of Object.entries(MAP)) {
   out[key] = inner;
 }
 
-// 로고 구름 (512 → 24 로 줄인 좌표). 표시(체크·화살표·사선)는 마스크로 구름을 뚫어서 그린다.
+// 로고 구름 (512 → 24 로 줄인 좌표). '마고' 글자와 표시(체크·화살표·사선)는 마스크로 구름을 뚫어서 그린다.
 // {id} 는 아이콘마다 다른 마스크 ID 로 바뀐다.
 const CLOUD = '<circle cx="7.72" cy="12.55" r="5.26"/><circle cx="14.69" cy="9.86" r="7.09"/><rect x="1" y="11.69" width="22" height="9.53" rx="4.77"/>';
+// 앱 로고의 '마고' (build/icon.svg 의 글자를 같은 비율로 줄임, 작은 크기에서도 보이게 선을 조금 굵게)
+const MAGO =
+  '<g transform="matrix(0.063556 0 0 0.063556 4.7278 12.3056)" fill="none" stroke="#000" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M10 22H58V80H10Z M86 2V98 M86 50H108"/><path d="M138 12H218V46 M178 58V84 M132 86H226"/></g>';
 const cut = (mark, width = 2.2) =>
   `<mask id="{id}"><rect width="24" height="24" fill="#fff" stroke="none"/><path d="${mark}" fill="none" stroke="#000" stroke-width="${width}"/></mask>` +
   `<g mask="url(#{id})" fill="currentColor" stroke="none">${CLOUD}</g>`;
 const CUSTOM = {
-  cloud: `<g fill="currentColor" stroke="none">${CLOUD}</g>`,
+  cloud:
+    `<mask id="{id}"><rect width="24" height="24" fill="#fff" stroke="none"/>${MAGO}</mask>` +
+    `<g mask="url(#{id})" fill="currentColor" stroke="none">${CLOUD}</g>`,
   cloudCheck: cut('m8.5 15.4 2.4 2.4 4.6-4.7'),
   cloudUpload: cut('M12 18.6v-5.4m-2.7 2.5 2.7-2.7 2.7 2.7'),
   cloudOff: `${cut('M2.5 2.5l19 19', 4.6)}<path d="M2.5 2.5l19 19"/>`,

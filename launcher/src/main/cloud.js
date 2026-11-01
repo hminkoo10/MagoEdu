@@ -91,6 +91,7 @@ class Cloud extends EventEmitter {
       authMessage: this.authMessage,
       config: {
         serverUrl: cfg.serverUrl,
+        defaultServerUrl: this.store.defaults?.serverUrl || '',
         deviceName: cfg.deviceName,
         autoStart: cfg.autoStart,
         closeToTray: cfg.closeToTray,

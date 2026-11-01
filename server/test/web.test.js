@@ -54,7 +54,7 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
     assert.match(css.headers.get('content-type'), /^text\/css/);
   });
 
-  await t.test('로고(‘마고’ 글자가 있는 앱 아이콘)와 파비콘', async () => {
+  await t.test('로고와 파비콘 모두 ‘마고’ 글자가 있는 앱 아이콘', async () => {
     const page = (await rq('GET', '/')).data.toString('utf8');
     assert.ok(page.includes('href="favicon.svg"'));
     const logo = await rq('GET', '/logo.svg');
@@ -64,7 +64,7 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
     const icon = await rq('GET', '/favicon.svg');
     assert.equal(icon.status, 200);
     assert.equal(icon.headers.get('content-type'), 'image/svg+xml');
-    assert.ok(!icon.data.toString('utf8').includes('translate(137 262)'), '작은 파비콘은 글자 없이');
+    assert.ok(icon.data.toString('utf8').includes('translate(137 262)'), '파비콘도 ‘마고’ 글자가 있는 아이콘');
   });
 
   await t.test('폴더 밖 파일은 404', async () => {

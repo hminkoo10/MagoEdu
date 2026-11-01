@@ -23,6 +23,7 @@ class Store {
   constructor({ paths, safeStorage = null, defaults = {} }) {
     this.paths = paths;
     this.safe = safeStorage;
+    this.defaults = defaults; // 설치 파일에 들어 있는 기본값 (기본 서버 주소 등)
     this.config = { ...DEFAULT_CONFIG, ...defaults, ...readJsonSync(paths.configFile, {}) };
     if (!this.config.deviceId) this.config.deviceId = crypto.randomUUID();
     if (!this.config.deviceName) this.config.deviceName = os.hostname();

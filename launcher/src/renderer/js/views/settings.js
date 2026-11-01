@@ -51,7 +51,7 @@ export class SettingsView {
             'div',
             { class: 'card' },
             h('h2', { class: 'card-title' }, '서버'),
-            row('서버 주소', c.serverUrl, btn('바꾸기', { size: 'sm', onClick: () => this.changeServer() })),
+            row('서버 주소', c.serverUrl && c.serverUrl === c.defaultServerUrl ? `${c.serverUrl} · 기본 서버` : c.serverUrl, btn('바꾸기', { size: 'sm', onClick: () => this.changeServer() })),
             row('연결', s.online ? '연결되어 있어요' : '연결되지 않았어요', s.online ? pill('정상', 'green') : pill('끊김', 'red')),
             webUrl ? row('웹에서 열기', '브라우저·휴대폰에서도 같은 계정으로 공지·계정·관리를 할 수 있어요.', btn('열기', { size: 'sm', onClick: () => cloud.openExternal(webUrl) })) : null,
           ),
@@ -161,12 +161,20 @@ export class SettingsView {
   }
 
   async changeServer() {
-    const url = input({ value: this.store.state.config.serverUrl });
+    const c = this.store.state.config;
+    const url = input({ value: c.serverUrl });
+    // 기본 서버(설치 파일에 들어 있는 주소, 보통 mago.milky.kr)로 되돌리기
+    const reset = c.defaultServerUrl ? btn('기본 서버로', { variant: 'subtle', iconName: 'rotate', title: c.defaultServerUrl }) : null;
+    reset?.addEventListener('click', () => {
+      url.value = c.defaultServerUrl;
+      url.focus();
+    });
     await dialog({
       title: '서버 주소 바꾸기',
       sub: '다른 서버로 바꾸면 로그아웃하고 그 서버 계정으로 다시 로그인해요.',
       body: field('서버 주소', url),
       ok: '바꾸기',
+      footLeft: reset,
       onOk: () => this.cloud.setServer(url.value),
     });
   }
