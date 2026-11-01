@@ -20,10 +20,7 @@
     text-align: center; animation: up .4s cubic-bezier(.2,.8,.2,1) both;
   }
   @keyframes up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-  .logo {
-    width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 20px;
-    background: linear-gradient(135deg, #FFA352, #F76B15); display: grid; place-items: center;
-  }
+  .logo { display: block; width: 72px; height: 72px; margin: 0 auto 20px; }
   h1 { font-size: 24px; margin: 0 0 8px; font-weight: 700; letter-spacing: -0.02em; }
   p { margin: 0; color: var(--g600); font-size: 15px; line-height: 1.6; }
   .btn {
@@ -44,9 +41,10 @@
 </head>
 <body>
 <main class="card">
-  <div class="logo" aria-hidden="true">
-    <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
-  </div>
+  <svg class="logo" viewBox="0 0 512 512" aria-hidden="true">
+    <rect width="512" height="512" rx="116" fill="#F76B15"/>
+    <g fill="#fff" transform="translate(256 256) scale(1.12) translate(-256 -252)"><circle cx="186" cy="266" r="86"/><circle cx="300" cy="222" r="116"/><rect x="76" y="252" width="360" height="156" rx="78"/></g>
+  </svg>
   <h1>마고에듀 통합 클라우드</h1>
   <p>로그인 한 번으로 학원 프로그램을 설치하고,<br>어느 컴퓨터에서든 같은 데이터로 이어서 써요.</p>
   <a id="dl" class="btn disabled" href="/download/launcher">확인하는 중…</a>

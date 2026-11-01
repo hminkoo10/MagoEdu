@@ -76,11 +76,8 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; colo
   display: flex; flex-direction: column; padding: 22px 14px 16px;
 }
 .brand { display: flex; align-items: center; gap: 10px; padding-left: 6px; }
-.logo {
-  width: 40px; height: 40px; border-radius: 12px; flex: none; display: grid; place-items: center; color: #fff;
-  background: linear-gradient(135deg, var(--g0), var(--g2));
-}
-.logo.lg { width: 64px; height: 64px; border-radius: 18px; }
+.logo { width: 40px; height: 40px; flex: none; display: block; }
+.logo.lg { width: 64px; height: 64px; }
 .brand-title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
 .brand-sub { font-size: 12px; color: var(--grey500); }
 
@@ -461,7 +458,7 @@ select.input {
     height: calc(56px + env(safe-area-inset-top));
     padding: env(safe-area-inset-top) calc(12px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));
   }
-  .logo.sm { width: 30px; height: 30px; border-radius: 9px; }
+  .logo.sm { width: 30px; height: 30px; }
   .topbar-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .topbar .topbar-notice { width: auto; padding: 0 10px; gap: 6px; color: var(--accent-text); }
   .topbar .topbar-notice .badge-num { margin-left: 0; }

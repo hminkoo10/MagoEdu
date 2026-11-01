@@ -80,7 +80,7 @@ class Shell {
     this.sidebar = h(
       'aside',
       { class: 'sidebar' },
-      h('div', { class: 'brand' }, h('div', { class: 'logo' }, ic('cloud', 22, 2.2)), h('div', {}, h('div', { class: 'brand-title' }, '마고에듀 클라우드'), h('div', { class: 'brand-sub' }, web ? '웹' : `버전 ${store.state.version}`))),
+      h('div', { class: 'brand' }, h('img', { class: 'logo', src: 'logo.svg', alt: '' }), h('div', {}, h('div', { class: 'brand-title' }, '마고에듀 클라우드'), h('div', { class: 'brand-sub' }, web ? '웹' : `버전 ${store.state.version}`))),
       this.nav,
       this.foot,
     );
@@ -90,7 +90,7 @@ class Shell {
     this.topTitle = h('div', { class: 'topbar-title' });
     this.topNotice = btn('', { variant: 'subtle', iconName: 'megaphone', title: '새 공지', cls: 'topbar-notice', onClick: () => this.go('notices') });
     this.topNotice.style.display = 'none';
-    this.topbar = h('header', { class: 'topbar' }, this.menuBtn, h('div', { class: 'logo sm' }, ic('cloud', 18, 2.2)), this.topTitle, this.topNotice);
+    this.topbar = h('header', { class: 'topbar' }, this.menuBtn, h('img', { class: 'logo sm', src: 'logo.svg', alt: '' }), this.topTitle, this.topNotice);
     this.scrim = h('div', { class: 'scrim', onClick: () => this.toggleNav(false) });
     this.el = h('div', { class: 'shell' }, this.sidebar, this.scrim, h('main', { class: 'main' }, this.topbar, this.offline, this.page));
     this.buildNav();
@@ -237,7 +237,7 @@ function authFrame(...children) {
 }
 
 function authHead(title, sub) {
-  return h('div', { class: 'auth-head' }, h('div', { class: 'logo lg' }, ic('cloud', 34, 2.2)), h('h1', {}, title), sub ? h('p', {}, sub) : null);
+  return h('div', { class: 'auth-head' }, h('img', { class: 'logo lg', src: 'logo.svg', alt: '' }), h('h1', {}, title), sub ? h('p', {}, sub) : null);
 }
 
 function serverView({ back } = {}) {
