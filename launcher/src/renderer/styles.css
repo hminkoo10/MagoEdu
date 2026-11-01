@@ -327,7 +327,7 @@ select.input {
 .app-desc { font-size: 13.5px; color: var(--grey600); line-height: 1.55; min-height: 42px; }
 .app-task { display: flex; flex-direction: column; gap: 6px; }
 .app-task .t { font-size: 12.5px; color: var(--grey600); display: flex; justify-content: space-between; }
-.app-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+.app-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: auto; flex-wrap: wrap; } /* 버튼이 많아 줄이 넘어가도 오른쪽에 */
 .app-foot .sync { flex: 1; min-width: 0; font-size: 12.5px; color: var(--grey500); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-foot .sync .ic { color: var(--grey400); }
 .app-foot .sync.warn { color: var(--warning); }

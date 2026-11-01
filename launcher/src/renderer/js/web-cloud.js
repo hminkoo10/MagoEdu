@@ -67,17 +67,24 @@ function uuid() {
   return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
 }
 
-function detectClient() {
-  const ua = navigator.userAgent || '';
-  const touch = (navigator.maxTouchPoints || 0) > 1;
+/**
+ * 이 브라우저가 어떤 기기인지.
+ * 안드로이드 태블릿의 Chrome 은 PC 처럼 보이는 주소(UA, "X11; Linux x86_64")를 보내고, iPad 도 Mac 처럼 보내서
+ * userAgentData.platform 과 터치 여부를 같이 본다.
+ */
+export function detectClient(nav = navigator) {
+  const ua = nav.userAgent || '';
+  const platform = String(nav.userAgentData?.platform || '');
+  const touchPoints = nav.maxTouchPoints || 0;
   let os = 'other';
   let osName = '';
   if (/iPhone|iPod/.test(ua)) [os, osName] = ['ios', 'iPhone'];
-  else if (/iPad/.test(ua) || (/Macintosh/.test(ua) && touch)) [os, osName] = ['ios', 'iPad'];
-  else if (/Android/.test(ua)) [os, osName] = ['android', 'Android'];
-  else if (/Windows/.test(ua)) [os, osName] = ['windows', 'Windows'];
-  else if (/Macintosh|Mac OS X/.test(ua)) [os, osName] = ['mac', 'Mac'];
-  else if (/CrOS/.test(ua)) osName = 'ChromeOS';
+  else if (/iPad/.test(ua) || (/Macintosh/.test(ua) && touchPoints > 1)) [os, osName] = ['ios', 'iPad'];
+  else if (/Android/.test(ua) || /^android$/i.test(platform)) [os, osName] = ['android', 'Android'];
+  else if (/CrOS/.test(ua) || /^chrome ?os$/i.test(platform)) osName = 'ChromeOS';
+  else if (/Windows/.test(ua) || /^windows$/i.test(platform)) [os, osName] = ['windows', 'Windows'];
+  else if (/Macintosh|Mac OS X/.test(ua) || /^macos$/i.test(platform)) [os, osName] = ['mac', 'Mac'];
+  else if (/Linux/.test(ua) && touchPoints > 0) [os, osName] = ['android', 'Android']; // PC 처럼 보이는 안드로이드 태블릿
   else if (/Linux/.test(ua)) osName = 'Linux';
   let browser = '브라우저';
   if (/SamsungBrowser\//.test(ua)) browser = 'Samsung Internet';
@@ -86,7 +93,7 @@ function detectClient() {
   else if (/Firefox\/|FxiOS\//.test(ua)) browser = 'Firefox';
   else if (/Chrome\/|CriOS\//.test(ua)) browser = 'Chrome';
   else if (/Safari\//.test(ua)) browser = 'Safari';
-  const mobile = os === 'ios' || os === 'android' || /Mobi/.test(ua) || !!navigator.userAgentData?.mobile;
+  const mobile = os === 'ios' || os === 'android' || /Mobi/.test(ua) || !!nav.userAgentData?.mobile;
   return { os, mobile, canOpenApp: os === 'windows' && !mobile, name: [browser, osName].filter(Boolean).join(' · ') };
 }
 
@@ -516,6 +523,7 @@ export function createWebCloud() {
 
     refreshApps: call(() => c.refreshApps()),
     launch: call((id) => openScheme(`magoedu://launch/${encodeURIComponent(id)}`)),
+    installInApp: call((id) => openScheme(`magoedu://install/${encodeURIComponent(id)}`)),
     openApp: call(() => openScheme('magoedu://open')),
 
     refreshNotices: call(() => c.refreshNotices()),

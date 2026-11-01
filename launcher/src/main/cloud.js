@@ -762,6 +762,25 @@ class Cloud extends EventEmitter {
     return this.runner.stop(id);
   }
 
+  /**
+   * 웹의 ‘PC에 설치’(magoedu://install/<id>): 없으면 설치, 새 버전이 있으면 업데이트, 이미 최신이면 알려만 준다. 켜지는 않는다.
+   */
+  async installFromLink(id) {
+    if (!this.user) throw new Error('로그인이 필요해요.');
+    const app = this._app(id);
+    if (!isDesktop(app)) throw new Error(`${app.name}은(는) 휴대폰에서 내려받아 설치해요.`);
+    const task = this.tasks.get(id);
+    if (task && (task.kind === 'install' || task.kind === 'update')) return { busy: true }; // 이미 받는 중
+    const inst = this.installed[id];
+    if (inst && !this.installer.needsUpdate(inst, app)) {
+      this._toast(`${app.name}은(는) 이미 최신 버전(${inst.version})으로 설치돼 있어요`, 'info');
+      return { already: true, version: inst.version };
+    }
+    if (!app.release) throw new Error(`${app.name}은(는) 아직 배포된 버전이 없어요.`);
+    const r = await this.install(id);
+    return { installed: true, version: r.version };
+  }
+
   /** 바로 누르면 곧바로 켜지는지 (설치돼 있고 받을 업데이트가 없음) */
   canLaunchNow(id) {
     const inst = this.installed[id];

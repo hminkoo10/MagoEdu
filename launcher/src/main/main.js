@@ -151,6 +151,17 @@ async function doLaunch(id, { fromLink = false } = {}) {
   }
 }
 
+/** 웹의 ‘PC에 설치’(magoedu://install/<id>): 설치·업데이트만 하고 켜지는 않는다. 진행은 프로그램 화면에서 보여 줌 */
+async function doInstall(id) {
+  showWindow();
+  send('navigate', { view: 'home' });
+  try {
+    await cloud.installFromLink(id);
+  } catch (err) {
+    send('toast', { text: err.message, kind: 'error' });
+  }
+}
+
 function quitApp() {
   quitting = true;
   app.quit();
@@ -167,9 +178,11 @@ function applyAutoStart(cfg) {
 }
 
 // ---------------------------------------------------------------- magoedu:// 주소 (바로 가기·웹·프로그램이 통합 클라우드를 부를 때)
-//   magoedu://launch/<id> : 그 프로그램을 켠다. 로그인 정보를 확인하는 중이면 기다리고, 로그인 전이면 로그인한 뒤에 켠다.
-//   magoedu://open        : 창만 연다.
-let pendingLaunch = null;
+//   magoedu://launch/<id>  : 그 프로그램을 켠다 (필요하면 설치·업데이트부터).
+//   magoedu://install/<id> : 설치·업데이트만 한다 (웹의 ‘PC에 설치’).
+//   magoedu://open         : 창만 연다.
+// launch·install 은 로그인 정보를 확인하는 중이면 기다리고, 로그인 전이면 로그인한 뒤에 한다.
+let pendingLink = null; // { kind, id }
 
 function linkFrom(argv) {
   const url = argv.find((a) => /^magoedu:\/\//i.test(a));
@@ -185,25 +198,27 @@ function linkFrom(argv) {
 function handleProtocol(argv) {
   const link = linkFrom(argv);
   if (!link) return false;
-  if (link.kind === 'launch' && link.id) {
-    pendingLaunch = link.id;
-    launchPending();
+  if ((link.kind === 'launch' || link.kind === 'install') && link.id) {
+    pendingLink = link;
+    if (link.kind === 'install') showWindow();
+    runPending();
   } else {
     showWindow();
   }
   return true;
 }
 
-function launchPending() {
-  if (!pendingLaunch || !cloud) return;
+function runPending() {
+  if (!pendingLink || !cloud) return;
   if (cloud.phase !== 'ready') {
     showWindow(); // 로그인하면 'ready' 로 다시 옴
     return;
   }
   if (!cloud.settled) return; // 세션 확인·목록 새로 고침이 끝나면 'ready' 로 다시 옴
-  const id = pendingLaunch;
-  pendingLaunch = null;
-  doLaunch(id, { fromLink: true });
+  const { kind, id } = pendingLink;
+  pendingLink = null;
+  if (kind === 'install') doInstall(id);
+  else doLaunch(id, { fromLink: true });
 }
 
 // ---------------------------------------------------------------- IPC
@@ -307,9 +322,9 @@ if (!isTest && !app.requestSingleInstanceLock()) {
         trayKey = key;
         tray.setContextMenu(buildTrayMenu(s));
       }
-      if (pendingLaunch && s.phase !== 'ready' && s.phase !== 'boot') showWindow(); // 로그인이 필요해짐
+      if (pendingLink && s.phase !== 'ready' && s.phase !== 'boot') showWindow(); // 로그인이 필요해짐
     });
-    cloud.on('ready', () => launchPending());
+    cloud.on('ready', () => runPending());
     cloud.on('toast', (t) => send('toast', t));
     cloud.on('config', (cfg) => applyAutoStart(cfg));
     registerIpc();

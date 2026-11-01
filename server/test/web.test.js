@@ -42,6 +42,19 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
     assert.match(css.headers.get('content-type'), /^text\/css/);
   });
 
+  await t.test('로고(‘마고’ 글자가 있는 앱 아이콘)와 파비콘', async () => {
+    const page = (await rq('GET', '/')).data.toString('utf8');
+    assert.ok(page.includes('href="favicon.svg"'));
+    const logo = await rq('GET', '/logo.svg');
+    assert.equal(logo.status, 200);
+    assert.equal(logo.headers.get('content-type'), 'image/svg+xml');
+    assert.ok(logo.data.toString('utf8').includes('translate(137 262)'), '‘마고’ 글자');
+    const icon = await rq('GET', '/favicon.svg');
+    assert.equal(icon.status, 200);
+    assert.equal(icon.headers.get('content-type'), 'image/svg+xml');
+    assert.ok(!icon.data.toString('utf8').includes('translate(137 262)'), '작은 파비콘은 글자 없이');
+  });
+
   await t.test('폴더 밖 파일은 404', async () => {
     for (const p of [
       '/..%2F..%2Fserver%2Fpackage.json',
@@ -92,5 +105,6 @@ test('웹 화면이 없으면 지금처럼 내려받기 안내 페이지', async
   const html = r.data.toString('utf8');
   assert.ok(html.includes('/download/launcher'));
   assert.ok(!html.includes('js/app.js'));
+  assert.ok(html.includes('translate(137 262)'), '로고는 ‘마고’ 글자가 있는 앱 아이콘');
   assert.equal(r.headers.get('x-frame-options'), 'DENY');
 });
