@@ -17,7 +17,19 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
     assert.equal(r.status, 200);
     assert.match(r.headers.get('content-type'), /^text\/html/);
     assert.ok(r.data.toString('utf8').includes('js/app.js'));
-    assert.equal(r.headers.get('cache-control'), 'no-cache');
+    assert.equal(r.headers.get('cache-control'), 'private, no-cache');
+  });
+
+  await t.test('바뀌지 않았으면 304 (배포하면 바로 새 파일)', async () => {
+    const first = await rq('GET', '/logo.svg');
+    assert.equal(first.headers.get('cache-control'), 'private, no-cache', 'Cloudflare 가 오래 보관하게 바꾸지 않게');
+    const etag = first.headers.get('etag');
+    assert.ok(etag);
+    const again = await rq('GET', '/logo.svg', { headers: { 'if-none-match': etag } });
+    assert.equal(again.status, 304);
+    assert.equal(again.headers.get('etag'), etag);
+    const other = await rq('GET', '/logo.svg', { headers: { 'if-none-match': 'W/"0-0"' } });
+    assert.equal(other.status, 200);
   });
 
   await t.test('HTML 보안 헤더', async () => {

@@ -122,7 +122,7 @@ const STATIC_MIME = {
   '.json': 'application/json; charset=utf-8',
 };
 
-function serveStatic(res, dir, rel) {
+function serveStatic(req, res, dir, rel) {
   const file = path.resolve(dir, rel);
   if (!file.startsWith(path.resolve(dir) + path.sep)) return false;
   let stat;
@@ -133,11 +133,20 @@ function serveStatic(res, dir, rel) {
   }
   if (!stat.isFile()) return false;
   const ext = path.extname(file).toLowerCase();
+  const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+  // 글꼴은 거의 안 바뀌니 일주일 보관, 나머지는 매번 새 버전인지 확인 (배포하면 바로 바뀌게).
+  // private: Cloudflare 가 no-cache 를 '브라우저에 4시간 보관'으로 바꿔 버리지 않게
+  const cacheControl = ext === '.woff2' ? 'public, max-age=604800' : 'private, no-cache';
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, { etag, 'cache-control': cacheControl });
+    res.end();
+    return true;
+  }
   const headers = {
     'content-type': STATIC_MIME[ext] || 'application/octet-stream',
     'content-length': stat.size,
-    // 글꼴은 거의 안 바뀌니 일주일 보관, 나머지는 매번 새 버전인지 확인
-    'cache-control': ext === '.woff2' ? 'public, max-age=604800' : 'no-cache',
+    'cache-control': cacheControl,
+    etag,
   };
   if (ext === '.html') {
     // 다른 사이트가 이 화면을 틀(iframe)에 넣지 못하게

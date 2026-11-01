@@ -144,8 +144,8 @@ function createCloudServer(config = loadConfig()) {
         if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) {
           const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
           // 웹 화면 먼저, 그다음 public
-          if (config.webDir && serveStatic(res, config.webDir, rel)) return;
-          if (serveStatic(res, PUBLIC_DIR, rel)) return;
+          if (config.webDir && serveStatic(req, res, config.webDir, rel)) return;
+          if (serveStatic(req, res, PUBLIC_DIR, rel)) return;
         }
         throw new HttpError(404, '찾을 수 없어요.', 'not_found');
       }
