@@ -14,21 +14,32 @@ const { compileRules } = require('../core/rules');
 const { detectLegacy, importLegacy } = require('../core/legacy');
 const { writeTrust, TicketStore, verifyTicket } = require('../core/tickets');
 const { Runner, buildEnv } = require('../core/runner');
+const { EventStream } = require('../core/events');
 const { readJsonSync, formatBytes, dirSize } = require('../core/fsutil');
 
-const SYNC_EVERY = 5 * 60 * 1000;
+const SYNC_EVERY = 5 * 60 * 1000; // 실시간 알림이 끊겨 있어도 이 간격으로는 맞춤
 const APPS_EVERY = 30 * 60 * 1000;
 const NOTICES_EVERY = 10 * 60 * 1000;
 const WATCH_EVERY = 15 * 1000;
+const REMOTE_DELAY = 300; // 다른 기기에서 바뀌었다는 알림 → 잠깐 모았다가 받기
+const LOCAL_DELAY = 1000; // 이 컴퓨터에서 파일이 바뀜 → 쓰기가 끝나길 잠깐 기다렸다가 올리기
+const QUEUE_MAX_WAIT = 5000; // 계속 바뀌어도 이보다 오래 미루지는 않음
+
+// 동기화 폴더를 지켜볼 때 건너뛰는 것: 통합 클라우드·프로그램의 임시 파일
+const IGNORE_LOCAL = [/(^|\/)\.sync-state\.json$/, /^conflicts(\/|$)/, /\.tmp$/i, /\.magoedu-dl(\.part)?$/i, /(^|\/)\.magoedu/];
+
+/** PC(Windows)에서 설치·실행하는 프로그램인지 (안드로이드 항목은 내려받기 안내만) */
+const isDesktop = (a) => (a?.platform || 'windows') === 'windows';
 
 class Cloud extends EventEmitter {
-  constructor({ paths, store, version, log, platform = process.platform }) {
+  constructor({ paths, store, version, log, platform = process.platform, shortcuts = null }) {
     super();
     this.paths = paths;
     this.store = store;
     this.version = version;
     this.log = log;
     this.platform = platform;
+    this.shortcuts = shortcuts; // 바탕 화면·시작 메뉴 바로 가기 (설치한 통합 클라우드에서만)
     this.phase = 'boot'; // boot | setup | login | ready
     this.user = null;
     this.authMessage = null;
@@ -44,6 +55,12 @@ class Cloud extends EventEmitter {
     this.locks = new Map();
     this.timers = [];
     this.adopted = new Set(); // 통합 클라우드를 다시 켜기 전에 실행한 프로그램
+    this.settled = false; // 로그인한 뒤 세션 확인·목록 새로 고침이 끝났는지
+    this.events = null; // 서버 실시간 알림
+    this.watchers = new Map(); // id → 동기화 폴더 지켜보기
+    this.syncQueue = new Map(); // id → 곧 할 동기화
+    this._syncing = {};
+    this._syncAgain = {};
     this.installer = new Installer({ paths, log });
     this.runner = new Runner({ paths, log });
     this.runner.on('exit', (id, info) => this._onAppExit(id, info));
@@ -85,6 +102,7 @@ class Cloud extends EventEmitter {
       notices: this.notices,
       unreadNotices: acc ? this.notices.filter((n) => n.id > (acc.noticesSeen || 0)).length : 0,
       update: this.update,
+      shortcuts: !!this.shortcuts,
       apps: this.apps.map((a) => this._appView(a, acc)),
     };
   }
@@ -99,6 +117,7 @@ class Cloud extends EventEmitter {
       name: a.name,
       description: a.description,
       color: a.color,
+      platform: a.platform || 'windows',
       icon: this.icons[a.id] || null,
       release: a.release,
       coldStorage: a.coldStorage,
@@ -109,6 +128,7 @@ class Cloud extends EventEmitter {
       updateAvailable,
       task: this.tasks.get(a.id) || null,
       autoLaunch: acc ? acc.autoLaunch[a.id] ?? a.autoLaunchDefault : false,
+      desktopShortcut: this._shortcutRec(a.id).desktop,
       sync: this.syncInfo[a.id] || null,
     };
   }
@@ -247,10 +267,14 @@ class Cloud extends EventEmitter {
   }
 
   async _afterLogin({ fromSession }) {
+    this.settled = false;
     this._startTimers();
+    this._startRealtime();
     if (fromSession) await this.refreshMe().catch(() => {});
     await Promise.all([this.refreshApps().catch(() => {}), this.refreshNotices().catch(() => {})]);
     if (this.phase !== 'ready') return;
+    this.settled = true; // 바로 가기(magoedu://launch)로 부른 프로그램은 이때 켬
+    this.emit('ready');
     await this.syncAll({ quiet: true }).catch(() => {});
     this._autoUpdate();
     this._autoLaunch();
@@ -258,6 +282,8 @@ class Cloud extends EventEmitter {
 
   async logout() {
     this._stopTimers();
+    this._stopRealtime();
+    this.settled = false;
     try {
       await this.api.logout();
     } catch {
@@ -276,6 +302,8 @@ class Cloud extends EventEmitter {
   _authLost(err) {
     if (this.phase !== 'ready') return;
     this._stopTimers();
+    this._stopRealtime();
+    this.settled = false;
     this.store.clearSession();
     this.user = null;
     this.apps = [];
@@ -344,6 +372,8 @@ class Cloud extends EventEmitter {
     const r = await this._call(() => this.api.get('/api/apps'));
     this.apps = r.apps;
     this.installed = await this.installer.listInstalled();
+    this._watchAll();
+    this._ensureShortcuts();
     await this._loadIcons();
     await this._saveCachedCatalog();
     this.emitState();
@@ -401,6 +431,7 @@ class Cloud extends EventEmitter {
   install(id, { quiet = false } = {}) {
     return this._lock(id, async () => {
       const app = this._app(id);
+      if (!isDesktop(app)) throw new Error(`${app.name}은(는) 휴대폰에서 내려받아 설치해요.`);
       const before = this.installed[id];
       const kind = before ? 'update' : 'install';
       this._setTask(id, { kind, phase: 'download', progress: 0, text: '받는 중' });
@@ -420,6 +451,8 @@ class Cloud extends EventEmitter {
             }),
         });
         this.installed[id] = inst;
+        this._writeShortcuts(id); // 새 버전 폴더의 아이콘으로
+        this._watchAll();
         this._setTask(id, null);
         if (!quiet || !before) this._toast(before ? `${app.name}을(를) ${inst.version} 버전으로 업데이트했어요` : `${app.name}을(를) 설치했어요`, 'success');
         if (running && before) this._toast(`${app.name}을(를) 다시 켜면 새 버전으로 바뀌어요`, 'info');
@@ -436,14 +469,17 @@ class Cloud extends EventEmitter {
       if (this.runner.isRunning(id)) throw new Error('프로그램이 켜져 있어요. 먼저 꺼 주세요.');
       this._setTask(id, { kind: 'uninstall', phase: 'remove', progress: 0, text: '삭제하는 중' });
       try {
+        this._unwatch(id); // 지켜보는 동안에는 Windows 가 폴더를 지우지 못하게 함
         await this.installer.uninstall(id);
         delete this.installed[id];
+        this._removeShortcuts(id);
         if (removeData && this.user) {
           await fsp.rm(this.paths.account(this.user.id).app(id).root, { recursive: true, force: true });
           delete this.syncInfo[id];
         }
       } finally {
         this._setTask(id, null);
+        this._watchAll();
       }
       this._toast(`${this._name(id)}을(를) 삭제했어요`, 'success');
     });
@@ -464,11 +500,24 @@ class Cloud extends EventEmitter {
     return new SyncEngine({ api: this.api, appId: id, dirs, rules: compileRules(inst.manifest.sync), log: this.log });
   }
 
-  syncApp(id, { quiet = false } = {}) {
+  /**
+   * 한 프로그램을 맞춘다. 이미 도는 중이면 그것을 기다린다.
+   * fresh: 도는 중인 동기화가 이미 서버 목록·내 파일을 읽었을 수 있으니, 끝난 뒤 한 번 더 (여러 번 불러도 한 번만)
+   */
+  syncApp(id, { quiet = false, fresh = false } = {}) {
     const engine = this._engine(id);
     if (!engine) return Promise.resolve(null);
-    if (this._syncing?.[id]) return this._syncing[id];
-    this._syncing = this._syncing || {};
+    const running = this._syncing[id];
+    if (running) {
+      if (!fresh) return running;
+      if (!this._syncAgain[id]) {
+        this._syncAgain[id] = running.then(() => {
+          delete this._syncAgain[id];
+          return this.syncApp(id, { quiet });
+        });
+      }
+      return this._syncAgain[id];
+    }
     const prev = this.syncInfo[id] || {};
     this.syncInfo[id] = { ...prev, status: 'syncing', progress: null };
     this.emitState();
@@ -491,6 +540,7 @@ class Cloud extends EventEmitter {
           quotaExceeded: r.quotaExceeded,
           errors: r.errors.slice(0, 5),
           moved: r.uploaded + r.downloaded + r.deletedLocal + r.deletedRemote,
+          seq: r.seq,
         };
         if (r.usageBytes !== null) this.storage = { ...(this.storage || {}), usageBytes: r.usageBytes, quotaBytes: r.quotaBytes };
         if (r.conflicts.length && !quiet) {
@@ -513,9 +563,96 @@ class Cloud extends EventEmitter {
     return job;
   }
 
+  /** 동기화하는 프로그램: 설치했고 지금 목록에 있는 PC 프로그램 */
+  _syncIds() {
+    return Object.keys(this.installed).filter((id) => this.apps.some((a) => a.id === id && isDesktop(a)));
+  }
+
   async syncAll({ quiet = false } = {}) {
-    const ids = Object.keys(this.installed).filter((id) => this.apps.some((a) => a.id === id));
-    for (const id of ids) await this.syncApp(id, { quiet });
+    for (const id of this._syncIds()) await this.syncApp(id, { quiet });
+  }
+
+  // ---------------------------------------------------------------- 실시간 동기화
+  // 서버 알림(다른 기기에서 바뀜)과 동기화 폴더 지켜보기(이 컴퓨터에서 바뀜)로 바로 맞추고, 5분마다 맞추기는 그대로 둔다.
+  _startRealtime() {
+    this._stopRealtime();
+    const stream = new EventStream({ api: this.api, log: this.log });
+    stream.on('hello', () => {
+      this._online(true);
+      for (const id of this._syncIds()) this._queueSync(id, REMOTE_DELAY); // 끊긴 동안 바뀐 것
+    });
+    stream.on('change', (e) => this._onRemoteChange(e));
+    this.events = stream;
+    stream.start();
+    this._watchAll();
+  }
+
+  _stopRealtime() {
+    this.events?.stop();
+    this.events = null;
+    for (const id of [...this.watchers.keys()]) this._unwatch(id);
+    for (const q of this.syncQueue.values()) clearTimeout(q.timer);
+    this.syncQueue.clear();
+  }
+
+  _onRemoteChange(e) {
+    const id = e?.appId;
+    if (!id || !this._syncIds().includes(id)) return;
+    if (e.deviceId && e.deviceId === this.store.config.deviceId) return; // 이 컴퓨터가 올린 것
+    if (typeof e.seq === 'number' && e.seq <= (this.syncInfo[id]?.seq || 0)) return; // 이미 받은 것
+    this._queueSync(id, REMOTE_DELAY);
+  }
+
+  /** 잠깐 모았다가 한 번 맞춘다 (도는 중인 동기화가 있으면 끝난 뒤 한 번 더) */
+  _queueSync(id, delay) {
+    const now = Date.now();
+    let q = this.syncQueue.get(id);
+    if (!q) {
+      q = { first: now, timer: null };
+      this.syncQueue.set(id, q);
+    }
+    clearTimeout(q.timer);
+    q.timer = setTimeout(() => {
+      this.syncQueue.delete(id);
+      if (this.phase === 'ready') this.syncApp(id, { quiet: true, fresh: true });
+    }, Math.max(0, Math.min(delay, q.first + QUEUE_MAX_WAIT - now)));
+    q.timer.unref?.();
+  }
+
+  /** 설치한 프로그램의 동기화 폴더를 지켜본다 (프로그램이 파일을 쓰면 1초쯤 뒤에 올림) */
+  _watchAll() {
+    if (!this.events || this.phase !== 'ready' || !this.user) return;
+    const want = new Set(this._syncIds());
+    for (const id of [...this.watchers.keys()]) if (!want.has(id)) this._unwatch(id);
+    for (const id of want) if (!this.watchers.has(id)) this._watch(id);
+  }
+
+  _watch(id) {
+    const dir = this.paths.account(this.user.id).app(id).sync;
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const w = fs.watch(dir, { recursive: true }, (_type, name) => {
+        const rel = name ? String(name).replace(/\\/g, '/') : '';
+        if (rel && IGNORE_LOCAL.some((re) => re.test(rel))) return;
+        this._queueSync(id, LOCAL_DELAY);
+      });
+      w.on('error', () => this._unwatch(id)); // 폴더가 지워짐 등 → 다음 목록 새로 고침 때 다시
+      w.unref?.();
+      this.watchers.set(id, w);
+    } catch (err) {
+      this.log.warn?.(`[동기화] ${id} 폴더를 지켜보지 못했어요 (5분마다 맞춤)`, err.message);
+    }
+  }
+
+  _unwatch(id) {
+    const w = this.watchers.get(id);
+    if (!w) return;
+    this.watchers.delete(id);
+    try {
+      w.close();
+    } catch {
+      /* 이미 닫힘 */
+    }
   }
 
   // ---------------------------------------------------------------- 예전 데이터
@@ -579,6 +716,8 @@ class Cloud extends EventEmitter {
    */
   async launch(id, { skipLegacyCheck = false } = {}) {
     if (!this.user) throw new Error('로그인이 필요해요.');
+    const known = this.apps.find((a) => a.id === id);
+    if (known && !isDesktop(known)) throw new Error(`${known.name}은(는) 휴대폰에서 쓰는 프로그램이에요.`);
     if (this.runner.isRunning(id)) {
       this._toast(`${this._name(id)}은(는) 이미 켜져 있어요`, 'info');
       return { already: true };
@@ -592,6 +731,8 @@ class Cloud extends EventEmitter {
       if (legacy.length) return { needsLegacy: legacy };
     }
     return this._lock(id, async () => {
+      // 바로 가기와 자동 실행이 거의 같이 부르면 먼저 켠 쪽만
+      if (this.runner.isRunning(id)) return { already: true };
       this._setTask(id, { kind: 'launch', phase: 'sync', progress: null, text: '데이터를 맞추는 중' });
       try {
         await this.syncApp(id, { quiet: true });
@@ -621,6 +762,13 @@ class Cloud extends EventEmitter {
     return this.runner.stop(id);
   }
 
+  /** 바로 누르면 곧바로 켜지는지 (설치돼 있고 받을 업데이트가 없음) */
+  canLaunchNow(id) {
+    const inst = this.installed[id];
+    const app = this.apps.find((a) => a.id === id);
+    return !!(inst && app && isDesktop(app) && !this.installer.needsUpdate(inst, app));
+  }
+
   _onAppExit(id, info) {
     this.emitState();
     if (info.restart && this.user && info.userId === this.user.id) {
@@ -643,6 +791,7 @@ class Cloud extends EventEmitter {
     if (!this.user) return;
     const s = this.store.accountSettings(this.user.id);
     for (const a of this.apps) {
+      if (!isDesktop(a)) continue;
       const on = s.autoLaunch[a.id] ?? a.autoLaunchDefault;
       if (on && this.installed[a.id] && !this.runner.isRunning(a.id)) {
         this.launch(a.id, { skipLegacyCheck: true }).catch((err) => this._toast(`${a.name} 자동 실행 실패: ${err.message}`, 'warning'));
@@ -699,6 +848,70 @@ class Cloud extends EventEmitter {
     }
   }
 
+  // ---------------------------------------------------------------- 바로 가기 (바탕 화면·시작 메뉴)
+  // 이 컴퓨터 설정(config.shortcuts)에 { desktop, name(지난번 파일 이름) } 을 둔다. 바탕 화면은 기본으로 켬.
+  _shortcutRec(id) {
+    return { desktop: true, ...(this.store.config.shortcuts?.[id] || {}) };
+  }
+
+  _saveShortcutRec(id, rec) {
+    const all = { ...(this.store.config.shortcuts || {}) };
+    if (rec) all[id] = rec;
+    else delete all[id];
+    this.store.setConfig({ shortcuts: all });
+  }
+
+  _writeShortcuts(id) {
+    if (!this.shortcuts) return;
+    const inst = this.installed[id];
+    const app = this.apps.find((a) => a.id === id);
+    if (!inst || !isDesktop(app)) return;
+    const rec = this._shortcutRec(id);
+    try {
+      const name = this.shortcuts.write({
+        id,
+        name: app?.name || inst.name || id,
+        description: app?.description || '',
+        icon: path.join(inst.dir, ...inst.manifest.exe.split('/')),
+        desktop: rec.desktop,
+        previous: rec.name,
+      });
+      this._saveShortcutRec(id, { ...rec, name });
+    } catch (err) {
+      this.log.warn?.(`[바로 가기] ${id}`, err.message);
+    }
+  }
+
+  /** 이 기능 전에 설치한 프로그램이나 이름이 바뀐 프로그램의 바로 가기 (지운 바로 가기를 다시 만들지는 않음) */
+  _ensureShortcuts() {
+    if (!this.shortcuts) return;
+    for (const id of this._syncIds()) {
+      const rec = this.store.config.shortcuts?.[id];
+      const app = this.apps.find((a) => a.id === id);
+      if (!rec || rec.name !== this.shortcuts.fileName(app.name)) this._writeShortcuts(id);
+    }
+  }
+
+  _removeShortcuts(id) {
+    const rec = this.store.config.shortcuts?.[id];
+    if (!rec) return;
+    try {
+      this.shortcuts?.remove(rec.name);
+    } catch (err) {
+      this.log.warn?.(`[바로 가기] ${id}`, err.message);
+    }
+    this._saveShortcutRec(id, null);
+  }
+
+  setDesktopShortcut(id, on) {
+    if (!this.shortcuts) throw new Error('설치한 통합 클라우드에서만 바로 가기를 만들 수 있어요.');
+    if (!this.installed[id]) throw new Error('프로그램을 먼저 설치해 주세요.');
+    this._saveShortcutRec(id, { ...this._shortcutRec(id), desktop: !!on });
+    this._writeShortcuts(id);
+    this.emitState();
+    return !!on;
+  }
+
   setConfig(patch) {
     const allowed = ['deviceName', 'autoStart', 'closeToTray', 'autoUpdateApps'];
     const clean = Object.fromEntries(Object.entries(patch || {}).filter(([k]) => allowed.includes(k)));
@@ -710,6 +923,7 @@ class Cloud extends EventEmitter {
 
   shutdown() {
     this._stopTimers();
+    this._stopRealtime();
   }
 }
 

@@ -3,6 +3,12 @@
 // SQLite (Node 기본 내장 node:sqlite) - 따로 설치할 것이 없다.
 const { DatabaseSync } = require('node:sqlite');
 
+// 2번 고침에서 넣는 항목 (작은따옴표가 없어야 SQL 안에 그대로 넣을 수 있음)
+const TAJONG_ANDROID = {
+  description: '휴대폰에서 종을 울리고, PC와 시간표·종소리를 함께 맞추는 마고 타종 안드로이드 앱',
+  source: { type: 'github', repo: 'hminkoo10/Mapl-Tajong', asset: '^MaplTajong-(\\d+\\.\\d+\\.\\d+)\\.apk$' },
+};
+
 const MIGRATIONS = [
   // 1: 처음 구조
   `
@@ -148,6 +154,20 @@ const MIGRATIONS = [
     PRIMARY KEY (user_id, app_id, grp)
   );
   `,
+
+  // 2: 프로그램마다 플랫폼(windows | android), 마고 타종 안드로이드 내려받기 항목
+  //    (처음 설치하는 서버는 비어 있으니 catalog.default.json 에서 넣고, 이미 쓰던 서버에만 여기서 넣음)
+  `
+  ALTER TABLE apps ADD COLUMN platform TEXT NOT NULL DEFAULT 'windows';
+
+  INSERT INTO apps(id, name, description, sort, enabled, source, icon_url, exe, color, cold_enabled, cold_days,
+                   auto_launch_default, platform, created_at, updated_at)
+  SELECT 'tajong-android', '마고 타종 (안드로이드)', '${TAJONG_ANDROID.description}',
+         COALESCE((SELECT sort FROM apps WHERE id = 'tajong'), (SELECT MAX(sort) + 1 FROM apps)), 1,
+         '${JSON.stringify(TAJONG_ANDROID.source)}', (SELECT icon_url FROM apps WHERE id = 'tajong'), '', '#F76B15', 0, 30, 0,
+         'android', CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+  WHERE EXISTS (SELECT 1 FROM apps) AND NOT EXISTS (SELECT 1 FROM apps WHERE id = 'tajong-android');
+  `,
 ];
 
 function openDb(file) {
@@ -209,4 +229,4 @@ function wrap(raw) {
   };
 }
 
-module.exports = { openDb };
+module.exports = { openDb, MIGRATIONS };

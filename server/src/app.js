@@ -13,6 +13,7 @@ const { createServices } = require('./services');
 const { BlobStore } = require('./storage');
 const { Catalog } = require('./catalog');
 const { createJobs } = require('./jobs');
+const { EventHub } = require('./events');
 
 const VERSION = require('../package.json').version;
 // 자동 배포 때 넣는 빌드 정보 (어느 커밋인지) — 배포 후 새 코드가 켜졌는지 확인하는 데 씀
@@ -79,9 +80,20 @@ function createCloudServer(config = loadConfig()) {
     return seq;
   };
 
+  // 실시간 알림 (시험할 때는 간격을 줄일 수 있음)
+  const events = new EventHub({
+    svc,
+    log,
+    pingMs: config.eventPingMs,
+    recheckMs: config.eventRecheckMs,
+    perSession: config.eventStreamsPerSession,
+    maxTotal: config.maxEventStreams,
+  });
+
   const deps = {
     db,
     svc,
+    events,
     keys,
     blobs,
     catalog,
@@ -96,7 +108,7 @@ function createCloudServer(config = loadConfig()) {
       if (user.role === 'admin') fs.rmSync(path.join(config.dataDir, ADMIN_PASSWORD_FILE), { force: true });
     },
   };
-  deps.jobs = createJobs({ db, svc, blobs, catalog, log, nextSeq });
+  deps.jobs = createJobs({ db, svc, blobs, catalog, log, nextSeq, events });
 
   const initialAdmin = seedAdmin(db, config, log);
 
@@ -175,6 +187,7 @@ function createCloudServer(config = loadConfig()) {
     async close() {
       catalog.stop();
       deps.jobs.stop();
+      events.close(); // 열린 실시간 연결 때문에 끄기가 늦어지지 않게
       blobs.close();
       await new Promise((resolve) => {
         server.close(() => resolve());

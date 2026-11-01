@@ -11,6 +11,8 @@ const { spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const { writeJsonSync, readJsonSync } = require('./fsutil');
 
+const STOP_GRACE_MS = 10 * 1000; // 끄기: 창 닫기 신호 뒤 이만큼 기다렸다가 강제로 끔
+
 function buildEnv({ base = process.env, ticket, appId, user, appDirs, serverUrl, launcherVersion, trustFile }) {
   return {
     ...base,
@@ -102,17 +104,27 @@ class Runner extends EventEmitter {
     return rec;
   }
 
-  stop(appId) {
+  stop(appId, { graceMs = STOP_GRACE_MS } = {}) {
     const r = this.running.get(appId);
     const pid = r?.pid || readJsonSync(this.paths.app(appId).running, null)?.pid;
     if (!pid) return false;
     try {
       if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T'], { windowsHide: true });
       else process.kill(pid, 'SIGTERM');
-      return true;
     } catch {
       return false;
     }
+    // 창을 닫으면 트레이로 숨기만 하는 프로그램(타종)도 있어서, 잠시 뒤에도 켜져 있으면 강제로 끈다
+    setTimeout(() => {
+      if (!this.isRunning(appId) || this.runningInfo(appId)?.pid !== pid) return;
+      try {
+        if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
+        else process.kill(pid, 'SIGKILL');
+      } catch {
+        /* 이미 꺼짐 */
+      }
+    }, graceMs).unref();
+    return true;
   }
 }
 

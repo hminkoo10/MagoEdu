@@ -9,7 +9,7 @@ const { DAY } = require('./util');
 
 const TOMBSTONE_KEEP_DAYS = 180;
 
-function createJobs({ db, svc, blobs, catalog, log, nextSeq }) {
+function createJobs({ db, svc, blobs, catalog, log, nextSeq, events = null }) {
   let timer = null;
 
   function runColdStorage(now = Date.now()) {
@@ -31,11 +31,11 @@ function createJobs({ db, svc, blobs, catalog, log, nextSeq }) {
       for (const c of candidates) {
         const last = Math.max(c.last_change || 0, c.last_used || 0);
         if (last >= cutoff) continue;
-        db.tx(() => {
-          const seq = nextSeq();
+        const seq = db.tx(() => {
+          const n = nextSeq();
           db.run(
             'UPDATE files SET evicted = 1, seq = ? WHERE user_id = ? AND app_id = ? AND grp = ? AND deleted = 0 AND evicted = 0',
-            seq,
+            n,
             c.user_id,
             app.id,
             c.grp,
@@ -49,7 +49,9 @@ function createJobs({ db, svc, blobs, catalog, log, nextSeq }) {
             last,
             now,
           );
+          return n;
         });
+        events?.publish(c.user_id, app.id, seq, null); // 서버가 정리함 (기기 없음)
         groups += 1;
         files += c.n;
         bytes += c.bytes || 0;

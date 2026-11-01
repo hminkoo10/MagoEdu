@@ -5,6 +5,7 @@
 // 각 프로그램은 GitHub Releases 에 올린 "통합 클라우드용 묶음 파일"(zip)로 배포한다. (개별 설치 파일은 없음)
 //   source: { type: 'github', repo: 'owner/name', asset: '^Name-(\d+\.\d+\.\d+)-win-x64\.zip$', tagPrefix?: '...' }
 //   source: { type: 'local' }  → <DATA_DIR>/packages/<앱 id>/*.zip 을 그대로 씀 (직접 운영·시험용)
+// 안드로이드 프로그램(platform: 'android')은 같은 방식으로 APK 를 찾아 웹에서 내려받게만 한다 (통합 클라우드가 설치하지 않음).
 //
 // 통합 클라우드 프로그램 자체의 업데이트(electron-updater)도 여기서 같이 찾는다.
 
@@ -18,6 +19,14 @@ const { compareVersions, jsonParse } = require('./util');
 const SHA_RE = /^[0-9a-f]{64}$/;
 const DEFAULT_LOCAL_ASSET = '^[A-Za-z0-9_.-]+?-(\\d+\\.\\d+\\.\\d+)(?:-win-x64)?\\.zip$';
 const LAUNCHER_SETUP_RE = /^MagoEduCloud-Setup-(\d+\.\d+\.\d+)\.exe$/;
+const PLATFORMS = ['windows', 'android'];
+const APK_TYPE = 'application/vnd.android.package-archive';
+
+/** 내려받을 때 파일 이름 (한글 이름도 깨지지 않게) */
+function contentDisposition(name) {
+  const ascii = String(name).replace(/[^\x20-\x7e]|["\\]/g, '_');
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
 
 function rowToApp(r) {
   return {
@@ -32,6 +41,7 @@ function rowToApp(r) {
     color: r.color || '',
     coldStorage: { enabled: !!r.cold_enabled, days: r.cold_days },
     autoLaunchDefault: !!r.auto_launch_default,
+    platform: r.platform || 'windows',
     release: jsonParse(r.release, null),
     releaseCheckedAt: r.release_checked_at || null,
     releaseError: r.release_error || null,
@@ -94,13 +104,14 @@ class Catalog {
       cold_days: a.coldStorage?.days ?? cur?.cold_days ?? 30,
       auto_launch_default:
         a.autoLaunchDefault === undefined ? (cur?.auto_launch_default ?? 0) : a.autoLaunchDefault ? 1 : 0,
+      platform: PLATFORMS.includes(a.platform) ? a.platform : cur?.platform || 'windows',
     };
     if (cur) {
       this.db.run(
         `UPDATE apps SET name = ?, description = ?, sort = ?, enabled = ?, source = ?, icon_url = ?, exe = ?, color = ?,
-                         cold_enabled = ?, cold_days = ?, auto_launch_default = ?, updated_at = ? WHERE id = ?`,
+                         cold_enabled = ?, cold_days = ?, auto_launch_default = ?, platform = ?, updated_at = ? WHERE id = ?`,
         v.name, v.description, v.sort, v.enabled, v.source, v.icon_url, v.exe, v.color,
-        v.cold_enabled, v.cold_days, v.auto_launch_default, now, a.id,
+        v.cold_enabled, v.cold_days, v.auto_launch_default, v.platform, now, a.id,
       );
       if (v.source !== cur.source) {
         this.db.run('UPDATE apps SET release = NULL, release_checked_at = NULL, release_error = NULL WHERE id = ?', a.id);
@@ -108,9 +119,9 @@ class Catalog {
     } else {
       this.db.run(
         `INSERT INTO apps(id, name, description, sort, enabled, source, icon_url, exe, color, cold_enabled, cold_days,
-                          auto_launch_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                          auto_launch_default, platform, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         a.id, v.name, v.description, v.sort, v.enabled, v.source, v.icon_url, v.exe, v.color, v.cold_enabled,
-        v.cold_days, v.auto_launch_default, now, now,
+        v.cold_days, v.auto_launch_default, v.platform, now, now,
       );
     }
     return this.get(a.id);
@@ -370,12 +381,15 @@ class Catalog {
   // ---------------- 파일 보내기 ----------------
   /** 묶음 파일을 보낸다: 직접 올린 파일은 그대로, GitHub 파일은 그쪽 주소로 넘기거나(공개 저장소) 대신 받아서 보낸다(토큰 사용). */
   async sendAsset(res, asset, method = 'GET') {
+    const name = asset.name || (asset.localFile ? path.basename(asset.localFile) : '');
+    // 안드로이드는 APK 종류를 알려 줘야 휴대폰이 설치 파일로 알아봄
+    const type = /\.apk$/i.test(name) ? APK_TYPE : 'application/octet-stream';
     if (asset.localFile) {
       const st = fs.statSync(asset.localFile);
       res.writeHead(200, {
-        'content-type': 'application/octet-stream',
+        'content-type': type,
         'content-length': st.size,
-        'content-disposition': `attachment; filename="${path.basename(asset.localFile)}"`,
+        'content-disposition': contentDisposition(name),
         'cache-control': 'no-store',
       });
       if (method === 'HEAD') return res.end();
@@ -391,7 +405,8 @@ class Catalog {
       res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
       return res.end('파일을 가져오지 못했어요.');
     }
-    const headers = { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' };
+    const headers = { 'content-type': type, 'cache-control': 'no-store' };
+    if (name) headers['content-disposition'] = contentDisposition(name);
     const len = up.headers.get('content-length');
     if (len) headers['content-length'] = len;
     res.writeHead(200, headers);
@@ -403,7 +418,7 @@ class Catalog {
   releaseAsset(app) {
     const r = app.release;
     if (!r) return null;
-    return r.localFile ? { localFile: r.localFile } : { url: r.url, apiUrl: r.apiUrl };
+    return r.localFile ? { localFile: r.localFile, name: r.fileName } : { url: r.url, apiUrl: r.apiUrl, name: r.fileName };
   }
 
   // ---------------- 아이콘 ----------------
@@ -442,4 +457,4 @@ function sniffImageType(buf) {
   return 'application/octet-stream';
 }
 
-module.exports = { Catalog, publicRelease, sniffImageType, SHA_RE, LAUNCHER_SETUP_RE };
+module.exports = { Catalog, publicRelease, sniffImageType, SHA_RE, LAUNCHER_SETUP_RE, PLATFORMS, APK_TYPE };

@@ -3,15 +3,43 @@
 // 프로그램 목록, 내려받기, 실행 허가증(티켓), 프로그램 관리(운영자), 통합 클라우드 자동 업데이트
 
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const { readJson, sendJson, send } = require('../http');
-const { HttpError, bad, forbidden, notFound, intOr, str } = require('../util');
+const { HttpError, bad, forbidden, notFound, intOr, str, randomToken } = require('../util');
 const { signTicket } = require('../security');
-const { publicRelease, sniffImageType } = require('../catalog');
+const { publicRelease, sniffImageType, PLATFORMS } = require('../catalog');
 
 const APP_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
+const RESERVED_IDS = ['events']; // /api/sync/events 와 겹침
+const DL_SECONDS = 10 * 60; // 브라우저 내려받기 주소가 쓸 수 있는 시간
+const DL_RE = /^(\d{1,12})\.([A-Za-z0-9_-]{43})$/;
 
 function register(router, deps) {
   const { db, svc, catalog, keys } = deps;
+
+  // ---------------- 브라우저 내려받기 주소 (dl) ----------------
+  // 브라우저는 그냥 누르는 링크에 로그인 정보(Bearer)를 붙일 수 없어서, 로그인한 화면이 10분짜리 서명 주소를 받아 연다.
+  // 서명은 서버만 아는 값으로 하고, 프로그램 ID와 버전에 묶는다.
+  let dlSecret = svc.meta('download_link_secret');
+  if (!dlSecret) {
+    dlSecret = randomToken(32);
+    svc.setMeta('download_link_secret', dlSecret);
+  }
+  const dlSign = (appId, version, exp) => crypto.createHmac('sha256', dlSecret).update(`dl1\n${appId}\n${version}\n${exp}`).digest('base64url');
+
+  function dlToken(appId, version, now = Date.now()) {
+    const exp = Math.floor(now / 1000) + DL_SECONDS;
+    return { token: `${exp}.${dlSign(appId, version, exp)}`, expiresAt: exp * 1000 };
+  }
+
+  function dlValid(token, appId, version, now = Date.now()) {
+    const m = DL_RE.exec(String(token || ''));
+    if (!m) return false;
+    const exp = Number(m[1]);
+    const want = Buffer.from(dlSign(appId, version, exp));
+    const got = Buffer.from(m[2]);
+    return got.length === want.length && crypto.timingSafeEqual(got, want) && exp * 1000 >= now;
+  }
 
   function forUser(app, user) {
     return {
@@ -19,6 +47,7 @@ function register(router, deps) {
       name: app.name,
       description: app.description,
       color: app.color,
+      platform: app.platform,
       iconUrl: `/api/apps/${app.id}/icon`,
       exe: app.exe,
       autoLaunchDefault: app.autoLaunchDefault,
@@ -56,8 +85,19 @@ function register(router, deps) {
     return undefined;
   });
 
+  // 로그인 정보(Bearer) 또는 download-link 로 받은 dl 값
   router.get('/api/apps/:id/download', async (ctx) => {
-    const { app } = usable(ctx);
+    const dl = ctx.query.get('dl');
+    let app;
+    if (dl !== null && !ctx.req.headers.authorization) {
+      app = catalog.get(ctx.params.id);
+      if (!app || !app.enabled) throw notFound('프로그램을 찾을 수 없어요.');
+      if (!dlValid(dl, app.id, str(ctx.query.get('version'), 30))) {
+        throw new HttpError(403, '내려받기 주소를 쓸 수 있는 시간이 지났어요. 화면에서 다시 눌러 주세요.', 'invalid_link');
+      }
+    } else {
+      ({ app } = usable(ctx));
+    }
     const want = str(ctx.query.get('version'), 30);
     if (!app.release) throw notFound('아직 배포된 버전이 없어요.', 'no_release');
     if (want && want !== app.release.version) throw notFound('그 버전은 받을 수 없어요.', 'no_release');
@@ -65,8 +105,23 @@ function register(router, deps) {
     return undefined;
   });
 
+  /** 브라우저에서 바로 여는 내려받기 주소 (10분) → { url, expiresAt } */
+  router.post('/api/apps/:id/download-link', (ctx) => {
+    const { app } = usable(ctx);
+    if (!app.release) throw notFound('아직 배포된 버전이 없어요.', 'no_release');
+    const version = app.release.version;
+    const { token, expiresAt } = dlToken(app.id, version);
+    return {
+      url: `/api/apps/${encodeURIComponent(app.id)}/download?version=${encodeURIComponent(version)}&dl=${token}`,
+      expiresAt,
+    };
+  });
+
   router.post('/api/apps/:id/ticket', (ctx) => {
     const { user, app } = usable(ctx);
+    if (app.platform !== 'windows') {
+      throw new HttpError(400, '휴대폰용 프로그램은 통합 클라우드에서 켜지 않아요. 휴대폰에서 내려받아 설치해 주세요.', 'wrong_platform');
+    }
     const days = svc.getSettings().ticketDays;
     const iat = Math.floor(Date.now() / 1000);
     const payload = {
@@ -96,7 +151,13 @@ function register(router, deps) {
     if (!existing) {
       const id = str(body.id, 32);
       if (!APP_ID_RE.test(id)) throw bad('프로그램 ID는 영어 소문자로 시작하는 2~32자(소문자·숫자·-)여야 해요.');
+      if (RESERVED_IDS.includes(id)) throw bad('이 ID는 쓸 수 없어요. 다른 ID를 정해 주세요.');
       out.id = id;
+    }
+    if (body.platform !== undefined || !existing) {
+      const platform = body.platform === undefined ? 'windows' : String(body.platform);
+      if (!PLATFORMS.includes(platform)) throw bad('플랫폼은 Windows 또는 안드로이드 중에서 골라 주세요.', 'invalid_platform');
+      out.platform = platform;
     }
     if (body.name !== undefined || !existing) {
       out.name = str(body.name, 60);

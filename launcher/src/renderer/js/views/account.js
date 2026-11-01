@@ -167,7 +167,7 @@ export class AccountView {
         return h(
           'div',
           { class: 'row' },
-          h('div', { style: { color: 'var(--grey500)' } }, ic(d.platform === 'web' ? 'globe' : /win/i.test(d.platform) ? 'monitor' : 'laptop', 22)),
+          h('div', { style: { color: 'var(--grey500)' } }, ic(d.platform === 'web' ? 'globe' : /android/i.test(d.platform) ? 'phone' : /win/i.test(d.platform) ? 'monitor' : 'laptop', 22)),
           h('div', { class: 'grow' }, h('div', { class: 'row-title' }, d.deviceName), h('div', { class: 'row-desc' }, `${ago(d.lastSeenAt)} 사용${d.ip ? ` · ${d.ip}` : ''}${d.clientVersion ? ` · 버전 ${d.clientVersion}` : ''}`)),
           out,
         );

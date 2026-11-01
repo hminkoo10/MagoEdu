@@ -35,6 +35,22 @@ function writeJsonSync(file, value) {
   fs.renameSync(tmp, file);
 }
 
+/**
+ * 이름 바꾸기. Windows 에서는 켜져 있는 프로그램이 그 파일을 잠깐 읽고 있으면 바꾸지 못해서(EPERM·EBUSY)
+ * 조금 기다렸다가 다시 한다 (모두 합쳐 1.5초쯤).
+ */
+async function renameRetry(from, to, tries = 6) {
+  for (let i = 0; ; i += 1) {
+    try {
+      await fsp.rename(from, to);
+      return;
+    } catch (err) {
+      if (i >= tries - 1 || !['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
+      await new Promise((r) => setTimeout(r, 50 * 2 ** i));
+    }
+  }
+}
+
 async function sha256File(file) {
   const h = crypto.createHash('sha256');
   for await (const chunk of fs.createReadStream(file)) h.update(chunk);
@@ -114,4 +130,4 @@ function formatBytes(n) {
   return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)}${units[i]}`;
 }
 
-module.exports = { readJson, readJsonSync, writeJson, writeJsonSync, sha256File, walk, dirSize, pruneEmptyDirs, insideOf, formatBytes };
+module.exports = { readJson, readJsonSync, writeJson, writeJsonSync, renameRetry, sha256File, walk, dirSize, pruneEmptyDirs, insideOf, formatBytes };

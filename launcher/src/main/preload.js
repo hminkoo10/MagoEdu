@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('cloud', {
   sync: (id) => call('apps:sync', id),
   syncAll: () => call('apps:syncAll'),
   setAutoLaunch: (id, on) => call('apps:autoLaunch', id, on),
+  setDesktopShortcut: (id, on) => call('apps:desktopShortcut', id, on),
   legacyDetect: (id) => call('apps:legacyDetect', id),
   legacyImport: (id, lid) => call('apps:legacyImport', id, lid),
   legacyDismiss: (id, lid) => call('apps:legacyDismiss', id, lid),

@@ -46,7 +46,8 @@ export class AppsAdminView {
   render(r) {
     put(this.list, 
       ...r.apps.map((a) => {
-        const src = a.source.type === 'github' ? `GitHub · ${a.source.repo}` : '서버에 직접 올림 (packages 폴더)';
+        const android = a.platform === 'android';
+        const src = `${android ? '안드로이드 · ' : ''}${a.source.type === 'github' ? `GitHub · ${a.source.repo}` : '서버에 직접 올림 (packages 폴더)'}`;
         const enabled = toggle(a.enabled, async (on) => {
           try {
             await this.cloud.api('PATCH', `/api/admin/apps/${a.id}`, { enabled: on });
@@ -82,17 +83,20 @@ export class AppsAdminView {
               'div',
               { class: 'grow' },
               h('div', { class: 'row-title' }, rel ? `최신 버전 ${rel.version}` : '아직 배포된 버전 없음'),
-              h('div', { class: 'row-desc' }, rel ? `${rel.fileName} · ${bytes(rel.size)}${rel.publishedAt ? ` · ${date(rel.publishedAt)} 배포` : ''}` : '묶음 파일(zip)을 배포하면 여기에 나타나요.'),
+              h('div', { class: 'row-desc' }, rel ? `${rel.fileName} · ${bytes(rel.size)}${rel.publishedAt ? ` · ${date(rel.publishedAt)} 배포` : ''}` : android ? 'APK 파일을 배포하면 여기에 나타나요.' : '묶음 파일(zip)을 배포하면 여기에 나타나요.'),
               a.releaseError ? h('div', { class: 'row-desc', style: { color: 'var(--danger)' } }, `확인 실패: ${a.releaseError}`) : null,
             ),
             h('span', { class: 'subtle' }, a.releaseCheckedAt ? `${ago(a.releaseCheckedAt)} 확인` : ''),
           ),
-          h(
-            'div',
-            { class: 'row' },
-            h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '오래 안 쓰면 서버에서 정리'), h('div', { class: 'row-desc' }, '정한 기간 동안 쓰지 않은 큰 데이터(예: 오답노트 문제집)는 서버에서만 지우고, 그 데이터를 쓰던 컴퓨터에는 남겨 둬요.')),
-            h('div', { style: { display: 'flex', alignItems: 'center', gap: '16px', flex: 'none' } }, h('span', { class: 'muted' }, '기간'), days, h('span', { class: 'muted' }, '일'), cold),
-          ),
+          // 안드로이드 항목은 데이터를 따로 두지 않음 (같은 데이터를 PC 항목 ID로 맞춤)
+          android
+            ? null
+            : h(
+                'div',
+                { class: 'row' },
+                h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '오래 안 쓰면 서버에서 정리'), h('div', { class: 'row-desc' }, '정한 기간 동안 쓰지 않은 큰 데이터(예: 오답노트 문제집)는 서버에서만 지우고, 그 데이터를 쓰던 컴퓨터에는 남겨 둬요.')),
+                h('div', { style: { display: 'flex', alignItems: 'center', gap: '16px', flex: 'none' } }, h('span', { class: 'muted' }, '기간'), days, h('span', { class: 'muted' }, '일'), cold),
+              ),
         );
       }),
     );
@@ -123,6 +127,13 @@ export class AppsAdminView {
     const id = input({ value: a?.id || '', placeholder: '예: ohdapnote', disabled: !!a });
     const name = input({ value: a?.name || '', placeholder: '예: 오답노트' });
     const desc = input({ value: a?.description || '', placeholder: '한 줄 설명' });
+    const platform = select(
+      [
+        ['windows', 'Windows PC (통합 클라우드가 설치·실행)'],
+        ['android', '안드로이드 (웹에서 APK 내려받기만)'],
+      ],
+      a?.platform || 'windows',
+    );
     const type = select(
       [
         ['github', 'GitHub Releases'],
@@ -137,8 +148,17 @@ export class AppsAdminView {
     const color = input({ value: a?.color || '#F76B15', type: 'color', style: 'width: 64px; padding: 4px' });
     let autoLaunch = !!a?.autoLaunchDefault;
     const gh = h('div', {}, field('저장소', repo), field('묶음 파일 이름 규칙 (정규식, 괄호 안이 버전)', asset));
-    const sync = () => (gh.style.display = type.value === 'github' ? '' : 'none');
+    const exeField = field('실행 파일', exe);
+    const autoRow = h('div', { class: 'row', style: { borderBottom: 0, marginTop: '6px' } }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '기본으로 함께 켜기'), h('div', { class: 'row-desc' }, '통합 클라우드가 켜질 때 이 프로그램도 켜요 (예: 타종). 사용자가 바꿀 수 있어요.')), toggle(autoLaunch, (v) => (autoLaunch = v)));
+    const sync = () => {
+      const pc = platform.value === 'windows';
+      gh.style.display = type.value === 'github' ? '' : 'none';
+      exeField.style.display = pc ? '' : 'none';
+      autoRow.style.display = pc ? '' : 'none';
+      asset.placeholder = pc ? '^OhdapNote-(\\d+\\.\\d+\\.\\d+)-win-x64\\.zip$' : '^MaplTajong-(\\d+\\.\\d+\\.\\d+)\\.apk$';
+    };
     type.addEventListener('change', sync);
+    platform.addEventListener('change', sync);
     sync();
     const footLeft = a ? btn('삭제', { variant: 'danger', onClick: () => this.remove(a) }) : null;
     const ok = await dialog({
@@ -150,11 +170,12 @@ export class AppsAdminView {
         {},
         h('div', { class: 'form-row' }, field('ID', id, '영어 소문자, 바꿀 수 없음'), field('이름', name)),
         field('설명', desc),
+        field('플랫폼', platform, '안드로이드는 통합 클라우드가 설치하지 않고, 휴대폰 브라우저에서 내려받게 해요.'),
         field('배포 위치', type),
         gh,
-        field('실행 파일', exe),
+        exeField,
         h('div', { class: 'form-row', style: { marginTop: '14px' } }, field('아이콘 주소', iconUrl), h('div', { style: { flex: 'none' } }, field('색', color))),
-        h('div', { class: 'row', style: { borderBottom: 0, marginTop: '6px' } }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '기본으로 함께 켜기'), h('div', { class: 'row-desc' }, '통합 클라우드가 켜질 때 이 프로그램도 켜요 (예: 타종). 사용자가 바꿀 수 있어요.')), toggle(autoLaunch, (v) => (autoLaunch = v))),
+        autoRow,
       ),
       ok: a ? '저장' : '추가',
       onOk: async () => {
@@ -164,7 +185,8 @@ export class AppsAdminView {
           exe: exe.value,
           iconUrl: iconUrl.value,
           color: color.value,
-          autoLaunchDefault: autoLaunch,
+          platform: platform.value,
+          autoLaunchDefault: platform.value === 'windows' && autoLaunch,
           source: type.value === 'github' ? { type: 'github', repo: repo.value, asset: asset.value } : { type: 'local' },
         };
         if (a) await this.cloud.api('PATCH', `/api/admin/apps/${a.id}`, body);

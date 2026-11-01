@@ -13,7 +13,7 @@
 
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { readJson, writeJson, sha256File, walk, pruneEmptyDirs, insideOf } = require('./fsutil');
+const { readJson, writeJson, renameRetry, sha256File, walk, pruneEmptyDirs, insideOf } = require('./fsutil');
 const { ApiError, Cancelled } = require('./api');
 
 const STATE_VERSION = 1;
@@ -182,6 +182,7 @@ class SyncEngine {
       localOnly: { files: localOnly.files, bytes: localOnly.bytes, groups: localOnly.groups.size },
       usageBytes: quota?.usageBytes ?? null,
       quotaBytes: quota?.quotaBytes ?? null,
+      seq: state.seq, // 서버에서 여기까지 받음 (실시간 알림이 이보다 작으면 이미 맞춘 것)
       at: Date.now(),
     };
   }
@@ -255,12 +256,17 @@ class SyncEngine {
         await fsp.copyFile(L.abs, keep);
         summary.conflicts.push(p);
       }
-      // download / conflict
+      // download / conflict: 옆 임시 파일에 다 받은 뒤 이름만 바꾼다 (켜져 있는 프로그램이 반쯤 받은 파일을 읽지 않게)
       const abs = this._abs(p);
       const tmp = `${abs}.magoedu-dl`;
       await fsp.mkdir(path.dirname(abs), { recursive: true });
       await this.api.download(this._q(p), tmp, { expectSha256: R.sha256, expectSize: R.size, signal, timeout: 0 });
-      await fsp.rename(tmp, abs);
+      try {
+        await renameRetry(tmp, abs);
+      } catch (err) {
+        await fsp.rm(tmp, { force: true });
+        throw err;
+      }
       const st = await fsp.stat(abs);
       state.cache[p] = { size: st.size, mtimeMs: Math.round(st.mtimeMs), sha: R.sha256 };
       state.base[p] = { rev: R.rev, sha: R.sha256, evicted: false };

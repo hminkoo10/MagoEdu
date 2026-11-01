@@ -290,3 +290,16 @@ test('통합 클라우드 핵심: 설치·동기화·보관 기간·예전 데�
     assert.ok(fs.existsSync(fa('data/settings.json')), '프로그램을 지워도 데이터는 남음');
   });
 });
+
+test('끄기: 창 닫기로 안 꺼지면 잠시 뒤 강제로 끔 (트레이로 숨는 프로그램)', async () => {
+  const dir = tmp('stop');
+  const runner = new Runner({ paths: { app: () => ({ running: path.join(dir, 'running.json') }) }, log: { warn() {} } });
+  // 닫기 신호를 무시하는 프로그램
+  const child = require('node:child_process').spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: 'ignore' });
+  await new Promise((resolve) => child.once('spawn', resolve));
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  runner.running.set('stubborn', { pid: child.pid });
+  assert.equal(runner.stop('stubborn', { graceMs: 300 }), true);
+  await exited;
+  fs.rmSync(dir, { recursive: true, force: true });
+});

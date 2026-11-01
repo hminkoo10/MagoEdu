@@ -27,6 +27,8 @@ async function startAll({ adminPassword } = {}) {
     fs.writeFileSync(path.join(dir, `${file}-1.0.0-win-x64.zip`), makeZip({ 'magoedu-app.json': JSON.stringify(manifest), 'run.sh': exe }));
     await server.app.deps.catalog.refreshApp(id);
   }
+  // 안드로이드 항목(기본 목록)도 아이콘을 받으러 가지 않게
+  server.app.deps.catalog.upsert({ id: 'tajong-android', iconUrl: '' });
   const userRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'magoedu-ui-'));
   // 설치 파일에 들어가는 기본 서버 주소(mago.milky.kr) 대신, 서버 연결 화면부터 시험
   fs.mkdirSync(path.join(userRoot, 'roaming'), { recursive: true });

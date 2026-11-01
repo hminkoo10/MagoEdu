@@ -15,6 +15,22 @@
     "autoLaunchDefault": true
   },
   {
+    "id": "tajong-android",
+    "name": "마고 타종 (안드로이드)",
+    "description": "휴대폰에서 종을 울리고, PC와 시간표·종소리를 함께 맞추는 마고 타종 안드로이드 앱",
+    "platform": "android",
+    "color": "#F76B15",
+    "source": {
+      "type": "github",
+      "repo": "hminkoo10/Mapl-Tajong",
+      "asset": "^MaplTajong-(\\d+\\.\\d+\\.\\d+)\\.apk$"
+    },
+    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/Mapl-Tajong/main/app/assets/ui/app.ico",
+    "exe": "",
+    "coldStorage": { "enabled": false, "days": 30 },
+    "autoLaunchDefault": false
+  },
+  {
     "id": "ohdapnote",
     "name": "오답노트",
     "description": "문제집과 답지를 올리면 틀린 문제만 모아 PDF로 만들어 주는 오답노트",

@@ -235,7 +235,7 @@ test('공지사항과 프로그램별 사용 권한', async (t) => {
     const appsA = await rq('GET', '/api/apps', { token: a });
     assert.deepEqual(appsA.data.apps.map((x) => x.id), ['ohdapnote']);
     const appsB = await rq('GET', '/api/apps', { token: b });
-    assert.deepEqual(appsB.data.apps.map((x) => x.id).sort(), ['ohdapnote', 'tajong']);
+    assert.deepEqual(appsB.data.apps.map((x) => x.id).sort(), ['ohdapnote', 'tajong', 'tajong-android']);
 
     const bad = await rq('POST', '/api/users', { token: a, body: { name: 'T', username: 'tt1', allowedApps: ['tajong'] } });
     assert.equal(bad.status, 403);

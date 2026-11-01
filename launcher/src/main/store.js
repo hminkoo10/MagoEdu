@@ -16,6 +16,7 @@ const DEFAULT_CONFIG = {
   closeToTray: true, // 창을 닫아도 트레이에서 계속 (동기화·자동 실행)
   autoUpdateApps: true, // 프로그램 새 버전을 알아서 받기
   lastUsername: '',
+  shortcuts: {}, // 프로그램 ID → { desktop: 바탕 화면에도 둘지, name: 만든 바로 가기 파일 이름 }
 };
 
 class Store {

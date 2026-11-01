@@ -92,7 +92,11 @@ export class HomeView {
 
   makeWebNote(s) {
     if (!s.client?.canOpenApp) {
-      return h('div', { class: 'note', style: { marginBottom: '16px' } }, ic('info', 18), h('span', {}, '프로그램은 Windows PC의 통합 클라우드 앱에서 쓸 수 있어요. 여기서는 공지·계정·관리 기능을 쓸 수 있어요.'));
+      const text =
+        s.client?.os === 'android'
+          ? 'PC 프로그램은 Windows PC의 통합 클라우드 앱에서 쓸 수 있어요. 안드로이드용 프로그램은 여기서 바로 내려받을 수 있어요.'
+          : '프로그램은 Windows PC의 통합 클라우드 앱에서 쓸 수 있어요. 여기서는 공지·계정·관리 기능을 쓸 수 있어요.';
+      return h('div', { class: 'note', style: { marginBottom: '16px' } }, ic('info', 18), h('span', {}, text));
     }
     const open = btn('통합 클라우드 열기', { variant: 'primary', size: 'sm', iconName: 'cloud' });
     open.addEventListener('click', () => openInApp(this.cloud, this.store).catch((e) => toast(e.message, 'error')));
@@ -201,6 +205,7 @@ export class HomeView {
     }
     c.name.textContent = a.name;
     c.desc.textContent = a.description || '';
+    if (a.platform === 'android') return this.fillPhoneCard(c, a);
     if (this.web) return this.fillWebCard(c, a);
 
     const ver = [];
@@ -301,8 +306,67 @@ export class HomeView {
     c.more.style.display = a.release?.notes ? '' : 'none';
   }
 
+  /** 이 화면이 안드로이드 휴대폰 브라우저인지 (안드로이드 항목을 바로 받을 수 있음) */
+  onPhone() {
+    return this.web && this.store.state.client?.os === 'android';
+  }
+
+  // 안드로이드 항목: 설치·동기화는 없고, 휴대폰에서 내려받기만
+  fillPhoneCard(c, a) {
+    put(c.ver, h('span', {}, a.release ? `안드로이드 · 최신 ${a.release.version}${a.release.size ? ` · ${bytes(a.release.size)}` : ''}` : '안드로이드 · 아직 배포 전'));
+    c.task.style.display = 'none';
+    c.sync.className = 'sync';
+    c.sync.title = '';
+    put(c.sync);
+    const here = this.onPhone();
+    const key = `phone|${here}|${!!a.release}`;
+    if (c._primary !== key) {
+      c._primary = key;
+      c.primary.className = `btn ${here ? 'primary' : 'soft'}`;
+      c.primary.style.display = '';
+      c.primary.disabled = !a.release;
+      put(c.primary, ...(a.release ? [ic(here ? 'download' : 'phone', 18)] : []), document.createTextNode(!a.release ? '준비 중' : here ? '내려받기' : '휴대폰으로 받기'));
+    }
+    c.more.style.display = a.release?.notes ? '' : 'none';
+  }
+
+  /** 안드로이드 휴대폰이면 바로 받고(10분짜리 주소), 아니면 휴대폰에서 받는 방법을 알려 줌 */
+  async getPhoneApp(a) {
+    if (this.onPhone()) {
+      const r = await this.cloud.api('POST', `/api/apps/${encodeURIComponent(a.id)}/download-link`, {});
+      location.href = r.url;
+      return;
+    }
+    const site = this.store.state.config.serverUrl || location.origin;
+    const copy = btn('복사', { variant: 'white', size: 'sm', iconName: 'copy' });
+    copy.addEventListener('click', async () => {
+      try {
+        await this.cloud.copy(site);
+        toast('주소를 복사했어요', 'success', 1600);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    });
+    await dialog({
+      title: `${a.name}은(는) 휴대폰에서 받아요`,
+      sub: '안드로이드 휴대폰에서 아래 사이트를 열고, 같은 아이디로 로그인한 뒤 이 프로그램의 ‘내려받기’를 눌러 주세요.',
+      body: h(
+        'div',
+        {},
+        h('div', { class: 'secret' }, h('span', { class: 'mono' }, site), copy),
+        h('div', { class: 'note', style: { marginTop: '12px' } }, ic('info', 18), h('span', {}, '설치할 때 ‘알 수 없는 앱 설치’를 허용할지 물으면 허용해 주세요. 앱에서도 같은 아이디로 로그인하면 PC와 데이터가 함께 맞춰져요.')),
+      ),
+      ok: '확인',
+      cancel: null,
+    });
+  }
+
   async primary(a) {
     try {
+      if (a.platform === 'android') {
+        if (a.release) await this.getPhoneApp(a);
+        return;
+      }
       if (this.web) {
         if (a.release) await openInApp(this.cloud, this.store, a.id);
         return;
@@ -360,6 +424,23 @@ export class HomeView {
           toast(!a.autoLaunch ? `컴퓨터를 켜면 ${a.name}도 함께 켜요` : `${a.name} 자동 실행을 껐어요`, 'success');
         },
       });
+      if (this.store.state.shortcuts) {
+        // 바로 가기를 누르면 통합 클라우드가 이 계정으로 켜 줌 (시작 메뉴에는 언제나 있음)
+        const deskBox = h('span', { class: 'end' }, a.desktopShortcut ? ic('check', 16, 2.6) : '');
+        items.push({
+          icon: 'monitor',
+          label: '바탕 화면 바로 가기',
+          end: deskBox,
+          onClick: async () => {
+            try {
+              await this.cloud.setDesktopShortcut(a.id, !a.desktopShortcut);
+              toast(!a.desktopShortcut ? `바탕 화면에 ${a.name} 바로 가기를 만들었어요` : `바탕 화면의 ${a.name} 바로 가기를 지웠어요`, 'success');
+            } catch (e) {
+              toast(e.message, 'error');
+            }
+          },
+        });
+      }
     }
     if (a.release?.notes) {
       items.push({ icon: 'sparkles', label: `${a.release.version} 새로워진 점`, onClick: () => notify(`${a.name} ${a.release.version}`, a.release.notes.replace(/^#+\s*/gm, '').replace(/\*\*/g, '')) });

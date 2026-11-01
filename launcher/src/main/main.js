@@ -17,6 +17,7 @@ log.transports.file.level = 'info';
 const { makePaths } = require('../core/paths');
 const { Store } = require('./store');
 const { Cloud } = require('./cloud');
+const { Shortcuts } = require('./shortcuts');
 const { setupSelfUpdate } = require('./selfupdate');
 
 const TITLE = '마고에듀 통합 클라우드';
@@ -133,14 +134,19 @@ function createTray() {
   tray.setContextMenu(buildTrayMenu(cloud.snapshot()));
 }
 
-async function doLaunch(id) {
+/** fromLink: 바로 가기·웹에서 부름 → 창은 꼭 필요할 때만 (설치·업데이트 진행, 예전 데이터 묻기, 오류, 이미 켜져 있음) */
+async function doLaunch(id, { fromLink = false } = {}) {
   try {
+    if (fromLink && !cloud.canLaunchNow(id)) showWindow();
     const r = await cloud.launch(id);
     if (r?.needsLegacy) {
       showWindow();
       send('navigate', { view: 'home', legacyFor: id, legacy: r.needsLegacy });
+    } else if (r?.already && fromLink) {
+      showWindow();
     }
   } catch (err) {
+    if (fromLink) showWindow();
     send('toast', { text: err.message, kind: 'error' });
   }
 }
@@ -160,19 +166,44 @@ function applyAutoStart(cfg) {
   }
 }
 
-// ---------------------------------------------------------------- magoedu:// 주소 (프로그램이 통합 클라우드를 부를 때)
-function handleProtocol(argv) {
+// ---------------------------------------------------------------- magoedu:// 주소 (바로 가기·웹·프로그램이 통합 클라우드를 부를 때)
+//   magoedu://launch/<id> : 그 프로그램을 켠다. 로그인 정보를 확인하는 중이면 기다리고, 로그인 전이면 로그인한 뒤에 켠다.
+//   magoedu://open        : 창만 연다.
+let pendingLaunch = null;
+
+function linkFrom(argv) {
   const url = argv.find((a) => /^magoedu:\/\//i.test(a));
-  if (!url) return false;
+  if (!url) return null;
   try {
     const u = new URL(url);
-    const [kind, id] = [u.hostname, u.pathname.replace(/^\/+/, '')];
-    showWindow();
-    if (kind === 'launch' && id && cloud.phase === 'ready') doLaunch(id);
+    return { kind: u.hostname.toLowerCase(), id: decodeURIComponent(u.pathname.replace(/^\/+|\/+$/g, '')) };
   } catch {
-    /* 무시 */
+    return { kind: '', id: '' };
+  }
+}
+
+function handleProtocol(argv) {
+  const link = linkFrom(argv);
+  if (!link) return false;
+  if (link.kind === 'launch' && link.id) {
+    pendingLaunch = link.id;
+    launchPending();
+  } else {
+    showWindow();
   }
   return true;
+}
+
+function launchPending() {
+  if (!pendingLaunch || !cloud) return;
+  if (cloud.phase !== 'ready') {
+    showWindow(); // 로그인하면 'ready' 로 다시 옴
+    return;
+  }
+  if (!cloud.settled) return; // 세션 확인·목록 새로 고침이 끝나면 'ready' 로 다시 옴
+  const id = pendingLaunch;
+  pendingLaunch = null;
+  doLaunch(id, { fromLink: true });
 }
 
 // ---------------------------------------------------------------- IPC
@@ -207,6 +238,7 @@ function registerIpc() {
   handle('apps:sync', (id) => cloud.syncApp(id));
   handle('apps:syncAll', () => cloud.syncAll());
   handle('apps:autoLaunch', (id, on) => cloud.setAutoLaunch(id, on));
+  handle('apps:desktopShortcut', (id, on) => cloud.setDesktopShortcut(id, on));
   handle('apps:legacyDetect', (id) => cloud.legacyDetect(id));
   handle('apps:legacyImport', (id, lid) => cloud.legacyImport(id, lid));
   handle('apps:legacyDismiss', (id, lid) => cloud.legacyDismiss(id, lid));
@@ -255,7 +287,18 @@ if (!isTest && !app.requestSingleInstanceLock()) {
     const localData = process.env.MAGOEDU_CLOUD_LOCAL_DATA || (process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'MagoEduCloud') : path.join(userData, 'local'));
     const paths = makePaths({ userData, localData });
     const store = new Store({ paths, safeStorage, defaults: loadDefaults() });
-    cloud = new Cloud({ paths, store, version: app.getVersion(), log });
+    // 바로 가기는 설치한 통합 클라우드에서만 (개발 모드의 electron.exe 를 가리키면 안 됨)
+    const shortcuts =
+      app.isPackaged && process.platform === 'win32' && !isTest
+        ? new Shortcuts({
+            shell,
+            exePath: process.execPath,
+            desktopDir: app.getPath('desktop'),
+            startMenuDir: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+            log,
+          })
+        : null;
+    cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts });
     let trayKey = '';
     cloud.on('state', (s) => {
       send('state', s);
@@ -264,11 +307,15 @@ if (!isTest && !app.requestSingleInstanceLock()) {
         trayKey = key;
         tray.setContextMenu(buildTrayMenu(s));
       }
+      if (pendingLaunch && s.phase !== 'ready' && s.phase !== 'boot') showWindow(); // 로그인이 필요해짐
     });
+    cloud.on('ready', () => launchPending());
     cloud.on('toast', (t) => send('toast', t));
     cloud.on('config', (cfg) => applyAutoStart(cfg));
     registerIpc();
-    createWindow({ show: !startHidden });
+    // 바로 가기로 켰고 로그인 정보가 있으면 창 없이 프로그램만 (필요하면 그때 창을 보여 줌)
+    const linkStart = linkFrom(process.argv)?.kind === 'launch' && !!store.loadSession();
+    createWindow({ show: !startHidden && !linkStart });
     createTray();
     applyAutoStart(store.config);
     updater = setupSelfUpdate({ app, cloud, log, isWindowVisible: () => !!win && win.isVisible() });

@@ -115,6 +115,22 @@ function register(router, deps) {
     };
   });
 
+  // ---------------- 실시간 알림 (/api/sync/:appId 보다 먼저) ----------------
+  //   ?apps=a,b 로 받을 프로그램을 고를 수 있다 (없으면 쓸 수 있는 모든 프로그램)
+  router.get('/api/sync/events', (ctx) => {
+    const { user, session } = svc.authenticate(ctx);
+    let apps = null;
+    const want = ctx.query.get('apps');
+    if (want) {
+      const ids = [...new Set(want.split(',').map((x) => x.trim()).filter(Boolean))];
+      if (ids.length > 50) throw bad('프로그램을 너무 많이 골랐어요.', 'too_many_apps');
+      for (const id of ids) requireApp(id, user);
+      if (ids.length) apps = new Set(ids);
+    }
+    deps.events.open(ctx, { user, session, apps });
+    return undefined;
+  });
+
   router.get('/api/sync/:appId', (ctx) => {
     const { user } = svc.authenticate(ctx);
     const app = requireApp(ctx.params.appId, user);
@@ -255,6 +271,7 @@ function register(router, deps) {
         touchGroup(user, app.id, group, now);
         return current(user, app.id, p);
       });
+      deps.events.publish(user.id, app.id, entry.seq, session.device_id);
       if (cur && cur.sha256 && cur.sha256 !== sha) blobs.scheduleGc();
       return { entry: publicEntry(entry) };
     } finally {
@@ -268,11 +285,13 @@ function register(router, deps) {
     const app = requireApp(ctx.params.appId, user);
     const p = validPath(ctx.query.get('path'));
     const baseRev = intOr(ctx.query.get('baseRev'), 0, 0);
+    let changed = false;
     const entry = db.tx(() => {
       const cur = current(user, app.id, p);
       if (!cur) return null;
       if (cur.rev !== baseRev) throw conflict(cur);
       if (cur.deleted) return cur;
+      changed = true;
       db.run(
         'UPDATE files SET rev = ?, seq = ?, sha256 = NULL, size = 0, deleted = 1, evicted = 0, device_id = ?, updated_at = ? WHERE id = ?',
         cur.rev + 1,
@@ -283,6 +302,7 @@ function register(router, deps) {
       );
       return current(user, app.id, p);
     });
+    if (changed) deps.events.publish(user.id, app.id, entry.seq, session.device_id);
     blobs.scheduleGc();
     return { entry: publicEntry(entry) };
   });
