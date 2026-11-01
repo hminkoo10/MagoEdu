@@ -1,4 +1,4 @@
-// 자동 생성 파일 (scripts/build-icons.mjs) - Lucide 아이콘 (ISC 라이선스)
+// 자동 생성 파일 (scripts/build-icons.mjs) - Lucide 아이콘 (ISC 라이선스), 구름은 앱 로고 모양
 export const ICONS = {
  "apps": "<rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\" /><rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\" /><rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\" /><rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\" />",
  "user": "<circle cx=\"12\" cy=\"8\" r=\"5\" /><path d=\"M20 21a8 8 0 0 0-16 0\" />",
@@ -16,10 +16,6 @@ export const ICONS = {
  "play": "<path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\" />",
  "stop": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" />",
  "refresh": "<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" /><path d=\"M21 3v5h-5\" /><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" /><path d=\"M8 16H3v5\" />",
- "cloud": "<path d=\"M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z\" />",
- "cloudOff": "<path d=\"M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057\" /><path d=\"M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78\" /><path d=\"m2 2 20 20\" />",
- "cloudCheck": "<path d=\"m17 15-5.5 5.5L9 18\" /><path d=\"M5.516 16.07A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 3.501 7.327\" />",
- "cloudUpload": "<path d=\"M12 13v8\" /><path d=\"M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242\" /><path d=\"m8 17 4-4 4 4\" />",
  "folder": "<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\" />",
  "more": "<circle cx=\"12\" cy=\"12\" r=\"1\" /><circle cx=\"19\" cy=\"12\" r=\"1\" /><circle cx=\"5\" cy=\"12\" r=\"1\" />",
  "x": "<path d=\"M18 6 6 18\" /><path d=\"m6 6 12 12\" />",
@@ -54,10 +50,17 @@ export const ICONS = {
  "ban": "<circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"M4.929 4.929 19.07 19.071\" />",
  "list": "<path d=\"M13 5h8\" /><path d=\"M13 12h8\" /><path d=\"M13 19h8\" /><path d=\"m3 17 2 2 4-4\" /><path d=\"m3 7 2 2 4-4\" />",
  "menu": "<path d=\"M4 5h16\" /><path d=\"M4 12h16\" /><path d=\"M4 19h16\" />",
- "globe": "<circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\" /><path d=\"M2 12h20\" />"
+ "globe": "<circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\" /><path d=\"M2 12h20\" />",
+ "phone": "<rect width=\"14\" height=\"20\" x=\"5\" y=\"2\" rx=\"2\" ry=\"2\" /><path d=\"M12 18h.01\" />",
+ "cloud": "<g fill=\"currentColor\" stroke=\"none\"><circle cx=\"7.72\" cy=\"12.55\" r=\"5.26\"/><circle cx=\"14.69\" cy=\"9.86\" r=\"7.09\"/><rect x=\"1\" y=\"11.69\" width=\"22\" height=\"9.53\" rx=\"4.77\"/></g>",
+ "cloudCheck": "<mask id=\"{id}\"><rect width=\"24\" height=\"24\" fill=\"#fff\" stroke=\"none\"/><path d=\"m8.5 15.4 2.4 2.4 4.6-4.7\" fill=\"none\" stroke=\"#000\" stroke-width=\"2.2\"/></mask><g mask=\"url(#{id})\" fill=\"currentColor\" stroke=\"none\"><circle cx=\"7.72\" cy=\"12.55\" r=\"5.26\"/><circle cx=\"14.69\" cy=\"9.86\" r=\"7.09\"/><rect x=\"1\" y=\"11.69\" width=\"22\" height=\"9.53\" rx=\"4.77\"/></g>",
+ "cloudUpload": "<mask id=\"{id}\"><rect width=\"24\" height=\"24\" fill=\"#fff\" stroke=\"none\"/><path d=\"M12 18.6v-5.4m-2.7 2.5 2.7-2.7 2.7 2.7\" fill=\"none\" stroke=\"#000\" stroke-width=\"2.2\"/></mask><g mask=\"url(#{id})\" fill=\"currentColor\" stroke=\"none\"><circle cx=\"7.72\" cy=\"12.55\" r=\"5.26\"/><circle cx=\"14.69\" cy=\"9.86\" r=\"7.09\"/><rect x=\"1\" y=\"11.69\" width=\"22\" height=\"9.53\" rx=\"4.77\"/></g>",
+ "cloudOff": "<mask id=\"{id}\"><rect width=\"24\" height=\"24\" fill=\"#fff\" stroke=\"none\"/><path d=\"M2.5 2.5l19 19\" fill=\"none\" stroke=\"#000\" stroke-width=\"4.6\"/></mask><g mask=\"url(#{id})\" fill=\"currentColor\" stroke=\"none\"><circle cx=\"7.72\" cy=\"12.55\" r=\"5.26\"/><circle cx=\"14.69\" cy=\"9.86\" r=\"7.09\"/><rect x=\"1\" y=\"11.69\" width=\"22\" height=\"9.53\" rx=\"4.77\"/></g><path d=\"M2.5 2.5l19 19\"/>"
 };
 
+let maskSeq = 0;
+
 export function icon(name, size = 20, stroke = 2) {
-  const inner = ICONS[name] || '';
+  const inner = (ICONS[name] || '').replaceAll('{id}', `icm${++maskSeq}`);
   return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
 }
