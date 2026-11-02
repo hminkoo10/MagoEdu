@@ -149,7 +149,7 @@ export class AppsAdminView {
     let autoLaunch = !!a?.autoLaunchDefault;
     const gh = h('div', {}, field('저장소', repo), field('묶음 파일 이름 규칙 (정규식, 괄호 안이 버전)', asset));
     const exeField = field('실행 파일', exe);
-    const autoRow = h('div', { class: 'row', style: { borderBottom: 0, marginTop: '6px' } }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '기본으로 함께 켜기'), h('div', { class: 'row-desc' }, '통합 클라우드가 켜질 때 이 프로그램도 켜요 (예: 타종). 사용자가 바꿀 수 있어요.')), toggle(autoLaunch, (v) => (autoLaunch = v)));
+    const autoRow = h('div', { class: 'row', style: { borderBottom: 0, marginTop: '6px' } }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '기본으로 윈도우 시작 시 실행'), h('div', { class: 'row-desc' }, '윈도우가 켜질 때 이 프로그램도 실행해요 (예: 타종). 사용자가 바꿀 수 있어요.')), toggle(autoLaunch, (v) => (autoLaunch = v)));
     const sync = () => {
       const pc = platform.value === 'windows';
       gh.style.display = type.value === 'github' ? '' : 'none';

@@ -461,11 +461,15 @@ export class HomeView {
       const autoBox = h('span', { class: 'end' }, a.autoLaunch ? ic('check', 16, 2.6) : '');
       items.push({
         icon: 'power',
-        label: '통합 클라우드와 함께 켜기',
+        label: '윈도우 시작 시 실행',
         end: autoBox,
         onClick: () => {
+          const alsoCloud = !a.autoLaunch && !this.store.state.config.autoStart; // 통합 클라우드 자동 실행도 함께 켜짐
           this.cloud.setAutoLaunch(a.id, !a.autoLaunch);
-          toast(!a.autoLaunch ? `컴퓨터를 켜면 ${a.name}도 함께 켜요` : `${a.name} 자동 실행을 껐어요`, 'success');
+          toast(
+            !a.autoLaunch ? `윈도우가 켜지면 ${a.name}도 실행해요${alsoCloud ? ' (통합 클라우드 자동 실행도 켰어요)' : ''}` : `${a.name}은(는) 윈도우가 켜져도 실행하지 않아요`,
+            'success',
+          );
         },
       });
       if (this.store.state.shortcuts) {

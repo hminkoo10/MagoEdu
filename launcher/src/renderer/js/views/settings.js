@@ -43,7 +43,7 @@ export class SettingsView {
             { class: 'card' },
             h('h2', { class: 'card-title' }, '이 컴퓨터'),
             row('컴퓨터 이름', '‘로그인한 기기’ 목록에 보이는 이름이에요.', devName),
-            row('컴퓨터를 켜면 자동으로 실행', '트레이에서 조용히 켜져서 동기화하고, ‘함께 켜기’로 정한 프로그램(예: 타종)을 켜요.', toggle(c.autoStart, (v) => set({ autoStart: v }, v ? '자동 실행을 켰어요' : '자동 실행을 껐어요'))),
+            row('컴퓨터를 켜면 자동으로 실행', '트레이에서 조용히 켜져서 동기화하고, ‘윈도우 시작 시 실행’으로 정한 프로그램(예: 타종)을 켜요.', toggle(c.autoStart, (v) => set({ autoStart: v }, v ? '자동 실행을 켰어요' : '자동 실행을 껐어요'))),
             row('창을 닫아도 트레이에서 계속', '끄면 창을 닫을 때 통합 클라우드도 꺼져요.', toggle(c.closeToTray, (v) => set({ closeToTray: v }))),
             row('프로그램 자동 업데이트', '새 버전이 나오면 알아서 받아요. 켜져 있는 프로그램은 다음에 켤 때 바뀌어요.', toggle(c.autoUpdateApps, (v) => set({ autoUpdateApps: v }))),
           ),

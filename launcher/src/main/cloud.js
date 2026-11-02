@@ -32,7 +32,7 @@ const IGNORE_LOCAL = [/(^|\/)\.sync-state\.json$/, /^conflicts(\/|$)/, /\.tmp$/i
 const isDesktop = (a) => (a?.platform || 'windows') === 'windows';
 
 class Cloud extends EventEmitter {
-  constructor({ paths, store, version, log, platform = process.platform, shortcuts = null }) {
+  constructor({ paths, store, version, log, platform = process.platform, shortcuts = null, startedAtLogin = false }) {
     super();
     this.paths = paths;
     this.store = store;
@@ -40,6 +40,9 @@ class Cloud extends EventEmitter {
     this.log = log;
     this.platform = platform;
     this.shortcuts = shortcuts; // 바탕 화면·시작 메뉴 바로 가기 (설치한 통합 클라우드에서만)
+    // '윈도우 시작 시 실행' 프로그램은 윈도우가 켜지면서 통합 클라우드가 켜졌을 때만, 처음 로그인한 뒤 한 번 켠다
+    // (켜져 있던 중에 통합 클라우드 창을 열거나 다시 로그인할 때는 켜지 않음)
+    this.autoLaunchPending = startedAtLogin;
     this.phase = 'boot'; // boot | setup | login | ready
     this.user = null;
     this.authMessage = null;
@@ -278,7 +281,10 @@ class Cloud extends EventEmitter {
     this.emit('ready');
     await this.syncAll({ quiet: true }).catch(() => {});
     this._autoUpdate();
-    this._autoLaunch();
+    if (this.autoLaunchPending) {
+      this.autoLaunchPending = false;
+      this._autoLaunch();
+    }
   }
 
   async logout() {
@@ -804,7 +810,9 @@ class Cloud extends EventEmitter {
     if (!this.user) return;
     const s = this.store.accountSettings(this.user.id);
     this.store.setAccountSettings(this.user.id, { autoLaunch: { ...s.autoLaunch, [id]: !!on } });
-    this.emitState();
+    // 윈도우가 켜질 때 통합 클라우드가 먼저 켜져야 프로그램을 켤 수 있다
+    if (on && !this.store.config.autoStart) this.setConfig({ autoStart: true });
+    else this.emitState();
   }
 
   _autoLaunch() {

@@ -201,7 +201,8 @@ Windows PC 브라우저의 웹 화면에서는 Windows 프로그램 카드에 **
    }
    ```
    처음 켤 때 `local/tajong.db` 가 없고 `local/import/tajong.db` 가 있으면 그것으로 시작하고 `config.json` 을 내보내요.
-5. 컴퓨터 켜면 자동 실행: 타종의 `Run` 레지스트리 등록 대신 통합 클라우드의 "함께 켜기"를 써요 (타종은 기본으로 켜져 있음).
+5. 컴퓨터 켜면 자동 실행: 타종의 `Run` 레지스트리 등록 대신 통합 클라우드의 "윈도우 시작 시 실행"을 써요 (타종은 기본으로 켜져 있음).
+   윈도우가 켜지면서 통합 클라우드가 켜졌을 때(`--hidden`)만 실행하고, 쓰는 중에 통합 클라우드를 열거나 다시 로그인할 때는 실행하지 않아요.
 6. `app/core/updater.py`, `app/ui/update_manager.py` 제거. 대신 `newer_version_installed("tajong", APP_VERSION)` 를 보고 **다음 종까지 10분 넘게 남았을 때** 75 로 종료.
 7. `.github/workflows/release-desktop.yml` 을 zip 배포로 바꾸고 Inno Setup 단계 제거.
 8. 안드로이드 앱은 8번처럼 서버 동기화 API 를 직접 써요 (프로그램 ID 는 똑같이 `tajong`).

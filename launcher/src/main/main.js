@@ -313,7 +313,7 @@ if (!isTest && !app.requestSingleInstanceLock()) {
             log,
           })
         : null;
-    cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts });
+    cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts, startedAtLogin: startHidden });
     let trayKey = '';
     cloud.on('state', (s) => {
       send('state', s);
