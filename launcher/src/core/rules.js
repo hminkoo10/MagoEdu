@@ -1,6 +1,7 @@
 'use strict';
 
-// 동기화 규칙: 어떤 파일을 올릴지(include/exclude), 어떤 폴더를 한 묶음(group)으로 볼지
+// 동기화 규칙: 어떤 파일을 올릴지(include/exclude), 어떤 폴더를 한 묶음(group)으로 볼지,
+// 어떤 파일은 프로그램이 달라고 할 때만 받을지(lazy, 학원 공간)
 //   "*"  : 폴더 구분(/)을 넘지 않는 아무 글자
 //   "**" : 폴더를 넘어 아무 글자
 //   "?"  : 아무 글자 하나
@@ -41,6 +42,7 @@ function compileRules(sync = {}) {
     const pattern = String(g.pattern || '').replace(/\/+$/, '');
     return { pattern, depth: pattern.split('/').length, re: globToRegExp(pattern), cold: !!g.cold };
   });
+  const lazy = (sync.lazy || []).map(globToRegExp);
   return {
     wants(rel) {
       return include.some((r) => r.test(rel)) && !exclude.some((r) => r.test(rel));
@@ -54,6 +56,10 @@ function compileRules(sync = {}) {
         if (g.re.test(prefix)) return prefix;
       }
       return '';
+    },
+    /** 서버에만 두었다가 프로그램이 달라고 할 때 받는 파일인지 */
+    lazy(rel) {
+      return lazy.some((r) => r.test(rel));
     },
   };
 }

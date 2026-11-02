@@ -2,8 +2,9 @@
 
 // zip 풀기 (yauzl). 폴더 밖으로 나가는 경로는 막는다.
 
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
+// Electron 안에서는 .asar 파일을 폴더처럼 다루는 fs 대신 원래 fs (Electron 으로 만든 프로그램에는 app.asar 가 들어 있음)
+const fs = process.versions.electron ? require('original-fs') : require('node:fs');
+const fsp = fs.promises;
 const path = require('node:path');
 const { pipeline } = require('node:stream/promises');
 const yauzl = require('yauzl');

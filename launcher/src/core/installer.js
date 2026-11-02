@@ -5,8 +5,9 @@
 // 새 버전은 옆 폴더에 풀어 두고 installed.json 만 바꾼다. 그래서 프로그램이 켜져 있어도 업데이트를 받아 둘 수 있고,
 // 다음에 켤 때(또는 프로그램이 스스로 다시 켜질 때) 새 버전으로 바뀐다. 예전 버전 폴더는 쓰지 않을 때 지운다.
 
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
+// Electron 안에서는 .asar 파일을 폴더처럼 다루는 fs 대신 원래 fs (보통 fs 로 app.asar 를 건드리면 파일을 잡고 있어서 폴더를 옮기거나 지우지 못함)
+const fs = process.versions.electron ? require('original-fs') : require('node:fs');
+const fsp = fs.promises;
 const path = require('node:path');
 const { readJson, writeJson } = require('./fsutil');
 const { extractZip } = require('./zip');

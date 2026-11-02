@@ -15,7 +15,7 @@ const { detectLegacy, importLegacy } = require('../core/legacy');
 const { writeTrust, TicketStore, verifyTicket } = require('../core/tickets');
 const { Runner, buildEnv } = require('../core/runner');
 const { EventStream } = require('../core/events');
-const { readJsonSync, formatBytes, dirSize } = require('../core/fsutil');
+const { readJsonSync, writeJson, formatBytes, dirSize } = require('../core/fsutil');
 
 const SYNC_EVERY = 5 * 60 * 1000; // 실시간 알림이 끊겨 있어도 이 간격으로는 맞춤
 const APPS_EVERY = 30 * 60 * 1000;
@@ -24,9 +24,39 @@ const WATCH_EVERY = 15 * 1000;
 const REMOTE_DELAY = 300; // 다른 기기에서 바뀌었다는 알림 → 잠깐 모았다가 받기
 const LOCAL_DELAY = 1000; // 이 컴퓨터에서 파일이 바뀜 → 쓰기가 끝나길 잠깐 기다렸다가 올리기
 const QUEUE_MAX_WAIT = 5000; // 계속 바뀌어도 이보다 오래 미루지는 않음
+const REQUEST_DELAY = 100; // 프로그램이 학원 공간 파일을 달라고 함 → 바로 받기
+const REQUEST_RE = /^[A-Za-z0-9_-]{1,64}\.json$/; // requests/<rid>.json (답은 <rid>.done.json)
 
 // 동기화 폴더를 지켜볼 때 건너뛰는 것: 통합 클라우드·프로그램의 임시 파일
 const IGNORE_LOCAL = [/(^|\/)\.sync-state\.json$/, /^conflicts(\/|$)/, /\.tmp$/i, /\.magoedu-dl(\.part)?$/i, /(^|\/)\.magoedu/];
+
+/** 프로그램이 '이 파일 받아 줘'(paths)·'받지 않은 채로 지워 줘'(remove)라고 적은 요청들: requests/<rid>.json */
+async function readRequests(dir) {
+  const names = await fsp.readdir(dir).catch(() => []);
+  const out = [];
+  for (const n of names) {
+    if (!REQUEST_RE.test(n)) continue;
+    try {
+      const body = JSON.parse(await fsp.readFile(path.join(dir, n), 'utf8'));
+      const list = (v) => (Array.isArray(v) ? v : []).filter((p) => typeof p === 'string');
+      out.push({ rid: n.slice(0, -5), paths: list(body?.paths), remove: list(body?.remove) });
+    } catch {
+      /* 쓰는 중 → 다음에 */
+    }
+  }
+  return out;
+}
+
+/** 요청마다 <rid>.done.json { ok, missing[, error] } 을 쓰고 요청은 지운다 */
+async function answerRequests(dir, reqs, missing, error = null) {
+  const miss = new Set(missing || []);
+  for (const r of reqs) {
+    const all = [...r.paths, ...r.remove];
+    const m = error ? all : all.filter((p) => miss.has(p));
+    await writeJson(path.join(dir, `${r.rid}.done.json`), { ok: !error && !m.length, missing: m, ...(error ? { error } : {}) });
+    await fsp.rm(path.join(dir, `${r.rid}.json`), { force: true });
+  }
+}
 
 /** PC(Windows)에서 설치·실행하는 프로그램인지 (안드로이드 항목은 내려받기 안내만) */
 const isDesktop = (a) => (a?.platform || 'windows') === 'windows';
@@ -60,7 +90,7 @@ class Cloud extends EventEmitter {
     this.adopted = new Set(); // 통합 클라우드를 다시 켜기 전에 실행한 프로그램
     this.settled = false; // 로그인한 뒤 세션 확인·목록 새로 고침이 끝났는지
     this.events = null; // 서버 실시간 알림
-    this.watchers = new Map(); // id → 동기화 폴더 지켜보기
+    this.watchers = new Map(); // id → [동기화 폴더·학원 공간·요청 폴더 지켜보기]
     this.syncQueue = new Map(); // id → 곧 할 동기화
     this._syncing = {};
     this._syncAgain = {};
@@ -507,6 +537,40 @@ class Cloud extends EventEmitter {
     return new SyncEngine({ api: this.api, appId: id, dirs, rules: compileRules(inst.manifest.sync), log: this.log });
   }
 
+  /** 학원 공간도 맞추는지: 매니페스트에 shared 가 있고 학원에 속한 계정 */
+  _usesAcademy(id) {
+    return !!(this.installed[id]?.manifest.shared && this.user?.academy);
+  }
+
+  _academyEngine(id) {
+    if (!this._usesAcademy(id)) return null;
+    const dirs = this.paths.account(this.user.id).app(id);
+    return new SyncEngine({
+      api: this.api,
+      appId: id,
+      base: `/api/sync/${encodeURIComponent(id)}/academy`,
+      dirs: { sync: dirs.academy, conflicts: dirs.academyConflicts, state: dirs.academyState },
+      rules: compileRules(this.installed[id].manifest.shared),
+      log: this.log,
+    });
+  }
+
+  /** 학원 공간을 맞춘다. 프로그램이 달라고 한(requests) 열 때만 받는 파일도 이때 받고 답을 쓴다 */
+  async _syncAcademy(id, onProgress) {
+    const engine = this._academyEngine(id);
+    if (!engine) return null;
+    const dir = this.paths.account(this.user.id).app(id).requests;
+    const reqs = await readRequests(dir);
+    try {
+      const r = await engine.run({ onProgress, want: new Set(reqs.flatMap((q) => q.paths)), drop: new Set(reqs.flatMap((q) => q.remove)) });
+      await answerRequests(dir, reqs, r.missing);
+      return r;
+    } catch (err) {
+      await answerRequests(dir, reqs, null, err.message).catch(() => {});
+      throw err;
+    }
+  }
+
   /**
    * 한 프로그램을 맞춘다. 이미 도는 중이면 그것을 기다린다.
    * fresh: 도는 중인 동기화가 이미 서버 목록·내 파일을 읽었을 수 있으니, 끝난 뒤 한 번 더 (여러 번 불러도 한 번만)
@@ -530,30 +594,37 @@ class Cloud extends EventEmitter {
     this.emitState();
     const job = (async () => {
       try {
-        const r = await engine.run({
-          onProgress: (p) => {
-            if (p.phase === 'transfer') {
-              this.syncInfo[id] = { ...this.syncInfo[id], progress: p.total ? p.done / p.total : null, text: `${p.done}/${p.total}` };
-              this.emitState();
-            }
-          },
-        });
+        const onProgress = (p) => {
+          if (p.phase === 'transfer') {
+            this.syncInfo[id] = { ...this.syncInfo[id], progress: p.total ? p.done / p.total : null, text: `${p.done}/${p.total}` };
+            this.emitState();
+          }
+        };
+        const r = await engine.run({ onProgress });
+        const a = await this._syncAcademy(id, onProgress);
         this._online(true);
+        const moved = (x) => x.uploaded + x.downloaded + x.deletedLocal + x.deletedRemote;
+        const conflicts = [...r.conflicts, ...(a ? a.conflicts : [])];
+        const errors = [...r.errors, ...(a ? a.errors : [])];
         this.syncInfo[id] = {
-          status: r.errors.length ? 'partial' : 'ok',
+          status: errors.length ? 'partial' : 'ok',
           at: r.at,
           localOnly: r.localOnly,
-          conflicts: r.conflicts.length ? r.conflicts : prev.conflicts || [],
+          conflicts: conflicts.length ? conflicts : prev.conflicts || [],
           quotaExceeded: r.quotaExceeded,
-          errors: r.errors.slice(0, 5),
-          moved: r.uploaded + r.downloaded + r.deletedLocal + r.deletedRemote,
+          errors: errors.slice(0, 5),
+          moved: moved(r) + (a ? moved(a) : 0),
           seq: r.seq,
+          academySeq: a ? a.seq : null, // 학원 공간은 따로 (실시간 알림 scope: 'academy')
         };
         if (r.usageBytes !== null) this.storage = { ...(this.storage || {}), usageBytes: r.usageBytes, quotaBytes: r.quotaBytes };
         if (r.conflicts.length && !quiet) {
           this._toast(`${this._name(id)}: 다른 컴퓨터와 동시에 고친 파일 ${r.conflicts.length}개는 따로 보관했어요`, 'warning');
         }
         if (r.quotaExceeded) this._toast('서버 저장 공간이 꽉 차서 일부 파일을 올리지 못했어요', 'warning');
+        if (a?.reverted.length) {
+          this._toast(`${this._name(id)}: 고칠 권한이 없는 학원 공용 파일 ${a.reverted.length}개는 원래대로 되돌렸어요 (내 것은 따로 보관)`, 'warning');
+        }
         return r;
       } catch (err) {
         const offline = err instanceof ApiError && err.offline;
@@ -606,7 +677,8 @@ class Cloud extends EventEmitter {
     const id = e?.appId;
     if (!id || !this._syncIds().includes(id)) return;
     if (e.deviceId && e.deviceId === this.store.config.deviceId) return; // 이 컴퓨터가 올린 것
-    if (typeof e.seq === 'number' && e.seq <= (this.syncInfo[id]?.seq || 0)) return; // 이미 받은 것
+    const have = e.scope === 'academy' ? this.syncInfo[id]?.academySeq : this.syncInfo[id]?.seq;
+    if (typeof e.seq === 'number' && e.seq <= (have || 0)) return; // 이미 받은 것
     this._queueSync(id, REMOTE_DELAY);
   }
 
@@ -635,30 +707,44 @@ class Cloud extends EventEmitter {
   }
 
   _watch(id) {
-    const dir = this.paths.account(this.user.id).app(id).sync;
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-      const w = fs.watch(dir, { recursive: true }, (_type, name) => {
-        const rel = name ? String(name).replace(/\\/g, '/') : '';
-        if (rel && IGNORE_LOCAL.some((re) => re.test(rel))) return;
-        this._queueSync(id, LOCAL_DELAY);
+    const dirs = this.paths.account(this.user.id).app(id);
+    const list = [];
+    const watch = (dir, recursive, onName) => {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        const w = fs.watch(dir, { recursive }, (_type, name) => onName(name ? String(name).replace(/\\/g, '/') : ''));
+        w.on('error', () => this._unwatch(id)); // 폴더가 지워짐 등 → 다음 목록 새로 고침 때 다시
+        w.unref?.();
+        list.push(w);
+      } catch (err) {
+        this.log.warn?.(`[동기화] ${id} 폴더를 지켜보지 못했어요 (5분마다 맞춤)`, err.message);
+      }
+    };
+    const changed = (rel) => {
+      if (rel && IGNORE_LOCAL.some((re) => re.test(rel))) return;
+      this._queueSync(id, LOCAL_DELAY);
+    };
+    watch(dirs.sync, true, changed);
+    if (this._usesAcademy(id)) {
+      watch(dirs.academy, true, changed);
+      watch(dirs.requests, false, (n) => {
+        // 새 요청만 (답 <rid>.done.json 을 쓰거나 요청을 지운 것은 건너뜀)
+        if (REQUEST_RE.test(n) && fs.existsSync(path.join(dirs.requests, n))) this._queueSync(id, REQUEST_DELAY);
       });
-      w.on('error', () => this._unwatch(id)); // 폴더가 지워짐 등 → 다음 목록 새로 고침 때 다시
-      w.unref?.();
-      this.watchers.set(id, w);
-    } catch (err) {
-      this.log.warn?.(`[동기화] ${id} 폴더를 지켜보지 못했어요 (5분마다 맞춤)`, err.message);
     }
+    if (list.length) this.watchers.set(id, list);
   }
 
   _unwatch(id) {
-    const w = this.watchers.get(id);
-    if (!w) return;
+    const list = this.watchers.get(id);
+    if (!list) return;
     this.watchers.delete(id);
-    try {
-      w.close();
-    } catch {
-      /* 이미 닫힘 */
+    for (const w of list) {
+      try {
+        w.close();
+      } catch {
+        /* 이미 닫힘 */
+      }
     }
   }
 
@@ -748,11 +834,19 @@ class Cloud extends EventEmitter {
         const dirs = this.paths.account(this.user.id).app(id);
         await fsp.mkdir(dirs.sync, { recursive: true });
         await fsp.mkdir(dirs.local, { recursive: true });
+        const academy = this._usesAcademy(id);
+        if (academy) {
+          await fsp.mkdir(dirs.academy, { recursive: true });
+          await fsp.mkdir(dirs.requests, { recursive: true });
+          // 지난번에 남은 요청·답 (폴더는 지켜보는 중이라 안의 파일만 지움)
+          for (const n of await fsp.readdir(dirs.requests)) await fsp.rm(path.join(dirs.requests, n), { recursive: true, force: true });
+        }
         const env = buildEnv({
           ticket,
           appId: id,
           user: this.user,
           appDirs: dirs,
+          academy,
           serverUrl: this.store.config.serverUrl,
           launcherVersion: this.version,
           trustFile: this.paths.trustFile,

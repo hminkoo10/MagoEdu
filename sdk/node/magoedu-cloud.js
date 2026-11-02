@@ -14,8 +14,12 @@
 //   }
 //   session.dataDir   // 같은 아이디면 어느 컴퓨터에서든 같은 데이터 (서버와 동기화)
 //   session.localDir  // 이 컴퓨터에만 두는 데이터
+//   session.academyDir  // 학원 공간: 같은 학원 사람들이 함께 쓰는 데이터 (매니페스트에 shared, 학원이 없으면 '')
+//   await cloud.requestFiles(session, ['books/b1/a.pdf'])  // 학원 공간의 '열 때만 받는' 파일 받기
+//   await cloud.removeFiles(session, ['books/b1/a.pdf'])   // 받지 않은 파일을 서버에서 지우기 (교재를 지울 때)
 //
 // 개발할 때(빌드 전)는 MAGOEDU_DEV=1 로 통합 클라우드 없이 켤 수 있다.
+// (계정·폴더는 통합 클라우드와 같은 이름의 환경 변수로 바꿀 수 있음: MAGOEDU_USER_ID, MAGOEDU_ACADEMY_DIR …)
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -82,9 +86,18 @@ function check(appId, { packaged = true, env = process.env } = {}) {
     const s = {
       appId,
       dev: true,
-      user: { id: 'dev', username: 'dev', name: '개발자', role: 'admin', academy: '' },
+      user: {
+        id: env.MAGOEDU_USER_ID || 'dev',
+        username: env.MAGOEDU_USERNAME || 'dev',
+        name: env.MAGOEDU_USER_NAME || '개발자',
+        role: env.MAGOEDU_ROLE || 'admin',
+        academy: env.MAGOEDU_ACADEMY || '',
+      },
       dataDir: env.MAGOEDU_DATA_DIR || path.join(base, 'sync'),
       localDir: env.MAGOEDU_LOCAL_DIR || path.join(base, 'local'),
+      academyId: env.MAGOEDU_ACADEMY_ID || '',
+      academyDir: env.MAGOEDU_ACADEMY_DIR || '',
+      requestDir: env.MAGOEDU_REQUEST_DIR || '',
       server: '',
       expiresAt: 0,
     };
@@ -117,6 +130,9 @@ function check(appId, { packaged = true, env = process.env } = {}) {
     user: { id: payload.sub, username: payload.usr, name: payload.nam, role: payload.rol, academy: env.MAGOEDU_ACADEMY || '' },
     dataDir: env.MAGOEDU_DATA_DIR,
     localDir: env.MAGOEDU_LOCAL_DIR,
+    academyId: env.MAGOEDU_ACADEMY_ID || '',
+    academyDir: env.MAGOEDU_ACADEMY_DIR || '', // 학원이 없거나 학원 공간을 쓰지 않는 프로그램은 ''
+    requestDir: env.MAGOEDU_REQUEST_DIR || '',
     server: env.MAGOEDU_SERVER || '',
     launcherVersion: env.MAGOEDU_LAUNCHER_VERSION || '',
     expiresAt: payload.exp * 1000,
@@ -130,6 +146,58 @@ function check(appId, { packaged = true, env = process.env } = {}) {
 
 function reason() {
   return lastReason;
+}
+
+/**
+ * 학원 공간의 '열 때만 받는' 파일(매니페스트 shared.lazy)을 통합 클라우드에 받아 달라고 하고, 다 받을 때까지 기다린다.
+ * paths: 학원 공간 안의 경로 ('/' 로 구분). 이미 있는 파일은 건너뛴다.
+ * → { ok, missing: [받지 못한 경로], error? }   (서버에 없거나 인터넷이 끊겼거나 시간이 지남)
+ */
+async function requestFiles(session, paths, { timeoutMs = 120000 } = {}) {
+  const want = [...new Set(paths.map((p) => String(p).replace(/\\/g, '/')))];
+  const need = want.filter((p) => !session.academyDir || !fs.existsSync(path.join(session.academyDir, ...p.split('/'))));
+  if (!need.length) return { ok: true, missing: [] };
+  if (!session.requestDir) return { ok: false, missing: need, error: '학원 공간을 쓰지 않아요.' };
+  return ask(session, { paths: need }, timeoutMs);
+}
+
+/**
+ * 학원 공간에서 이 컴퓨터에 받지 않은 파일을 서버에서 지워 달라고 한다 (폴더에 없는 파일은 지울 수 없으니).
+ * 있는 파일은 그냥 폴더에서 지우면 된다. → { ok, missing: [서버에 남은 경로], error? }
+ */
+async function removeFiles(session, paths, { timeoutMs = 120000 } = {}) {
+  const list = [...new Set(paths.map((p) => String(p).replace(/\\/g, '/')))];
+  if (!list.length || !session.requestDir) return { ok: !list.length, missing: list };
+  return ask(session, { remove: list }, timeoutMs);
+}
+
+/** requests/<rid>.json 을 쓰면 통합 클라우드가 처리한 뒤 <rid>.done.json { ok, missing, error? } 으로 답한다 */
+async function ask(session, body, timeoutMs) {
+  const all = [...(body.paths || []), ...(body.remove || [])];
+  const rid = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  const req = path.join(session.requestDir, `${rid}.json`);
+  const done = path.join(session.requestDir, `${rid}.done.json`);
+  fs.mkdirSync(session.requestDir, { recursive: true });
+  fs.writeFileSync(`${req}.tmp`, JSON.stringify(body));
+  fs.renameSync(`${req}.tmp`, req);
+  const end = Date.now() + timeoutMs;
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 100));
+    let answer = null;
+    try {
+      answer = JSON.parse(fs.readFileSync(done, 'utf8'));
+    } catch {
+      /* 아직 */
+    }
+    if (answer) {
+      fs.rmSync(done, { force: true });
+      return { ok: !!answer.ok, missing: answer.missing || [], ...(answer.error ? { error: answer.error } : {}) };
+    }
+    if (Date.now() > end) {
+      fs.rmSync(req, { force: true });
+      return { ok: false, missing: all, error: '시간 안에 끝나지 않았어요.' };
+    }
+  }
 }
 
 /** 통합 클라우드를 연다. appId 를 주면 그 프로그램을 켜 달라고 한다. */
@@ -175,4 +243,4 @@ function newerVersionInstalled(appId, currentVersion) {
   }
 }
 
-module.exports = { check, reason, verifyTicket, openCloud, newerVersionInstalled, RESTART_EXIT_CODE, defaultTrustFile };
+module.exports = { check, reason, requestFiles, removeFiles, verifyTicket, openCloud, newerVersionInstalled, RESTART_EXIT_CODE, defaultTrustFile };

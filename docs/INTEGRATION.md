@@ -47,6 +47,7 @@ zip 맨 위(또는 폴더 하나 안)에 `magoedu-app.json` 을 넣어요.
 | `sync.groups` | 한 묶음으로 보는 폴더. `cold: true` 면 서버 보관 기간(운영자가 정함, 기본 30일) 동안 안 쓴 묶음은 **서버에서만** 지우고 그 컴퓨터에는 남겨 둠 |
 | `legacy` | 예전에 따로 설치해서 쓰던 데이터 위치. `{APPDATA}` `{LOCALAPPDATA}` `{HOME}` `{DOCUMENTS}` 를 쓸 수 있고, `to` 는 `sync/...` 또는 `local/...` |
 | `restartExitCode` | (선택) 다시 켜 달라는 종료 코드. 기본 75 |
+| `shared` | (선택) **학원 공간** 규칙 `{ include, exclude, lazy }`. 같은 학원 사람들이 함께 쓰는 폴더(`MAGOEDU_ACADEMY_DIR`)를 맞춰요 (4-1번) |
 
 서버 프로그램 목록(통합 클라우드 → 프로그램 관리)에는 저장소와 파일 이름 규칙만 적어 두면 돼요.
 기본으로 들어 있는 규칙: `^OhdapNote-(\d+\.\d+\.\d+)-win-x64\.zip$`, `^MaplTajong-(\d+\.\d+\.\d+)-win-x64\.zip$`
@@ -59,6 +60,9 @@ zip 맨 위(또는 폴더 하나 안)에 `magoedu-app.json` 을 넣어요.
 | `MAGOEDU_DATA_DIR` | **동기화 폴더** — 같은 아이디면 모든 컴퓨터가 같은 내용 |
 | `MAGOEDU_LOCAL_DIR` | 이 컴퓨터에만 두는 폴더 (캐시, 로그, SQLite 같은 것) |
 | `MAGOEDU_APP_ID`, `MAGOEDU_USER_ID`, `MAGOEDU_USERNAME`, `MAGOEDU_USER_NAME`, `MAGOEDU_ROLE`, `MAGOEDU_ACADEMY` | 누가 켰는지 (확인된 값은 허가증 안에 있음) |
+| `MAGOEDU_ACADEMY_DIR` | **학원 공간** — 같은 학원 사람들이 함께 쓰는 폴더 (매니페스트에 `shared` 가 있고 학원에 속한 계정만, 아니면 빈 값) |
+| `MAGOEDU_REQUEST_DIR` | 학원 공간의 '열 때만 받는' 파일을 달라고 적는 폴더 (4-1번) |
+| `MAGOEDU_ACADEMY_ID` | 학원 번호 (학원 공간을 쓰지 않으면 빈 값) |
 | `MAGOEDU_SERVER`, `MAGOEDU_LAUNCHER_VERSION`, `MAGOEDU_LAUNCHER_PID` | 참고용 |
 
 ## 3. 시작할 때 확인하기 (개별 실행 막기)
@@ -140,6 +144,42 @@ Windows PC 브라우저의 웹 화면에서는 Windows 프로그램 카드에 **
 - `cold: true` 묶음은 **안에 있는 파일이 하나라도 바뀌면 "사용함"**으로 쳐요. 열어 보기만 해도 기간이 다시 시작되게 하려면 열 때 작은 값(예: `openedAt`)을 저장해 주세요.
   서버에서 정리된 묶음을 다시 열면 그 컴퓨터에 남아 있던 파일이 모두 다시 올라가요.
 
+## 4-1. 학원 공간 (같은 학원 사람들이 함께 쓰는 데이터)
+
+매니페스트에 `shared` 를 넣으면, 학원에 속한 계정은 동기화 폴더와 별도로 **학원 공간**(`MAGOEDU_ACADEMY_DIR`)도 받아요.
+같은 학원의 모든 사람이 같은 내용을 보고, 4번과 같은 방식(실시간, 원자적 저장, 충돌하면 `conflicts` 에 보관)으로 맞춰요.
+학원이 없는 계정(운영자)은 빈 값이니, 그때는 동기화 폴더 안의 하위 폴더(예: `shared/`)를 같은 구조로 쓰면 돼요 (공유는 되지 않음).
+
+```json
+"shared": { "include": ["**"], "lazy": ["books/*/*.pdf", "books/*/*.png"] }
+```
+
+**누가 보고 누가 고치는지는 경로로 정해요** (어느 프로그램이든 같음):
+
+| 경로 | 보기 | 고치기·지우기 | 예 |
+| --- | --- | --- | --- |
+| `members/<계정 ID>/...` | 그 사람, 원장 | 그 사람만 | 선생님마다 만든 오답노트 (`<계정 ID>` 는 `MAGOEDU_USER_ID`) |
+| `<폴더>/<이름>/...` (두 단계 이상) | 학원 모두 | 그 묶음을 처음 올린 사람(주인), 원장 | `books/<교재 ID>/book.json` — 묶음은 앞의 두 단계 |
+| `<파일>` (한 단계) | 학원 모두 | 원장만 | `academy.json` (학원 공용 설정) |
+
+- 운영자는 원장과 같아요. 서버는 파일마다 마지막으로 고친 사람의 계정 ID(`updatedBy`)를 기록해요. 화면에 '만든 사람'을 보이려면 파일 안에 이름을 함께 저장해 주세요.
+- **고칠 권한이 없는 파일을 바꾸거나 지우면** 통합 클라우드가 서버 것으로 되돌려요 (서버에 없으면 지움). 바꾼 내용은 `conflicts` 폴더에 보관하고 알려 줘요.
+  그러니 남의 파일은 화면에서 읽기 전용으로 보여 주고, 열기만 할 때는 쓰지 마세요.
+- 학원 공간은 용량 한도와 서버 보관 기간 정리가 없어요.
+
+**열 때만 받기** (`shared.lazy`): 큰 파일(교재 PDF 같은 것)은 동기화할 때 받지 않고, 프로그램이 달라고 할 때만 받아요.
+한 번 받은 파일은 그 뒤로 보통 파일처럼 계속 맞춰요. 내가 만든 파일은 처음부터 내 컴퓨터에 있으니 그대로 맞춰요.
+
+```js
+const r = await cloud.requestFiles(session, ['books/b1/problem.pdf']); // SDK. 이미 있는 파일은 건너뜀
+if (!r.ok) showError(r.missing, r.error); // 서버에 없음, 인터넷 끊김, 시간 지남(기본 2분)
+```
+
+받지 않은 파일은 폴더에서 지울 수 없으니, 지울 때(예: 교재 삭제)는 `await cloud.removeFiles(session, paths)` 로 서버에서 지워 달라고 해요.
+
+SDK 없이 하려면 `MAGOEDU_REQUEST_DIR/<요청 ID>.json` 에 `{ "paths": [...] }`(받기) 또는 `{ "remove": [...] }`(지우기)를 원자적으로 쓰세요 (요청 ID 는 영문·숫자·`-`·`_`, 64자까지).
+통합 클라우드가 받은 뒤 `<요청 ID>.done.json` `{ "ok": true, "missing": [] }` 로 답하고 요청 파일을 지워요. 답은 읽은 뒤 지워 주세요.
+
 ## 5. 업데이트
 
 - 프로그램 안의 자동 업데이트(electron-updater, `update_manager.py`)는 빼요. 통합 클라우드가 새 버전을 **옆 폴더에 받아 두고**, 다음에 켤 때 새 버전으로 켜요.
@@ -167,14 +207,12 @@ Windows PC 브라우저의 웹 화면에서는 Windows 프로그램 카드에 **
 
 ## 7. 프로그램별로 고칠 것 (나중에 할 일)
 
-### 오답노트 (`hminkoo10/ohdapnote`)
+### 오답노트 (`hminkoo10/ohdapnote`, 0.3.0 부터 연결됨)
 
-1. `src/main/main.js` 시작 부분에 3번의 확인 코드. `app.setPath('userData', session.localDir)`.
-2. `dataDir()` 를 `path.join(session.dataDir, 'data')` 로 (프로젝트·설정이 동기화 폴더로).
-3. `projects:get` 때 `project.json` 에 `openedAt` 저장 → 열어 보기만 해도 보관 기간이 다시 시작.
-4. `electron-updater` 와 업데이트 화면 제거 (또는 "통합 클라우드가 업데이트해요" 안내로 바꿈).
-5. `magoedu-app.json` (1번 예시 그대로) 추가, `release.yml` 을 6번처럼 zip 배포로 변경. NSIS 설치 파일·`latest.yml` 배포 중단.
-6. `.tmp` 임시 파일은 `exclude` 에 이미 들어 있음.
+- 학원 공간(4-1번)을 써요: 교재 `books/<id>/`(생성자 `createdBy`, 원본은 `shared.lazy` 로 열 때만 받음), 학생 명단 `students/`,
+  학원 공용 AI 키 `academy.json`, 선생님별 오답노트 `members/<계정>/notes/`. 개인 공간에는 `settings.json` 만.
+- 예전에 따로 설치한 데이터는 `legacy` 로 `local/legacy` 에 받아서 오답노트가 처음 켤 때 새 자리로 옮겨요.
+- 자세한 것은 오답노트 저장소의 `src/main/main.js` '저장 위치'와 `magoedu-app.json`.
 
 ### 마고 타종 (`hminkoo10/Mapl-Tajong`, 2.1.0 기준)
 
@@ -244,6 +282,8 @@ GET  /api/apps/<id>/download?version=…&dl=…     (로그인 정보 없이, 10
 1. `POST /api/auth/login` `{ username, password, device: { id, name, platform: "android", version } }` → `token`
 2. `GET /api/sync/tajong?since=<마지막 seq>` → 바뀐 파일 목록, `GET|PUT|DELETE /api/sync/tajong/file?path=…&baseRev=…` (PC 통합 클라우드와 같은 규칙: `baseRev` 가 맞지 않으면 409, 먼저 올라간 것이 이김)
 3. 실시간 알림을 열어 두고, `change` 가 오면 `since` 로 바뀐 것만 받아요.
+4. 학원 공간(4-1번): `GET /api/sync/<앱 ID>/academy?since=…`, `GET|PUT|DELETE /api/sync/<앱 ID>/academy/file?path=…&baseRev=…`.
+   규칙은 같고, 고칠 권한이 없으면 403 `not_owner`, 학원이 없는 계정은 404 `no_academy`. 목록에는 볼 수 있는 파일만 있고 파일마다 `updatedBy` 가 붙어요.
 
 ### 서버 실시간 알림
 
@@ -263,6 +303,7 @@ data: {"appId":"tajong","seq":123,"deviceId":"바꾼 기기 ID"}
 - `apps` 를 빼면 그 계정이 쓸 수 있는 모든 프로그램. 없는 프로그램은 404, 권한이 없는 프로그램은 403, 로그인 정보가 없거나 끝났으면 401.
 - 그 계정의 파일이 바뀔 때마다(올리기·지우기·서버 보관 기간 정리) 저장이 끝난 뒤 보내요. `deviceId` 는 바꾼 기기의 세션 기기 ID, 서버가 정리했으면 `null`.
   내 기기 ID 와 같으면 내가 올린 것이니 건너뛰어도 돼요.
+- 학원 공간이 바뀌면 그 학원 사람 모두에게 `{"appId":…,"seq":…,"deviceId":…,"scope":"academy"}` 를 보내요. `seq` 는 학원 공간 목록의 `seq` 와 비교해요.
 - 서버는 1분쯤마다 세션을 다시 확인해서 로그아웃·사용 중지된 연결은 끊어요. 세션 하나에 연결은 5개까지(넘으면 오래된 것부터 끊음).
 - 끊기면 1초에서 시작해 두 배씩, 많아야 30초 간격으로 다시 붙고, 다시 붙으면 `since` 로 한 번 받아요. 70초 넘게 아무것도 오지 않으면(ping 포함) 끊긴 것으로 봐요.
 - 서버 한 대 안에서만 알려요. nginx·Cloudflare 앞에 두어도 되고(25초 ping 으로 100초 끊김을 막음), 서버가 `x-accel-buffering: no` 를 보내니 nginx 가 모아 두지 않아요.

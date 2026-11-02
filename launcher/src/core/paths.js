@@ -13,6 +13,9 @@
 //         local\                            이 컴퓨터에만 두는 데이터 (캐시, 기록 등)
 //         conflicts\                        동시에 고쳐서 밀려난 파일 보관
 //         .sync-state.json
+//         academy\                          학원 공간 (같은 학원 사람들이 함께 쓰는 파일, 매니페스트에 shared 가 있을 때)
+//         conflicts\academy\  .academy-sync-state.json   학원 공간에서 밀려난 파일, 맞춘 상태
+//         requests\                         프로그램이 '이 파일 받아 줘'를 적는 곳 (학원 공간의 lazy 파일)
 //
 //   %LOCALAPPDATA%\MagoEduCloud\
 //     apps\<프로그램 ID>\<버전>\            설치한 프로그램
@@ -55,6 +58,10 @@ function makePaths({ userData, localData }) {
             conflicts: path.join(a, 'conflicts'),
             state: path.join(a, '.sync-state.json'),
             legacy: path.join(a, '.legacy.json'),
+            academy: path.join(a, 'academy'),
+            academyConflicts: path.join(a, 'conflicts', 'academy'),
+            academyState: path.join(a, '.academy-sync-state.json'),
+            requests: path.join(a, 'requests'),
           };
         },
       };

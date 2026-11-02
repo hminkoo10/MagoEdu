@@ -21,6 +21,7 @@ const session = cloud.check('ohdapnote', { packaged: app.isPackaged }); // 아�
 
 - 실행 허가증은 서버가 Ed25519 로 서명해요. Python 쪽은 `cryptography` 가 있으면 그것을, 없으면 들어 있는 순수 파이썬 구현을 써요.
 - 개발할 때는 `MAGOEDU_DEV=1` 로 통합 클라우드 없이 켤 수 있어요 (빌드한 프로그램에서는 안 됨).
+- Node: 학원 공간(같은 학원 사람들이 함께 쓰는 폴더)은 `session.academyDir`, 열 때만 받는 파일은 `await cloud.requestFiles(session, paths)` 로 받아요.
 - 자세한 연결 방법: [docs/INTEGRATION.md](../docs/INTEGRATION.md)
 
 시험: `npm test` (서버를 띄워 실제 허가증으로 확인)

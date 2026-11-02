@@ -10,6 +10,11 @@
 //
 // 보관 기간이 지나 서버에서만 지운 파일(evicted)은 내 컴퓨터에서 지우지 않는다. "이 컴퓨터에만 있음"으로 두었다가
 // 그 묶음(group)의 파일을 다시 고치면(=다시 쓰면) 묶음 전체를 다시 올린다.
+//
+// 학원 공간(같은 학원 사람들이 함께 쓰는 파일)도 같은 엔진으로 맞춘다 (base = /api/sync/<id>/academy).
+//   - 열 때만 받는 파일(rules.lazy): 프로그램이 달라고 한 것(want)만 받는다. 한 번 받은 뒤로는 보통 파일처럼 맞춘다.
+//     받지 않은 파일은 폴더에서 지울 수 없으니, 지워 달라고 한 것(drop)은 받지 않은 채로 서버에서 지운다.
+//   - 고칠 권한이 없는 파일(403 not_owner): 내 것은 conflicts 폴더에 보관하고 서버 것으로 되돌린다 (서버에 없으면 지움).
 
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -19,9 +24,10 @@ const { ApiError, Cancelled } = require('./api');
 const STATE_VERSION = 1;
 
 class SyncEngine {
-  constructor({ api, appId, dirs, rules, log = console, concurrency = 3 }) {
+  constructor({ api, appId, base, dirs, rules, log = console, concurrency = 3 }) {
     this.api = api;
     this.appId = appId;
+    this.base = base || `/api/sync/${encodeURIComponent(appId)}`;
     this.dirs = dirs; // { sync, conflicts, state }
     this.rules = rules;
     this.log = log;
@@ -35,7 +41,7 @@ class SyncEngine {
   }
 
   async _fetchRemote(state) {
-    const res = await this.api.get(`/api/sync/${encodeURIComponent(this.appId)}?since=${state.seq || 0}`, { timeout: 60000 });
+    const res = await this.api.get(`${this.base}?since=${state.seq || 0}`, { timeout: 60000 });
     if (res.full) state.remote = {};
     for (const e of res.entries) state.remote[e.path] = e;
     state.seq = res.seq;
@@ -97,9 +103,11 @@ class SyncEngine {
   /**
    * 한 번 맞춘다.
    * onProgress({ phase: 'scan' | 'transfer', done, total, path })
+   * want: 열 때만 받는 파일 중 이번에 받을 것 (Set)
+   * drop: 이 컴퓨터에 받지 않은 채로 서버에서 지울 것 (Set)
    */
-  async run({ onProgress, signal } = {}) {
-    const summary = { uploaded: 0, downloaded: 0, deletedLocal: 0, deletedRemote: 0, conflicts: [], errors: [], quotaExceeded: false };
+  async run({ onProgress, signal, want, drop } = {}) {
+    const summary = { uploaded: 0, downloaded: 0, deletedLocal: 0, deletedRemote: 0, conflicts: [], reverted: [], errors: [], quotaExceeded: false };
     const state = await this._loadState();
     let quota = null;
     for (let pass = 0; pass < 3; pass += 1) {
@@ -113,7 +121,11 @@ class SyncEngine {
       const all = new Set([...Object.keys(local), ...Object.keys(state.remote), ...Object.keys(state.base)]);
       for (const p of all) {
         if (!this.rules.wants(p)) continue;
-        const op = this._plan(p, local[p], state.base[p], state.remote[p]);
+        let op = this._plan(p, local[p], state.base[p], state.remote[p]);
+        if (op?.type === 'download' && !state.base[p]) {
+          if (drop?.has(p)) op = { type: 'deleteRemote', baseRev: state.remote[p].rev };
+          else if (this.rules.lazy(p) && !want?.has(p)) continue; // 달라고 할 때 받음
+        }
         if (op) ops.set(p, op);
       }
       // 다시 쓰기 시작한 묶음은 이 컴퓨터에만 남아 있던 파일까지 다시 올린다
@@ -183,6 +195,8 @@ class SyncEngine {
       usageBytes: quota?.usageBytes ?? null,
       quotaBytes: quota?.quotaBytes ?? null,
       seq: state.seq, // 서버에서 여기까지 받음 (실시간 알림이 이보다 작으면 이미 맞춘 것)
+      // 달라고 했지만 받지 못함(서버에 없음 등), 지워 달라고 했지만 서버에 남음
+      missing: [...(want || [])].filter((p) => !state.base[p]).concat([...(drop || [])].filter((p) => state.remote[p] && !state.remote[p].deleted)),
       at: Date.now(),
     };
   }
@@ -216,7 +230,47 @@ class SyncEngine {
   }
 
   _q(p) {
-    return `/api/sync/${encodeURIComponent(this.appId)}/file?path=${encodeURIComponent(p)}`;
+    return `${this.base}/file?path=${encodeURIComponent(p)}`;
+  }
+
+  /** 밀려나는 내 파일을 conflicts/<시각>/ 에 보관 */
+  async _keep(p, L) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const keep = path.join(this.dirs.conflicts, stamp, ...p.split('/'));
+    await fsp.mkdir(path.dirname(keep), { recursive: true });
+    await fsp.copyFile(L.abs, keep);
+  }
+
+  /** 옆 임시 파일에 다 받은 뒤 이름만 바꾼다 (켜져 있는 프로그램이 반쯤 받은 파일을 읽지 않게) */
+  async _download(p, R, state, signal) {
+    const abs = this._abs(p);
+    const tmp = `${abs}.magoedu-dl`;
+    await fsp.mkdir(path.dirname(abs), { recursive: true });
+    await this.api.download(this._q(p), tmp, { expectSha256: R.sha256, expectSize: R.size, signal, timeout: 0 });
+    try {
+      await renameRetry(tmp, abs);
+    } catch (err) {
+      await fsp.rm(tmp, { force: true });
+      throw err;
+    }
+    const st = await fsp.stat(abs);
+    state.cache[p] = { size: st.size, mtimeMs: Math.round(st.mtimeMs), sha: R.sha256 };
+    state.base[p] = { rev: R.rev, sha: R.sha256, evicted: false };
+  }
+
+  /** 고칠 권한이 없는 파일: 내 것은 보관하고 서버 것으로 되돌린다. 서버에 없으면 지운다 */
+  async _revert(p, L, R, state, summary, signal) {
+    if (L) await this._keep(p, L);
+    if (R && !R.deleted) {
+      await this._download(p, R, state, signal);
+    } else {
+      const abs = this._abs(p);
+      await fsp.rm(abs, { force: true });
+      await pruneEmptyDirs(this.dirs.sync, path.dirname(abs));
+      delete state.base[p];
+      delete state.cache[p];
+    }
+    summary.reverted.push(p);
   }
 
   /** 올리기·받기·지우기. 다시 한 번 맞춰야 하면 true */
@@ -250,26 +304,11 @@ class SyncEngine {
         return false;
       }
       if (op.type === 'conflict' && L) {
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const keep = path.join(this.dirs.conflicts, stamp, ...p.split('/'));
-        await fsp.mkdir(path.dirname(keep), { recursive: true });
-        await fsp.copyFile(L.abs, keep);
+        await this._keep(p, L);
         summary.conflicts.push(p);
       }
-      // download / conflict: 옆 임시 파일에 다 받은 뒤 이름만 바꾼다 (켜져 있는 프로그램이 반쯤 받은 파일을 읽지 않게)
-      const abs = this._abs(p);
-      const tmp = `${abs}.magoedu-dl`;
-      await fsp.mkdir(path.dirname(abs), { recursive: true });
-      await this.api.download(this._q(p), tmp, { expectSha256: R.sha256, expectSize: R.size, signal, timeout: 0 });
-      try {
-        await renameRetry(tmp, abs);
-      } catch (err) {
-        await fsp.rm(tmp, { force: true });
-        throw err;
-      }
-      const st = await fsp.stat(abs);
-      state.cache[p] = { size: st.size, mtimeMs: Math.round(st.mtimeMs), sha: R.sha256 };
-      state.base[p] = { rev: R.rev, sha: R.sha256, evicted: false };
+      // download / conflict
+      await this._download(p, R, state, signal);
       summary.downloaded += 1;
       return false;
     } catch (err) {
@@ -287,6 +326,10 @@ class SyncEngine {
           return false;
         }
         if (err.code === 'checksum_mismatch') return true; // 올리는 사이 파일이 바뀜
+        if (err.status === 403 && err.code === 'not_owner' && (op.type === 'upload' || op.type === 'deleteRemote')) {
+          await this._revert(p, L, R, state, summary, signal); // 학원 공간: 만든 사람·원장만 고침
+          return false;
+        }
       }
       throw err;
     }

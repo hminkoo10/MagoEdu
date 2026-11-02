@@ -13,7 +13,7 @@ const { writeJsonSync, readJsonSync } = require('./fsutil');
 
 const STOP_GRACE_MS = 10 * 1000; // 끄기: 창 닫기 신호 뒤 이만큼 기다렸다가 강제로 끔
 
-function buildEnv({ base = process.env, ticket, appId, user, appDirs, serverUrl, launcherVersion, trustFile }) {
+function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, serverUrl, launcherVersion, trustFile }) {
   return {
     ...base,
     MAGOEDU_TICKET: ticket,
@@ -23,6 +23,9 @@ function buildEnv({ base = process.env, ticket, appId, user, appDirs, serverUrl,
     MAGOEDU_USER_NAME: user.name,
     MAGOEDU_ROLE: user.role,
     MAGOEDU_ACADEMY: user.academy?.name || '',
+    MAGOEDU_ACADEMY_ID: academy && user.academy ? String(user.academy.id) : '',
+    MAGOEDU_ACADEMY_DIR: academy && user.academy ? appDirs.academy : '', // 학원 공간 (학원이 없거나 쓰지 않는 프로그램은 빈 값)
+    MAGOEDU_REQUEST_DIR: academy && user.academy ? appDirs.requests : '',
     MAGOEDU_DATA_DIR: appDirs.sync,
     MAGOEDU_LOCAL_DIR: appDirs.local,
     MAGOEDU_SERVER: serverUrl,
