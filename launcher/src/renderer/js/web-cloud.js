@@ -288,7 +288,8 @@ class WebCloud {
       this.request('GET', '/api/meta', { auth: false, timeout: 8000 }).catch(() => null),
       this.request('GET', '/api/launcher', { auth: false, timeout: 8000 }).catch(() => null),
     ]);
-    if (meta?.version) this.version = meta.version;
+    // 웹에 보이는 버전은 통합 클라우드 앱의 최신 버전 (서버 버전은 따로 올라감)
+    if (launcher?.version || meta?.version) this.version = launcher?.version || meta.version;
     if (launcher) this.launcher = launcher.version ? { version: launcher.version } : null;
     this.device.version = this.version;
   }
