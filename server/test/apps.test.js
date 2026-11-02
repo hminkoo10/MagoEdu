@@ -282,6 +282,8 @@ test('안드로이드 항목: 플랫폼, 내려받기 주소, 허가증 거절',
   });
 });
 
+const ANDROID_ICON = 'https://raw.githubusercontent.com/hminkoo10/Mapl-Tajong/main/android/app/src/main/res/drawable-nodpi/app_icon.png';
+
 test('안드로이드 항목: 이미 쓰던 서버에는 고침(migration)으로 추가', async () => {
   const { DatabaseSync } = require('node:sqlite');
   const { openDb, MIGRATIONS } = require('../src/db');
@@ -305,7 +307,7 @@ test('안드로이드 항목: 이미 쓰던 서버에는 고침(migration)으로
     assert.equal(android.id, 'tajong-android');
     assert.equal(android.platform, 'android');
     assert.equal(android.sort, 3);
-    assert.equal(android.icon_url, 'https://x/icon.ico');
+    assert.equal(android.icon_url, ANDROID_ICON, 'PC 아이콘을 그대로 쓰지 않고 보라색 안드로이드 아이콘');
     assert.deepEqual([android.exe, android.cold_enabled, android.auto_launch_default, android.enabled], ['', 0, 0, 1]);
     const re = new RegExp(JSON.parse(android.source).asset);
     assert.ok(re.test('MaplTajong-2.3.0.apk'));
@@ -317,6 +319,33 @@ test('안드로이드 항목: 이미 쓰던 서버에는 고침(migration)으로
     const fresh = openDb(path.join(dir, 'fresh.db'));
     assert.equal(fresh.get('SELECT COUNT(*) AS n FROM apps').n, 0);
     fresh.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('안드로이드 아이콘: PC 아이콘을 그대로 쓰던 서버만 보라색 아이콘으로 (운영자가 바꾼 주소는 그대로)', async () => {
+  const { DatabaseSync } = require('node:sqlite');
+  const { openDb, MIGRATIONS } = require('../src/db');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'magoedu-mig3-'));
+  try {
+    const make = (name, androidIcon) => {
+      const file = path.join(dir, name);
+      const raw = new DatabaseSync(file);
+      raw.exec(MIGRATIONS[0]);
+      raw.exec(MIGRATIONS[1]);
+      raw.exec('PRAGMA user_version = 2');
+      const add = raw.prepare(`INSERT INTO apps(id, name, sort, source, icon_url, exe, platform, created_at, updated_at) VALUES (?, ?, 0, '{"type":"local"}', ?, '', ?, 1, 1)`);
+      add.run('tajong', '마고 타종', 'https://x/app.ico', 'windows');
+      add.run('tajong-android', '마고 타종 (안드로이드)', androidIcon, 'android');
+      raw.close();
+      const db = openDb(file);
+      const icons = Object.fromEntries(db.all('SELECT id, icon_url FROM apps').map((r) => [r.id, r.icon_url]));
+      db.close();
+      return icons;
+    };
+    assert.deepEqual(make('same.db', 'https://x/app.ico'), { tajong: 'https://x/app.ico', 'tajong-android': ANDROID_ICON });
+    assert.deepEqual(make('custom.db', 'https://x/phone.png'), { tajong: 'https://x/app.ico', 'tajong-android': 'https://x/phone.png' });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

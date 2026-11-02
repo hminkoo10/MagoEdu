@@ -16,7 +16,7 @@
     "start": "electron .",
     "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"test/**/*.test.js\"",
     "icons": "node scripts/build-icons.mjs",
-    "app-icon": "node scripts/build-app-icon.mjs",
+    "app-icon": "python scripts/build-app-icon.py",
     "dist": "electron-builder --win --x64 --publish never",
     "test:ui": "xvfb-run -a node test/e2e/ui-e2e.js"
   },

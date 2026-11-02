@@ -21,14 +21,14 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
   });
 
   await t.test('바뀌지 않았으면 304 (배포하면 바로 새 파일)', async () => {
-    const first = await rq('GET', '/logo.svg');
+    const first = await rq('GET', '/logo.png');
     assert.equal(first.headers.get('cache-control'), 'private, no-cache', 'Cloudflare 가 오래 보관하게 바꾸지 않게');
     const etag = first.headers.get('etag');
     assert.ok(etag);
-    const again = await rq('GET', '/logo.svg', { headers: { 'if-none-match': etag } });
+    const again = await rq('GET', '/logo.png', { headers: { 'if-none-match': etag } });
     assert.equal(again.status, 304);
     assert.equal(again.headers.get('etag'), etag);
-    const other = await rq('GET', '/logo.svg', { headers: { 'if-none-match': 'W/"0-0"' } });
+    const other = await rq('GET', '/logo.png', { headers: { 'if-none-match': 'W/"0-0"' } });
     assert.equal(other.status, 200);
   });
 
@@ -54,17 +54,19 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
     assert.match(css.headers.get('content-type'), /^text\/css/);
   });
 
-  await t.test('로고와 파비콘 모두 ‘마고’ 글자가 있는 앱 아이콘', async () => {
+  await t.test('로고와 파비콘 모두 손글씨 ‘클라우드’ 앱 아이콘', async () => {
+    const web = path.join(__dirname, '..', '..', 'launcher', 'src', 'renderer');
     const page = (await rq('GET', '/')).data.toString('utf8');
-    assert.ok(page.includes('href="favicon.svg"'));
-    const logo = await rq('GET', '/logo.svg');
+    assert.ok(page.includes('href="favicon.ico"'));
+    const logo = await rq('GET', '/logo.png');
     assert.equal(logo.status, 200);
-    assert.equal(logo.headers.get('content-type'), 'image/svg+xml');
-    assert.ok(logo.data.toString('utf8').includes('translate(137 262)'), '‘마고’ 글자');
-    const icon = await rq('GET', '/favicon.svg');
+    assert.equal(logo.headers.get('content-type'), 'image/png');
+    assert.deepEqual(logo.data, fs.readFileSync(path.join(web, 'logo.png')));
+    const icon = await rq('GET', '/favicon.ico');
     assert.equal(icon.status, 200);
-    assert.equal(icon.headers.get('content-type'), 'image/svg+xml');
-    assert.ok(icon.data.toString('utf8').includes('translate(137 262)'), '파비콘도 ‘마고’ 글자가 있는 아이콘');
+    assert.equal(icon.headers.get('content-type'), 'image/x-icon');
+    assert.deepEqual(icon.data, fs.readFileSync(path.join(web, 'favicon.ico')));
+    assert.equal((await rq('GET', '/logo.svg')).status, 404, '예전 ‘마고’ 로고는 없음');
   });
 
   await t.test('폴더 밖 파일은 404', async () => {

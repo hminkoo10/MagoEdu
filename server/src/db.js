@@ -3,8 +3,9 @@
 // SQLite (Node 기본 내장 node:sqlite) - 따로 설치할 것이 없다.
 const { DatabaseSync } = require('node:sqlite');
 
-// 2번 고침에서 넣는 항목 (작은따옴표가 없어야 SQL 안에 그대로 넣을 수 있음)
+// 2·3번 고침에서 넣는 항목 (작은따옴표가 없어야 SQL 안에 그대로 넣을 수 있음)
 const TAJONG_ANDROID = {
+  icon: 'https://raw.githubusercontent.com/hminkoo10/Mapl-Tajong/main/android/app/src/main/res/drawable-nodpi/app_icon.png',
   description: '휴대폰에서 종을 울리고, PC와 시간표·종소리를 함께 맞추는 마고 타종 안드로이드 앱',
   source: { type: 'github', repo: 'hminkoo10/Mapl-Tajong', asset: '^MaplTajong-(\\d+\\.\\d+\\.\\d+)\\.apk$' },
 };
@@ -167,6 +168,12 @@ const MIGRATIONS = [
          '${JSON.stringify(TAJONG_ANDROID.source)}', (SELECT icon_url FROM apps WHERE id = 'tajong'), '', '#F76B15', 0, 30, 0,
          'android', CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
   WHERE EXISTS (SELECT 1 FROM apps) AND NOT EXISTS (SELECT 1 FROM apps WHERE id = 'tajong-android');
+  `,
+
+  // 3: 마고 타종 안드로이드는 PC(주황)와 다른 보라색 아이콘. PC 아이콘 주소를 그대로 쓰던 서버만 바꾼다 (운영자가 바꾼 주소는 그대로)
+  `
+  UPDATE apps SET icon_url = '${TAJONG_ANDROID.icon}'
+  WHERE id = 'tajong-android' AND icon_url = (SELECT icon_url FROM apps WHERE id = 'tajong');
   `,
 ];
 

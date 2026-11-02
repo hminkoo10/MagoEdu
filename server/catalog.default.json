@@ -25,7 +25,7 @@
       "repo": "hminkoo10/Mapl-Tajong",
       "asset": "^MaplTajong-(\\d+\\.\\d+\\.\\d+)\\.apk$"
     },
-    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/Mapl-Tajong/main/app/assets/ui/app.ico",
+    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/Mapl-Tajong/main/android/app/src/main/res/drawable-nodpi/app_icon.png",
     "exe": "",
     "coldStorage": { "enabled": false, "days": 30 },
     "autoLaunchDefault": false
