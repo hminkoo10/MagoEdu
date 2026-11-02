@@ -1,0 +1,8 @@
+data/
+node_modules/
+.env
+*.log
+build.json
+# 웹 화면은 배포할 때 launcher/src/renderer 를 복사해 넣음
+web/*
+!web/.gitkeep

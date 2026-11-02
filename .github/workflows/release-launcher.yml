@@ -1,0 +1,126 @@
+# 통합 클라우드 프로그램 배포 (Windows 설치 파일 + 자동 업데이트)
+#
+# main 에 launcher/ 가 바뀌어 올라오면 자동으로:
+#   1) 버전 정하기 — launcher/package.json 버전이 이미 배포됐으면 patch 를 1 올려 커밋 (1.0.0 → 1.0.1)
+#   2) 설치 파일(MagoEduCloud-Setup-x.y.z.exe)과 latest.yml 을 만들어 Release(cloud-vX.Y.Z)로 올림
+#   3) 서버가 이 Release 를 찾아 /updates/launcher/ 로 넘겨 주고, 설치된 통합 클라우드가 스스로 업데이트
+#
+# 저장소 변수(Settings → Secrets and variables → Actions → Variables)에 MAGOEDU_SERVER_URL 을 넣으면
+# 설치 파일에 기본 서버 주소로 들어가서, 처음 켤 때 서버 주소를 입력하지 않아도 돼요.
+name: Release (통합 클라우드)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'launcher/src/**'
+      - 'launcher/build/**'
+      - 'launcher/package.json'
+      - 'launcher/package-lock.json'
+      - '.github/workflows/release-launcher.yml'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: '올릴 버전 (auto: 이미 배포된 버전이면 patch +1 / patch / minor / major / none)'
+        type: choice
+        options: [auto, patch, minor, major, none]
+        default: auto
+      notes:
+        description: '이번 업데이트 내용 (비우면 커밋 제목으로 자동 작성)'
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-launcher
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+
+      - name: 설치
+        working-directory: launcher
+        run: npm ci
+
+      - name: 시험
+        run: |
+          (cd server && npm test)
+          (cd launcher && npm test)
+
+      - name: 버전 정하기
+        working-directory: launcher
+        env:
+          BUMP: ${{ inputs.bump || 'auto' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --tags --force
+          cur="$(node -p "require('./package.json').version")"
+          echo "PREV_TAG=$(git describe --tags --abbrev=0 --match 'cloud-v*' 2>/dev/null || true)" >> "$GITHUB_ENV"
+          if [ "$BUMP" = "auto" ]; then
+            if git rev-parse -q --verify "refs/tags/cloud-v$cur" > /dev/null; then BUMP="patch"; else BUMP="none"; fi
+          fi
+          if [ "$BUMP" != "none" ]; then
+            npm version "$BUMP" --no-git-tag-version
+            v="$(node -p "require('./package.json').version")"
+            git commit -am "통합 클라우드 v$v 자동 배포"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          v="$(node -p "require('./package.json').version")"
+          if git rev-parse -q --verify "refs/tags/cloud-v$v" > /dev/null; then
+            echo "::error::cloud-v$v 은(는) 이미 배포된 버전입니다."
+            exit 1
+          fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: 기본 서버 주소 넣기
+        if: vars.MAGOEDU_SERVER_URL != ''
+        working-directory: launcher
+        env:
+          URL: ${{ vars.MAGOEDU_SERVER_URL }}
+        run: |
+          node -e "require('fs').writeFileSync('src/main/defaults.json', JSON.stringify({ serverUrl: process.env.URL }, null, 2) + '\n')"
+
+      - name: 설치 파일 만들기
+        working-directory: launcher
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: 업데이트 내용
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          if [ -z "$NOTES" ] && [ -n "$PREV_TAG" ]; then
+            NOTES="$(git log --no-merges --pretty='- %s' "${PREV_TAG}..HEAD" -- launcher | grep -v '자동 배포' | head -30 || true)"
+          fi
+          [ -z "$NOTES" ] && NOTES="마고에듀 통합 클라우드 ${VERSION}"
+          printf '%s\n' "$NOTES" > release-notes.md
+          cat release-notes.md
+
+      - name: GitHub Release 올리기
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag "cloud-v${VERSION}"
+          git push origin "refs/tags/cloud-v${VERSION}"
+          gh release create "cloud-v${VERSION}" \
+            "launcher/dist/MagoEduCloud-Setup-${VERSION}.exe" \
+            "launcher/dist/MagoEduCloud-Setup-${VERSION}.exe.blockmap" \
+            launcher/dist/latest.yml \
+            --title "마고에듀 통합 클라우드 ${VERSION}" --notes-file release-notes.md

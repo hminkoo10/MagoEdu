@@ -1,0 +1,16 @@
+{
+  "name": "magoedu-cloud-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "마고에듀 통합 클라우드 서버 (계정, 가입 코드, 데이터 동기화, 프로그램 목록, 자동 업데이트)",
+  "author": "구현민",
+  "license": "AGPL-3.0-only",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"test/**/*.test.js\""
+  }
+}

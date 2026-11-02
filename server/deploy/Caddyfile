@@ -1,0 +1,7 @@
+# HTTPS 로 열기 — install.sh --domain mago.milky.kr 이 이 내용을 /etc/caddy/Caddyfile 에 넣어 줘요.
+# (직접 할 때: DNS 에서 mago.milky.kr 의 A 레코드를 서버 IP 로 → sudo apt install caddy → 이 내용을 /etc/caddy/Caddyfile 에
+#  → sudo systemctl reload caddy → /etc/magoedu-cloud.env 에 HOST=127.0.0.1, TRUST_PROXY=1)
+mago.milky.kr {
+	encode gzip
+	reverse_proxy 127.0.0.1:8470
+}

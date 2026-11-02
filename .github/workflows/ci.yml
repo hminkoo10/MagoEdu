@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['cloud-v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+
+      - name: 서버 시험
+        working-directory: server
+        run: npm test
+
+      - name: 연결 도구(SDK) 시험
+        working-directory: sdk
+        run: npm test
+
+      - name: 통합 클라우드 프로그램 시험
+        working-directory: launcher
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          npm ci
+          npm test
+
+  # 설치 파일이 잘 만들어지는지 확인 (main 은 Release 워크플로가 빌드·배포)
+  build-windows:
+    runs-on: windows-latest
+    needs: test
+    if: github.ref != 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - working-directory: launcher
+        run: |
+          npm ci
+          npx electron-builder --win --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MagoEduCloud-Setup
+          path: launcher/dist/*.exe
+          retention-days: 14
