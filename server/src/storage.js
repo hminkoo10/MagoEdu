@@ -95,7 +95,12 @@ class BlobStore {
   /** 어떤 파일도 쓰지 않는 내용을 지운다 */
   gc() {
     const used = new Set(
-      this.db.all('SELECT DISTINCT sha256 FROM files WHERE deleted = 0 AND evicted = 0 AND sha256 IS NOT NULL').map((r) => r.sha256),
+      this.db
+        .all(
+          `SELECT sha256 FROM files WHERE deleted = 0 AND evicted = 0 AND sha256 IS NOT NULL
+           UNION SELECT sha256 FROM shared_files WHERE deleted = 0 AND sha256 IS NOT NULL`,
+        )
+        .map((r) => r.sha256),
     );
     let removed = 0;
     let bytes = 0;

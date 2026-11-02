@@ -66,7 +66,9 @@ function createJobs({ db, svc, blobs, catalog, log, nextSeq, events = null }) {
   }
 
   function runCleanup(now = Date.now()) {
-    const tomb = db.run('DELETE FROM files WHERE deleted = 1 AND updated_at < ?', now - TOMBSTONE_KEEP_DAYS * DAY).changes;
+    const tomb =
+      db.run('DELETE FROM files WHERE deleted = 1 AND updated_at < ?', now - TOMBSTONE_KEEP_DAYS * DAY).changes +
+      db.run('DELETE FROM shared_files WHERE deleted = 1 AND updated_at < ?', now - TOMBSTONE_KEEP_DAYS * DAY).changes;
     const sess = db.run('DELETE FROM sessions WHERE expires_at < ?', now).changes;
     const keep = svc.getSettings().auditKeepDays;
     const aud = db.run('DELETE FROM audit WHERE at < ?', now - keep * DAY).changes;

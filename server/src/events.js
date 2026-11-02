@@ -1,7 +1,7 @@
 'use strict';
 
 // 실시간 알림 (Server-Sent Events)
-//   GET /api/sync/events?apps=a,b  →  event: hello / event: change {appId, seq, deviceId} / ": ping" (25초마다)
+//   GET /api/sync/events?apps=a,b  →  event: hello / event: change {appId, seq, deviceId[, scope: 'academy']} / ": ping" (25초마다)
 //
 // 계정의 동기화 파일이 바뀌면(올리기·지우기·서버 정리) 그 계정의 연결에 바로 알려 준다.
 // 받는 쪽은 GET /api/sync/<앱>?since=<마지막 seq> 로 바뀐 것만 가져간다.
@@ -78,6 +78,18 @@ class EventHub {
     const msg = `event: change\ndata: ${JSON.stringify({ appId, seq, deviceId: deviceId || null })}\n\n`;
     for (const s of this.streams) {
       if (s.userId !== userId) continue;
+      if (s.apps && !s.apps.has(appId)) continue;
+      if (!this.svc.canUseApp(s.user, appId)) continue;
+      this._write(s, msg);
+    }
+  }
+
+  /** 학원 공간(shared_files)이 바뀐 뒤에 부른다. 그 학원 사람들의 연결 모두에 알린다 (scope: 'academy') */
+  publishAcademy(academyId, appId, seq, deviceId = null) {
+    if (!this.streams.size) return;
+    const msg = `event: change\ndata: ${JSON.stringify({ appId, seq, deviceId: deviceId || null, scope: 'academy' })}\n\n`;
+    for (const s of this.streams) {
+      if (s.user.academy_id !== academyId) continue;
       if (s.apps && !s.apps.has(appId)) continue;
       if (!this.svc.canUseApp(s.user, appId)) continue;
       this._write(s, msg);

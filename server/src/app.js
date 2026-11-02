@@ -74,7 +74,7 @@ function createCloudServer(config = loadConfig()) {
 
   if (!svc.meta('server_id')) svc.setMeta('server_id', crypto.randomUUID());
 
-  let seq = db.get('SELECT COALESCE(MAX(seq), 0) AS n FROM files').n;
+  let seq = db.get('SELECT MAX((SELECT COALESCE(MAX(seq), 0) FROM files), (SELECT COALESCE(MAX(seq), 0) FROM shared_files)) AS n').n;
   const nextSeq = () => {
     seq += 1;
     return seq;
@@ -118,6 +118,7 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/admin').register(router, deps);
   require('./routes/apps').register(router, deps);
   require('./routes/sync').register(router, deps);
+  require('./routes/shared').register(router, deps);
 
   async function handle(req, res) {
     let url;

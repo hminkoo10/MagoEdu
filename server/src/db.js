@@ -175,6 +175,38 @@ const MIGRATIONS = [
   UPDATE apps SET icon_url = '${TAJONG_ANDROID.icon}'
   WHERE id = 'tajong-android' AND icon_url = (SELECT icon_url FROM apps WHERE id = 'tajong');
   `,
+
+  // 4: 학원 공간 — 같은 학원 사람들이 함께 쓰는 파일 (routes/shared.js, 누가 쓰는지는 sharing.js)
+  //    shared_items: 묶음(앞의 두 단계 경로, 예: books/<교재 ID>)마다 처음 올린 사람 = 주인
+  `
+  CREATE TABLE shared_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    app_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    rev INTEGER NOT NULL,
+    seq INTEGER NOT NULL,
+    sha256 TEXT,
+    size INTEGER NOT NULL DEFAULT 0,
+    mtime INTEGER,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    device_id TEXT,
+    updated_by TEXT,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (academy_id, app_id, path)
+  );
+  CREATE INDEX shared_files_seq ON shared_files(academy_id, app_id, seq);
+  CREATE INDEX shared_files_sha ON shared_files(sha256);
+
+  CREATE TABLE shared_items (
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    app_id TEXT NOT NULL,
+    item TEXT NOT NULL,
+    owner_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (academy_id, app_id, item)
+  );
+  `,
 ];
 
 function openDb(file) {
