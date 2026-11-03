@@ -16,7 +16,7 @@ const DEFAULT_CONFIG = {
   closeToTray: true, // 창을 닫아도 트레이에서 계속 (동기화·자동 실행)
   autoUpdateApps: true, // 프로그램 새 버전을 알아서 받기
   lastUsername: '',
-  shortcuts: {}, // 프로그램 ID → { desktop: 바탕 화면에도 둘지, name: 만든 바로 가기 파일 이름 }
+  shortcuts: {}, // 프로그램 ID → { desktop: 바탕 화면에도 둘지, startMenu: 시작 메뉴에도 둘지, name: 만든 바로 가기 파일 이름 }
 };
 
 const SAFE_APP_ID = /^[a-z][a-z0-9-]{1,31}$/;
@@ -56,6 +56,7 @@ function sanitizeShortcuts(value, fallback = {}) {
   for (const [id, rec] of Object.entries(source)) {
     if (!safeKey(id) || !SAFE_APP_ID.test(id) || !isObject(rec)) continue;
     const item = { desktop: typeof rec.desktop === 'boolean' ? rec.desktop : true };
+    if (typeof rec.startMenu === 'boolean') item.startMenu = rec.startMenu;
     if (SAFE_FILE_NAME.test(rec.name || '')) item.name = rec.name;
     out[id] = item;
   }

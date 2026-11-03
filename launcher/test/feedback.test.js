@@ -61,13 +61,17 @@ async function setup(t, { apps = { bell: {} } } = {}) {
     const cloud = new Cloud({ paths, store: new Store({ paths, defaults: { serverUrl: s.base } }), version: '1.0.0', log: quiet });
     // 실제로 켜지 않고, 켜진 프로그램을 흉내 낸다 (계정·버전 기록)
     const running = new Map();
-    cloud.fake = { running, launched: [], stopped: [] };
+    cloud.fake = { running, launched: [], focused: [], stopped: [] };
     cloud.runner.launch = ({ appId, installed, env }) => {
       cloud.fake.launched.push({ appId, env });
-      running.set(appId, { pid: 1000 + cloud.fake.launched.length, userId: env.MAGOEDU_USER_ID, version: installed.version });
+      running.set(appId, { pid: 1000 + cloud.fake.launched.length, userId: env.MAGOEDU_USER_ID, version: installed.version, env });
     };
     cloud.runner.isRunning = (id) => running.has(id);
     cloud.runner.runningInfo = (id) => running.get(id) || null;
+    cloud.runner.focus = async ({ appId }) => {
+      cloud.fake.focused.push(appId);
+      return { focused: true };
+    };
     cloud.runner.stop = (id) => {
       cloud.fake.stopped.push(id);
       setTimeout(() => running.delete(id), 50);
@@ -83,6 +87,41 @@ async function setup(t, { apps = { bell: {} } } = {}) {
   };
   return { s, admin, mk, open, publish };
 }
+
+test('켜진 프로그램의 본체 버튼은 새 프로세스를 등록하지 않고 기존 창을 앞으로 가져옴', async (t) => {
+  const { open } = await setup(t);
+  const c = await open();
+  await c.login('admin', ADMIN_PASSWORD);
+  await c.launch('bell', { skipLegacyCheck: true });
+  const launched = c.fake.launched.length;
+  const r = await c.launch('bell', { skipLegacyCheck: true });
+  assert.deepEqual(r, { already: true, focused: true });
+  assert.equal(c.fake.launched.length, launched);
+  assert.deepEqual(c.fake.focused, ['bell']);
+  c.runner.focus = async () => ({ focused: false });
+  await assert.rejects(c.launch('bell'), /작업 표시줄이나 트레이.*끄기/);
+  assert.equal(c.fake.launched.length, launched);
+  c.stop('bell');
+  assert.deepEqual(c.fake.stopped, ['bell']);
+});
+
+test('동시 실행 요청은 한 번만 켜고, 실행 중 새 버전 설치·런처 재시작 뒤에는 창만 복구', async (t) => {
+  const { open, publish } = await setup(t);
+  const c = await open();
+  await c.login('admin', ADMIN_PASSWORD);
+  await c.install('bell');
+  await Promise.all([c.launch('bell', { skipLegacyCheck: true }), c.launch('bell', { skipLegacyCheck: true })]);
+  assert.equal(c.fake.launched.length, 1);
+  assert.deepEqual(c.fake.focused, ['bell']);
+  await publish('bell', '1.1.0');
+  await c.refreshApps();
+  await c.install('bell', { quiet: true });
+  delete c.fake.running.get('bell').env; // 다시 켠 런처는 PID·계정·버전만 알고 있음
+  c._ticket = async () => { throw new Error('창만 열 때 허가증을 새로 발급하지 않음'); };
+  assert.equal((await c.launch('bell')).focused, true);
+  assert.equal(c.fake.launched.length, 1);
+  assert.equal(c.fake.running.get('bell').version, '1.0.0');
+});
 
 test('계정 바꾸기: 로그아웃하면 그 계정으로 켠 프로그램을 끄고, 다른 계정으로 로그인하면 예전 계정의 프로그램을 끔', async (t) => {
   const { mk, open } = await setup(t);

@@ -26,7 +26,7 @@ test('설치 복구: 임시 다운로드·압축 해제만 정리하고 설치·
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, 'keep');
   }
-  fs.writeFileSync(ap.installed, JSON.stringify({ version: '1.1.partial' }));
+  fs.writeFileSync(ap.installed, JSON.stringify({ id: 'bell', version: '1.1.partial', manifest: { id: 'bell', version: '1.1.partial', exe: 'app.exe' } }));
   fs.writeFileSync(ap.running, JSON.stringify({ version: '1.0.partial' }));
   const linked = path.join(paths.appsDir, 'linked');
   const outside = path.join(root, 'outside');
