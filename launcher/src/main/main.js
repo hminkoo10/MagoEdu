@@ -20,7 +20,7 @@ const { Cloud } = require('./cloud');
 const { Shortcuts } = require('./shortcuts');
 const { setupSelfUpdate } = require('./selfupdate');
 const { uninstallCleanup } = require('./uninstall');
-const { readJsonSync } = require('../core/fsutil');
+const { readJsonSync, writeJsonSync } = require('../core/fsutil');
 
 const TITLE = '마고에듀 통합 클라우드';
 const DEVELOPER = '구현민';
@@ -289,6 +289,20 @@ function registerIpc() {
 }
 
 // ---------------------------------------------------------------- 시작
+// 자동 업데이트로 다시 켜질 때 이어받을 것: 창을 숨겨 둔 채였는지, 윈도우 시작 때 켤 프로그램을 아직 켜지 않았는지.
+// 업데이트 뒤에는 '--updated' 로 켜져서 '--hidden' 이 없으니, 설치하기 직전에 적어 둔다
+const resumeFile = () => path.join(app.getPath('userData'), 'update-resume.json');
+
+function takeResume() {
+  const r = readJsonSync(resumeFile(), null);
+  try {
+    fs.rmSync(resumeFile(), { force: true });
+  } catch {
+    /* 무시 */
+  }
+  return process.argv.includes('--updated') && r && Date.now() - (r.at || 0) < 10 * 60 * 1000 ? r : null;
+}
+
 function appPaths() {
   const userData = app.getPath('userData');
   const localData = process.env.MAGOEDU_CLOUD_LOCAL_DATA || (process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'MagoEduCloud') : path.join(userData, 'local'));
@@ -345,7 +359,9 @@ if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) 
     }
     const paths = appPaths();
     const store = new Store({ paths, safeStorage, defaults: loadDefaults() });
-    cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts: appShortcuts(), startedAtLogin: startHidden });
+    const resume = takeResume();
+    const hidden = startHidden || !!resume?.hidden;
+    cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts: appShortcuts(), startedAtLogin: resume ? !!resume.autoLaunch : startHidden });
     let trayKey = '';
     cloud.on('state', (s) => {
       send('state', s);
@@ -362,7 +378,7 @@ if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) 
     registerIpc();
     // 바로 가기로 켰고 로그인 정보가 있으면 창 없이 프로그램만 (필요하면 그때 창을 보여 줌)
     const linkStart = linkFrom(process.argv)?.kind === 'launch' && !!store.loadSession();
-    createWindow({ show: !startHidden && !linkStart });
+    createWindow({ show: !hidden && !linkStart });
     createTray();
     applyAutoStart(store.config);
     updater = setupSelfUpdate({ app, cloud, log, isWindowVisible: () => !!win && win.isVisible() });
@@ -372,6 +388,11 @@ if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) 
 
   app.on('before-update-install', () => {
     quitting = true;
+    try {
+      writeJsonSync(resumeFile(), { at: Date.now(), hidden: !(win && win.isVisible()), autoLaunch: !!cloud?.autoLaunchPending });
+    } catch (err) {
+      log.warn('[업데이트] 이어받을 상태를 적지 못했어요', err.message);
+    }
   });
   app.on('before-quit', () => {
     quitting = true;

@@ -25,6 +25,7 @@ const REMOTE_DELAY = 300; // 다른 기기에서 바뀌었다는 알림 → 잠�
 const LOCAL_DELAY = 1000; // 이 컴퓨터에서 파일이 바뀜 → 쓰기가 끝나길 잠깐 기다렸다가 올리기
 const QUEUE_MAX_WAIT = 5000; // 계속 바뀌어도 이보다 오래 미루지는 않음
 const REQUEST_DELAY = 100; // 프로그램이 학원 공간 파일을 달라고 함 → 바로 받기
+const STOP_WAIT = 15 * 1000; // 로그아웃·계정 바꿈: 켜 둔 프로그램이 꺼지길 이만큼까지 기다림 (runner 는 10초 뒤 강제로 끔)
 const REQUEST_RE = /^[A-Za-z0-9_-]{1,64}\.json$/; // requests/<rid>.json (답은 <rid>.done.json)
 
 // 동기화 폴더를 지켜볼 때 건너뛰는 것: 통합 클라우드·프로그램의 임시 파일
@@ -75,6 +76,7 @@ class Cloud extends EventEmitter {
     this.autoLaunchPending = startedAtLogin;
     this.phase = 'boot'; // boot | setup | login | ready
     this.user = null;
+    this.dataKey = null; // 설정 파일 서명 키 (서버마다 하나, 로그인 정보와 함께 암호화해 둠)
     this.authMessage = null;
     this.online = true;
     this.apps = []; // 서버 목록
@@ -87,7 +89,7 @@ class Cloud extends EventEmitter {
     this.update = { status: 'idle' };
     this.locks = new Map();
     this.timers = [];
-    this.adopted = new Set(); // 통합 클라우드를 다시 켜기 전에 실행한 프로그램
+    this.adopted = new Map(); // 통합 클라우드를 다시 켜기 전에 실행한 프로그램 id → 그때 기록 (버전·계정)
     this.settled = false; // 로그인한 뒤 세션 확인·목록 새로 고침이 끝났는지
     this.events = null; // 서버 실시간 알림
     this.watchers = new Map(); // id → [동기화 폴더·학원 공간·요청 폴더 지켜보기]
@@ -207,12 +209,13 @@ class Cloud extends EventEmitter {
   // ---------------------------------------------------------------- 시작
   async init() {
     this.installed = await this.installer.listInstalled();
-    for (const id of Object.keys(this.installed)) if (this.runner.isRunning(id)) this.adopted.add(id);
+    for (const id of Object.keys(this.installed)) if (this.runner.isRunning(id)) this.adopted.set(id, this.runner.runningInfo(id) || {});
     const session = this.store.loadSession();
     const cfg = this.store.config;
     if (session && session.token && normalizeServerUrl(session.serverUrl) === normalizeServerUrl(cfg.serverUrl)) {
       this.api = this._makeApi(cfg.serverUrl, session.token);
       this.user = session.user;
+      this.dataKey = session.dataKey || null;
       this.phase = 'ready';
       this._loadCachedCatalog();
       this.emitState();
@@ -284,11 +287,14 @@ class Cloud extends EventEmitter {
   }
 
   async _loggedIn(r) {
+    // 다른 계정으로 켜 둔 프로그램은 끈다 (그 계정으로 계속 돌면서 이 계정의 것처럼 보이지 않게)
+    await this._stopApps((info) => info.userId !== r.user.id);
     this.user = r.user;
     this.authMessage = null;
     this.phase = 'ready';
     this.online = true;
-    this.store.saveSession({ serverUrl: this.store.config.serverUrl, token: this.api.token, user: r.user });
+    this.dataKey = null;
+    this._saveSession();
     await this._trust(r.server);
     this._loadCachedCatalog();
     this.emitState();
@@ -305,6 +311,7 @@ class Cloud extends EventEmitter {
     this._startTimers();
     this._startRealtime();
     if (fromSession) await this.refreshMe().catch(() => {});
+    await this._refreshDataKey();
     await Promise.all([this.refreshApps().catch(() => {}), this.refreshNotices().catch(() => {})]);
     if (this.phase !== 'ready') return;
     this.settled = true; // 바로 가기(magoedu://launch)로 부른 프로그램은 이때 켬
@@ -318,6 +325,13 @@ class Cloud extends EventEmitter {
   }
 
   async logout() {
+    // 이 계정으로 켠 프로그램은 끄고, 끄면서 저장한 데이터까지 올린 뒤 로그아웃한다
+    // (다른 계정으로 로그인했는데 예전 계정으로 계속 돌고, 통합 클라우드에도 '이미 켜져 있음'으로 남지 않게)
+    const uid = this.user?.id;
+    if (uid) {
+      const stopped = await this._stopApps((info) => !info.userId || info.userId === uid);
+      await Promise.all(stopped.map((id) => this.syncApp(id, { quiet: true }).catch(() => {})));
+    }
     this._stopTimers();
     this._stopRealtime();
     this.settled = false;
@@ -328,6 +342,7 @@ class Cloud extends EventEmitter {
     }
     this.store.clearSession();
     this.user = null;
+    this.dataKey = null;
     this.apps = [];
     this.notices = [];
     this.storage = null;
@@ -336,13 +351,30 @@ class Cloud extends EventEmitter {
     this.emitState();
   }
 
+  /** 조건에 맞는 계정으로 켠 프로그램을 끄고, 꺼질 때까지 기다린다. 끈 프로그램 ID 목록 */
+  async _stopApps(match) {
+    const ids = Object.keys(this.installed).filter((id) => this.runner.isRunning(id) && match(this.runner.runningInfo(id) || {}));
+    for (const id of ids) this.runner.stop(id);
+    const end = Date.now() + STOP_WAIT;
+    while (ids.some((id) => this.runner.isRunning(id)) && Date.now() < end) await new Promise((r) => setTimeout(r, 200));
+    for (const id of ids) if (!this.runner.isRunning(id)) this.adopted.delete(id);
+    if (ids.length) this.emitState();
+    return ids;
+  }
+
   _authLost(err) {
     if (this.phase !== 'ready') return;
+    // 사용 중지된 계정으로 켠 프로그램은 끈다 (로그인이 끊긴 것만이면 그대로 둠: 다시 로그인하면 이어서 씀)
+    if (err.code === 'account_suspended') {
+      const uid = this.user?.id;
+      this._stopApps((info) => !info.userId || info.userId === uid).catch(() => {});
+    }
     this._stopTimers();
     this._stopRealtime();
     this.settled = false;
     this.store.clearSession();
     this.user = null;
+    this.dataKey = null;
     this.apps = [];
     this.notices = [];
     this.phase = 'login';
@@ -373,10 +405,31 @@ class Cloud extends EventEmitter {
     const r = await this._call(() => this.api.get('/api/me'));
     this.user = r.user;
     this.storage = { usageBytes: r.user.usageBytes, quotaBytes: r.user.quotaBytes };
-    this.store.saveSession({ serverUrl: this.store.config.serverUrl, token: this.api.token, user: r.user });
+    this._saveSession();
     await this._trust(r.server);
     this.emitState();
     return r.user;
+  }
+
+  _saveSession() {
+    this.store.saveSession({ serverUrl: this.store.config.serverUrl, token: this.api.token, user: this.user, dataKey: this.dataKey || undefined });
+  }
+
+  /** 설정 파일 서명 키를 받아 둔다. 예전 서버(404)면 없음. 인터넷이 없으면 받아 둔 것을 씀 */
+  async _refreshDataKey() {
+    try {
+      const r = await this._call(() => this.api.get('/api/me/data-key'));
+      if (this.user && r.dataKey !== this.dataKey) {
+        this.dataKey = r.dataKey;
+        this._saveSession();
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404 && this.user) {
+        this.dataKey = null;
+        this._saveSession();
+      }
+    }
+    return this.dataKey;
   }
 
   async changePassword(currentPassword, newPassword, logoutOthers = true) {
@@ -453,7 +506,7 @@ class Cloud extends EventEmitter {
 
   async refreshStorage() {
     const r = await this._call(() => this.api.get('/api/sync'));
-    this.storage = { usageBytes: r.usageBytes, quotaBytes: r.quotaBytes, apps: r.apps };
+    this.storage = { usageBytes: r.usageBytes, quotaBytes: r.quotaBytes, apps: r.apps, academy: r.academy || null };
     this.emitState();
     return r;
   }
@@ -467,14 +520,14 @@ class Cloud extends EventEmitter {
 
   install(id, { quiet = false } = {}) {
     return this._lock(id, async () => {
-      const app = this._app(id);
+      let app = this._app(id);
       if (!isDesktop(app)) throw new Error(`${app.name}은(는) 휴대폰에서 내려받아 설치해요.`);
       const before = this.installed[id];
       const kind = before ? 'update' : 'install';
       this._setTask(id, { kind, phase: 'download', progress: 0, text: '받는 중' });
       try {
         const running = this.runner.runningInfo(id);
-        const inst = await this.installer.install(this.api, app, {
+        const run = (a) => this.installer.install(this.api, a, {
           keep: running?.version ? [running.version] : [],
           onProgress: (p) =>
             this._setTask(id, {
@@ -487,6 +540,21 @@ class Cloud extends EventEmitter {
                   : '설치하는 중',
             }),
         });
+        let inst;
+        try {
+          inst = await run(app);
+        } catch (err) {
+          // 목록을 받아 둔 뒤 새 버전이 나오면 서버는 예전 버전을 주지 않는다 → 목록을 새로 받아 최신 버전으로 다시
+          if (!(err instanceof ApiError && err.code === 'no_release')) throw err;
+          await this.refreshApps();
+          app = this._app(id);
+          if (!app.release) throw err;
+          if (before && !this.installer.needsUpdate(before, app)) {
+            this._setTask(id, null);
+            return before;
+          }
+          inst = await run(app);
+        }
         this.installed[id] = inst;
         this._writeShortcuts(id); // 새 버전 폴더의 아이콘으로
         this._watchAll();
@@ -611,7 +679,7 @@ class Cloud extends EventEmitter {
           at: r.at,
           localOnly: r.localOnly,
           conflicts: conflicts.length ? conflicts : prev.conflicts || [],
-          quotaExceeded: r.quotaExceeded,
+          quotaExceeded: r.quotaExceeded || !!a?.quotaExceeded,
           errors: errors.slice(0, 5),
           moved: moved(r) + (a ? moved(a) : 0),
           seq: r.seq,
@@ -622,6 +690,7 @@ class Cloud extends EventEmitter {
           this._toast(`${this._name(id)}: 다른 컴퓨터와 동시에 고친 파일 ${r.conflicts.length}개는 따로 보관했어요`, 'warning');
         }
         if (r.quotaExceeded) this._toast('서버 저장 공간이 꽉 차서 일부 파일을 올리지 못했어요', 'warning');
+        if (a?.quotaExceeded) this._toast('학원 공간이 꽉 차서 일부 파일을 올리지 못했어요. 운영자에게 학원 용량을 늘려 달라고 해 주세요', 'warning');
         if (a?.reverted.length) {
           this._toast(`${this._name(id)}: 고칠 권한이 없는 학원 공용 파일 ${a.reverted.length}개는 원래대로 되돌렸어요 (내 것은 따로 보관)`, 'warning');
         }
@@ -789,8 +858,8 @@ class Cloud extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- 실행
-  async _ticket(id) {
-    const store = new TicketStore(this.paths.account(this.user.id).tickets);
+  async _ticket(id, uid) {
+    const store = new TicketStore(this.paths.account(uid).tickets);
     try {
       const r = await this._call(() => this.api.post(`/api/apps/${encodeURIComponent(id)}/ticket`, {}));
       await store.put(id, r.ticket, r.expiresAt);
@@ -809,8 +878,20 @@ class Cloud extends EventEmitter {
    */
   async launch(id, { skipLegacyCheck = false } = {}) {
     if (!this.user) throw new Error('로그인이 필요해요.');
+    const uid = this.user.id;
+    // 기다리는 사이 로그인이 끊기거나(예: 계정 사용 중지) 다른 계정으로 바뀌었으면 켜지 않는다
+    const sameUser = () => {
+      if (this.user?.id !== uid) throw new Error(this.authMessage || '로그인한 계정이 바뀌어서 켜지 않았어요.');
+    };
     const known = this.apps.find((a) => a.id === id);
     if (known && !isDesktop(known)) throw new Error(`${known.name}은(는) 휴대폰에서 쓰는 프로그램이에요.`);
+    if (this.runner.isRunning(id)) {
+      const info = this.runner.runningInfo(id);
+      if (info?.userId && info.userId !== uid) {
+        await this._stopApps((x) => x.pid === info.pid); // 다른 계정으로 켜 둔 것 → 끄고 이 계정으로 켬
+        sameUser();
+      }
+    }
     if (this.runner.isRunning(id)) {
       this._toast(`${this._name(id)}은(는) 이미 켜져 있어요`, 'info');
       return { already: true };
@@ -819,6 +900,7 @@ class Cloud extends EventEmitter {
     else if (this.installer.needsUpdate(this.installed[id], this._app(id))) {
       await this.install(id, { quiet: true }).catch((err) => this._toast(`업데이트하지 못해 지금 버전으로 켤게요: ${err.message}`, 'warning'));
     }
+    sameUser();
     if (!skipLegacyCheck) {
       const legacy = (await this.legacyDetect(id)).filter((l) => !l.importedHere && !l.dismissed);
       if (legacy.length) return { needsLegacy: legacy };
@@ -828,10 +910,13 @@ class Cloud extends EventEmitter {
       if (this.runner.isRunning(id)) return { already: true };
       this._setTask(id, { kind: 'launch', phase: 'sync', progress: null, text: '데이터를 맞추는 중' });
       try {
+        sameUser();
         await this.syncApp(id, { quiet: true });
+        sameUser(); // 동기화는 로그인이 끊겨도(401) 오류를 내지 않는다
         this._setTask(id, { kind: 'launch', phase: 'ticket', progress: null, text: '켜는 중' });
-        const ticket = await this._ticket(id);
-        const dirs = this.paths.account(this.user.id).app(id);
+        const ticket = await this._ticket(id, uid);
+        sameUser();
+        const dirs = this.paths.account(uid).app(id);
         await fsp.mkdir(dirs.sync, { recursive: true });
         await fsp.mkdir(dirs.local, { recursive: true });
         const academy = this._usesAcademy(id);
@@ -841,12 +926,16 @@ class Cloud extends EventEmitter {
           // 지난번에 남은 요청·답 (폴더는 지켜보는 중이라 안의 파일만 지움)
           for (const n of await fsp.readdir(dirs.requests)) await fsp.rm(path.join(dirs.requests, n), { recursive: true, force: true });
         }
+        const signing = !!this.installed[id].manifest?.dataSigning;
+        if (signing && !this.dataKey) await this._refreshDataKey();
+        sameUser();
         const env = buildEnv({
           ticket,
           appId: id,
           user: this.user,
           appDirs: dirs,
           academy,
+          dataKey: signing ? this.dataKey : '',
           serverUrl: this.store.config.serverUrl,
           launcherVersion: this.version,
           trustFile: this.paths.trustFile,
@@ -957,7 +1046,7 @@ class Cloud extends EventEmitter {
   }
 
   _watchAdopted() {
-    for (const id of [...this.adopted]) {
+    for (const [id, info] of [...this.adopted]) {
       if (!this.runner.isRunning(id)) {
         this.adopted.delete(id);
         try {
@@ -965,7 +1054,11 @@ class Cloud extends EventEmitter {
         } catch {
           /* 무시 */
         }
-        this._onAppExit(id, { code: 0, restart: false, userId: this.user?.id });
+        // 직접 켠 프로그램이 아니라 종료 코드(새 버전으로 다시 켜 달라는 75)를 알 수 없다.
+        // 켜져 있는 동안 새 버전이 설치됐으면 새 버전으로 다시 켜려고 끝난 것으로 본다
+        const inst = this.installed[id];
+        const restart = !!(info.version && inst && inst.version !== info.version);
+        this._onAppExit(id, { code: 0, restart, userId: info.userId || this.user?.id });
       }
     }
   }

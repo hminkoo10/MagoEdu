@@ -13,7 +13,7 @@ const { writeJsonSync, readJsonSync } = require('./fsutil');
 
 const STOP_GRACE_MS = 10 * 1000; // 끄기: 창 닫기 신호 뒤 이만큼 기다렸다가 강제로 끔
 
-function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, serverUrl, launcherVersion, trustFile }) {
+function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, dataKey = '', serverUrl, launcherVersion, trustFile }) {
   return {
     ...base,
     MAGOEDU_TICKET: ticket,
@@ -28,6 +28,7 @@ function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = 
     MAGOEDU_REQUEST_DIR: academy && user.academy ? appDirs.requests : '',
     MAGOEDU_DATA_DIR: appDirs.sync,
     MAGOEDU_LOCAL_DIR: appDirs.local,
+    MAGOEDU_DATA_KEY: dataKey || '', // 설정 파일 서명 키 (매니페스트 dataSigning 인 프로그램만, 아니면 빈 값)
     MAGOEDU_SERVER: serverUrl,
     MAGOEDU_TRUST_FILE: trustFile,
     MAGOEDU_LAUNCHER_VERSION: launcherVersion,

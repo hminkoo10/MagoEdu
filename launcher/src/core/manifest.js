@@ -49,6 +49,8 @@ function normalizeManifest(raw, fallback = {}) {
         to: String(l.to),
         exclude: cleanList(l.exclude),
       })),
+    // 설정 파일 서명 키(MAGOEDU_DATA_KEY)를 받음 — 손으로 고친 설정 파일을 프로그램이 거부할 수 있게
+    dataSigning: m.dataSigning === true,
     restartExitCode: Number.isInteger(m.restartExitCode) ? m.restartExitCode : RESTART_EXIT_CODE,
     singleInstance: m.singleInstance !== false,
   };
