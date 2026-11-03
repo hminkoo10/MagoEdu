@@ -63,7 +63,7 @@ function githubOidc(config) {
           claims.exp <= now - SKEW || claims.nbf > now + SKEW || claims.iat > now + SKEW ||
           claims.exp <= claims.nbf || claims.exp <= claims.iat ||
           typeof claims.repository !== 'string' || !/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(claims.repository) ||
-          (claims.ref !== 'refs/heads/main' && !/^refs\/tags\/[^\s]+$/.test(claims.ref || ''))) throw new Error('잘못된 클레임');
+          (claims.ref !== 'refs/heads/main' && !/^refs\/(tags|heads\/release)\/[^\s]+$/.test(claims.ref || ''))) throw new Error('잘못된 클레임');
       const key = await keyFor(header.kid);
       if (!crypto.verify('RSA-SHA256', Buffer.from(`${parts[0]}.${parts[1]}`), {
         key, padding: crypto.constants.RSA_PKCS1_PADDING,

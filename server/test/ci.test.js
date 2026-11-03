@@ -126,6 +126,7 @@ test('CI OIDC: 잘못된 클레임·서명·형식은 401, 상태 변경 없음'
     ['missing nbf', token({ nbf: undefined })], ['missing iat', token({ iat: undefined })],
     ['numeric string', token({ exp: String(now + 300) })], ['missing repository', token({ repository: undefined })],
     ['pull request', token({ ref: 'refs/pull/1/merge' })], ['missing ref', token({ ref: undefined })],
+    ['feature branch', token({ ref: 'refs/heads/feature' })],
     ['bad signature', token({}, {}, otherKey)], ['alg', token({}, { alg: 'HS256' })],
     ['missing kid', token({}, { kid: undefined })], ['unknown kid', token({}, { kid: 'missing' })],
     ['crit', token({}, { crit: ['unsupported'] })], ['malformed', 'broken.token'], ['missing token', ''],
@@ -137,6 +138,11 @@ test('CI OIDC: 잘못된 클레임·서명·형식은 401, 상태 변경 없음'
   assert.equal(s.catalog.launcher, null);
   assert.equal(s.app.deps.db.get("SELECT COUNT(*) AS n FROM audit WHERE action = 'release.ci'").n, 0);
   assert.ok(s.requests.length <= 1, '알 수 없는 kid 로 JWKS 호출을 늘리지 못함');
+});
+
+test('CI OIDC: release/ 브랜치에서 배포한 알림도 받음 (타종 PC 는 release/desktop-v* 브랜치로 배포)', async (t) => {
+  const s = await fixture(t);
+  assert.equal((await s.post(notification(), token({ ref: 'refs/heads/release/desktop-v1.2.3' }))).status, 200);
 });
 
 test('CI OIDC: JWKS 캐시·동시 요청·키 교체·만료·오류 시 분당 재조회 제한', async (t) => {
