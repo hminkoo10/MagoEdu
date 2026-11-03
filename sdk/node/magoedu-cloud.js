@@ -18,6 +18,15 @@
 //   await cloud.requestFiles(session, ['books/b1/a.pdf'])  // 학원 공간의 '열 때만 받는' 파일 받기
 //   await cloud.removeFiles(session, ['books/b1/a.pdf'])   // 받지 않은 파일을 서버에서 지우기 (교재를 지울 때)
 //
+// 학원 학생 명단·학원 AI (매니페스트 "academyInfo": true, 학원에 속한 계정):
+//   cloud.academyInfo(session)              // { academy, me, members, students, purged, purgeDays, ai } (없으면 null)
+//   const stop = cloud.watchAcademyInfo(session, (info) => ...)   // 바뀔 때마다
+//   await cloud.saveStudent(session, { name: '홍길동', ... })   // 추가 (rev 를 주면 고치기) → { ok, student, error?, errorCode? }
+//   await cloud.deleteStudent(session, id) / cloud.restoreStudent(session, id)
+// 웹 프로그램 로그인 (매니페스트 "sso": "<웹 프로그램 ID>"):
+//   session.ssoCode                         // 켤 때 받은 60초짜리 일회용 코드
+//   await cloud.ssoCode(session)            // 다시 받기 → { ok, code, expiresAt, error?, errorCode? }
+//
 // 개발할 때(빌드 전)는 MAGOEDU_DEV=1 로 통합 클라우드 없이 켤 수 있다.
 // (계정·폴더는 통합 클라우드와 같은 이름의 환경 변수로 바꿀 수 있음: MAGOEDU_USER_ID, MAGOEDU_ACADEMY_DIR …)
 
@@ -98,7 +107,10 @@ function check(appId, { packaged = true, env = process.env } = {}) {
       academyId: env.MAGOEDU_ACADEMY_ID || '',
       academyDir: env.MAGOEDU_ACADEMY_DIR || '',
       requestDir: env.MAGOEDU_REQUEST_DIR || '',
-      server: '',
+      academyInfoFile: env.MAGOEDU_ACADEMY_INFO || '',
+      ssoCode: env.MAGOEDU_SSO_CODE || '',
+      server: env.MAGOEDU_SERVER || '', // 시험할 때 학원 AI 중계를 쓰려면 MAGOEDU_SERVER·MAGOEDU_TICKET
+      ticket: env.MAGOEDU_TICKET || '',
       expiresAt: 0,
     };
     fs.mkdirSync(s.dataDir, { recursive: true });
@@ -133,7 +145,10 @@ function check(appId, { packaged = true, env = process.env } = {}) {
     academyId: env.MAGOEDU_ACADEMY_ID || '',
     academyDir: env.MAGOEDU_ACADEMY_DIR || '', // 학원이 없거나 학원 공간을 쓰지 않는 프로그램은 ''
     requestDir: env.MAGOEDU_REQUEST_DIR || '',
+    academyInfoFile: env.MAGOEDU_ACADEMY_INFO || '', // 학원 학생 명단·학원 AI (매니페스트 academyInfo, 학원이 없으면 '')
+    ssoCode: env.MAGOEDU_SSO_CODE || '', // 웹 프로그램 일회용 로그인 코드 (매니페스트 sso, 인터넷이 없었으면 '')
     server: env.MAGOEDU_SERVER || '',
+    ticket: env.MAGOEDU_TICKET, // 학원 AI 중계의 키 자리에 넣음 (academyAi)
     launcherVersion: env.MAGOEDU_LAUNCHER_VERSION || '',
     expiresAt: payload.exp * 1000,
     payload,
@@ -171,7 +186,101 @@ async function removeFiles(session, paths, { timeoutMs = 120000 } = {}) {
   return ask(session, { remove: list }, timeoutMs);
 }
 
-/** requests/<rid>.json 을 쓰면 통합 클라우드가 처리한 뒤 <rid>.done.json { ok, missing, error? } 으로 답한다 */
+/** 학원 학생 명단·학원 AI. 파일이 없거나 읽을 수 없으면 null */
+function academyInfo(session) {
+  if (!session.academyInfoFile) return null;
+  try {
+    return JSON.parse(fs.readFileSync(session.academyInfoFile, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 학원 AI 를 부를 곳 (키는 통합 클라우드 서버에만 있음). 학원 AI 가 없으면 null
+ * → { provider, model, model2, rpm, source, baseUrl, apiKey }: 그 AI 의 주소·키 자리에 그대로 넣어 부르면 된다.
+ *   relay: baseUrl 은 서버의 중계 주소, apiKey 는 실행 허가증 (서버가 진짜 키로 바꿔 보냄)
+ *   direct: 학원 안 주소(192.168.x.x 등)라 각 PC 에서 바로 (키 없음)
+ */
+function academyAi(session, info = academyInfo(session)) {
+  const ai = info?.ai;
+  if (!ai?.provider) return null;
+  const out = { provider: ai.provider, model: ai.model || '', model2: ai.model2 || '', rpm: ai.rpm ?? null, source: ai.source || '' };
+  if (ai.relay) {
+    if (!session.server || !session.ticket) return null;
+    return { ...out, baseUrl: `${session.server.replace(/\/+$/, '')}/api/ai/relay/${encodeURIComponent(session.appId)}`, apiKey: session.ticket };
+  }
+  if (ai.direct) return { ...out, baseUrl: ai.baseUrl || '', apiKey: '' };
+  return { ...out, baseUrl: ai.baseUrl || '', apiKey: ai.apiKey || '' }; // 키를 그대로 주던 예전 서버
+}
+
+/** 학원 학생 명단·학원 AI 가 바뀔 때마다 cb(info). 그만 볼 때는 돌려준 함수를 부른다 */
+function watchAcademyInfo(session, cb, { delayMs = 200 } = {}) {
+  if (!session.academyInfoFile) return () => {};
+  const file = session.academyInfoFile;
+  let timer = null;
+  let last = academyInfo(session)?.updatedAt ?? null;
+  const fire = () => {
+    timer = null;
+    const info = academyInfo(session);
+    if (!info || info.updatedAt === last) return;
+    last = info.updatedAt;
+    cb(info);
+  };
+  let w = null;
+  try {
+    // 파일은 새로 써서 바꿔치기하므로 폴더를 본다
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    w = fs.watch(path.dirname(file), (_type, name) => {
+      if (name && String(name) !== path.basename(file)) return;
+      clearTimeout(timer);
+      timer = setTimeout(fire, delayMs);
+    });
+    w.on('error', () => {});
+  } catch {
+    /* 지켜볼 수 없으면 아래 주기 확인만 */
+  }
+  const poll = setInterval(fire, 30 * 1000); // 알림을 놓쳐도
+  poll.unref?.();
+  return () => {
+    clearTimeout(timer);
+    clearInterval(poll);
+    w?.close();
+  };
+}
+
+/**
+ * 학생 추가·고치기. student.rev 가 있으면 고치기(그사이 다른 사람이 고쳤으면 errorCode 'conflict' + 지금 student),
+ * 없으면 추가 (id 를 주면 그 ID 로, 이미 있으면 그대로 돌려줌). 인터넷이 필요하다.
+ * → { ok, student?, error?, errorCode? }
+ */
+function saveStudent(session, student, opts) {
+  return op(session, { op: 'students.save', student }, opts);
+}
+
+/** 학생 지우기 (정한 날짜 안에는 학원 사람 누구나 되살릴 수 있음) → { ok, student?, error?, errorCode? } */
+function deleteStudent(session, id, opts) {
+  return op(session, { op: 'students.delete', id }, opts);
+}
+
+function restoreStudent(session, id, opts) {
+  return op(session, { op: 'students.restore', id }, opts);
+}
+
+/** 웹 프로그램 일회용 로그인 코드 다시 받기 (60초) → { ok, code?, expiresAt?, error?, errorCode? } */
+async function ssoCode(session, opts) {
+  const r = await op(session, { op: 'sso.code' }, opts);
+  return r.ok ? { ok: true, code: r.ssoCode, expiresAt: r.expiresAt } : r;
+}
+
+async function op(session, body, { timeoutMs = 30000 } = {}) {
+  if (!session.requestDir) return { ok: false, error: '통합 클라우드에서 다시 켜 주세요.', errorCode: 'no_request_dir' };
+  const { ok, error, errorCode, missing, ...rest } = await ask(session, body, timeoutMs);
+  // errorCode: 서버 오류 코드(conflict·student_deleted …) 또는 offline·timeout
+  return { ok, ...rest, ...(ok ? {} : { error: error || '하지 못했어요.', errorCode: errorCode || 'failed' }) };
+}
+
+/** requests/<rid>.json 을 쓰면 통합 클라우드가 처리한 뒤 <rid>.done.json { ok, missing, error?, ... } 으로 답한다 */
 async function ask(session, body, timeoutMs) {
   const all = [...(body.paths || []), ...(body.remove || [])];
   const rid = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
@@ -191,11 +300,11 @@ async function ask(session, body, timeoutMs) {
     }
     if (answer) {
       fs.rmSync(done, { force: true });
-      return { ok: !!answer.ok, missing: answer.missing || [], ...(answer.error ? { error: answer.error } : {}) };
+      return { ...answer, ok: !!answer.ok, missing: answer.missing || [] };
     }
     if (Date.now() > end) {
       fs.rmSync(req, { force: true });
-      return { ok: false, missing: all, error: '시간 안에 끝나지 않았어요.' };
+      return { ok: false, missing: all, error: '시간 안에 끝나지 않았어요.', errorCode: 'timeout' };
     }
   }
 }
@@ -210,6 +319,15 @@ function openCloud(appId) {
   } catch {
     return false;
   }
+}
+
+/**
+ * 통합 클라우드에서 켜지 않았을 때(check 가 null) 안내 없이 통합 클라우드에 넘겨서 켜 달라고 할지.
+ * installed: 통합 클라우드가 설치되어 있는지 (magoedu:// 주소를 열 수 있음 — Electron 은 app.getApplicationNameForProtocol).
+ * 통합 클라우드가 켰는데 확인이 안 된 것(MAGOEDU_TICKET 이 있음)은 다시 넘기지 않음 (서로 계속 켜지 않게) → 안내
+ */
+function shouldHandOff({ installed, env = process.env } = {}) {
+  return !!installed && !env.MAGOEDU_TICKET;
 }
 
 function parseVersion(v) {
@@ -243,4 +361,22 @@ function newerVersionInstalled(appId, currentVersion) {
   }
 }
 
-module.exports = { check, reason, requestFiles, removeFiles, verifyTicket, openCloud, newerVersionInstalled, RESTART_EXIT_CODE, defaultTrustFile };
+module.exports = {
+  check,
+  reason,
+  requestFiles,
+  removeFiles,
+  academyInfo,
+  academyAi,
+  watchAcademyInfo,
+  saveStudent,
+  deleteStudent,
+  restoreStudent,
+  ssoCode,
+  verifyTicket,
+  openCloud,
+  shouldHandOff,
+  newerVersionInstalled,
+  RESTART_EXIT_CODE,
+  defaultTrustFile,
+};

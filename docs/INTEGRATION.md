@@ -49,6 +49,8 @@ zip 맨 위(또는 폴더 하나 안)에 `magoedu-app.json` 을 넣어요.
 | `restartExitCode` | (선택) 다시 켜 달라는 종료 코드. 기본 75 |
 | `shared` | (선택) **학원 공간** 규칙 `{ include, exclude, lazy }`. 같은 학원 사람들이 함께 쓰는 폴더(`MAGOEDU_ACADEMY_DIR`)를 맞춰요 (4-1번) |
 | `dataSigning` | (선택) `true` 면 **설정 파일 서명 키**(`MAGOEDU_DATA_KEY`)를 받아요. 손으로 고친 설정 파일·백업을 프로그램이 거부할 수 있게 (4-2번) |
+| `academyInfo` | (선택) `true` 면 학원 **학생 명단·학원 AI** 를 파일(`MAGOEDU_ACADEMY_INFO`)로 받고, 학생을 추가·고칠 수 있어요 (4-3번, 통합 클라우드 1.2.0 부터) |
+| `sso` | (선택) 웹 프로그램 ID (예: `"mago-navi"`). 켤 때 그 웹 프로그램에 이 계정으로 로그인할 일회용 코드(`MAGOEDU_SSO_CODE`)를 받아요 (4-4번) |
 
 서버 프로그램 목록(통합 클라우드 → 프로그램 관리)에는 저장소와 파일 이름 규칙만 적어 두면 돼요.
 기본으로 들어 있는 규칙: `^OhdapNote-(\d+\.\d+\.\d+)-win-x64\.zip$`, `^MaplTajong-(\d+\.\d+\.\d+)-win-x64\.zip$`
@@ -62,9 +64,11 @@ zip 맨 위(또는 폴더 하나 안)에 `magoedu-app.json` 을 넣어요.
 | `MAGOEDU_LOCAL_DIR` | 이 컴퓨터에만 두는 폴더 (캐시, 로그, SQLite 같은 것) |
 | `MAGOEDU_APP_ID`, `MAGOEDU_USER_ID`, `MAGOEDU_USERNAME`, `MAGOEDU_USER_NAME`, `MAGOEDU_ROLE`, `MAGOEDU_ACADEMY` | 누가 켰는지 (확인된 값은 허가증 안에 있음) |
 | `MAGOEDU_ACADEMY_DIR` | **학원 공간** — 같은 학원 사람들이 함께 쓰는 폴더 (매니페스트에 `shared` 가 있고 학원에 속한 계정만, 아니면 빈 값) |
-| `MAGOEDU_REQUEST_DIR` | 학원 공간의 '열 때만 받는' 파일을 달라고 적는 폴더 (4-1번) |
+| `MAGOEDU_REQUEST_DIR` | 통합 클라우드에 부탁을 적는 폴더: 학원 공간의 '열 때만 받는' 파일(4-1번), 학생 고치기(4-3번), 로그인 코드(4-4번). 셋 다 쓰지 않으면 빈 값 |
 | `MAGOEDU_ACADEMY_ID` | 학원 번호 (학원 공간을 쓰지 않으면 빈 값) |
 | `MAGOEDU_DATA_KEY` | 설정 파일 서명 키 (매니페스트 `dataSigning` 인 프로그램만, 아니면 빈 값. 예전 서버도 빈 값). 디스크·로그·화면에 남기지 마세요 (4-2번) |
+| `MAGOEDU_ACADEMY_INFO` | 학원 학생 명단·학원 AI 파일 `academy-info.json` (매니페스트 `academyInfo`, 학원에 속한 계정만, 아니면 빈 값) |
+| `MAGOEDU_SSO_CODE` | 웹 프로그램 일회용 로그인 코드, 60초 (매니페스트 `sso`. 인터넷이 없었으면 빈 값) |
 | `MAGOEDU_SERVER`, `MAGOEDU_LAUNCHER_VERSION`, `MAGOEDU_LAUNCHER_PID` | 참고용 |
 
 ## 3. 시작할 때 확인하기 (개별 실행 막기)
@@ -160,7 +164,8 @@ Windows PC 브라우저의 웹 화면에서는 Windows 프로그램 카드에 **
 
 | 경로 | 보기 | 고치기·지우기 | 예 |
 | --- | --- | --- | --- |
-| `members/<계정 ID>/...` | 그 사람, 원장 | 그 사람만 | 선생님마다 만든 오답노트 (`<계정 ID>` 는 `MAGOEDU_USER_ID`) |
+| `members/<계정 ID>/...` | 그 사람, 원장 | 그 사람만 | 선생님마다 만든 것 (`<계정 ID>` 는 `MAGOEDU_USER_ID`) |
+| `students/<학생 ID>/...` (세 단계 이상) | 학원 모두 | 학원 모두 (담당 선생님은 바뀔 수 있으니) | 학생별 오답노트 `students/<학생 ID>/notes/<노트 ID>.json`. `<학생 ID>` 는 학생 명단(4-3번)의 ID |
 | `<폴더>/<이름>/...` (두 단계 이상) | 학원 모두 | 그 묶음을 처음 올린 사람(주인), 원장 | `books/<교재 ID>/book.json` — 묶음은 앞의 두 단계 |
 | `<파일>` (한 단계) | 학원 모두 | 원장만 | `academy.json` (학원 공용 설정) |
 
@@ -168,6 +173,13 @@ Windows PC 브라우저의 웹 화면에서는 Windows 프로그램 카드에 **
 - **고칠 권한이 없는 파일을 바꾸거나 지우면** 통합 클라우드가 서버 것으로 되돌려요 (서버에 없으면 지움). 바꾼 내용은 `conflicts` 폴더에 보관하고 알려 줘요.
   그러니 남의 파일은 화면에서 읽기 전용으로 보여 주고, 열기만 할 때는 쓰지 마세요.
 - 학원 공간은 계정 용량과 따로 **학원마다 용량 한도**가 있어요 (운영자가 학원 관리에서 정함, 기본은 서버 설정의 '학원마다 학원 공간'). 넘으면 올리기가 507 `academy_quota_exceeded`. 서버 보관 기간 정리는 없어요.
+- `students/<학생 ID>/...` 는 그 학생의 상태를 따라요.
+  - 명단에 있는 학생: 학원 모두가 고쳐요.
+  - **지운 학생**(되살릴 수 있는 기간): 읽기만 돼요. 고치면 위처럼 서버 것으로 되돌려요.
+  - **명단에 아직 없는 학생**: 되돌리지 않고 다음 동기화 때 다시 올려요 (학생을 막 추가한 경우). 학생 추가(4-3번)를 먼저 하고 파일을 쓰면 바로 올라가요.
+  - **완전히 지운 학생**(기본 30일 동안 아무도 되살리지 않음): 서버가 그 학생의 파일을 모든 프로그램에서 지우고, 모든 PC 에서도 지워져요.
+- 같은 파일을 여러 사람이 동시에 고치면 먼저 올라간 것을 쓰고, 밀려난 내 것은 `conflicts` 폴더에 보관하고 알려 줘요.
+  학생별 노트처럼 여럿이 함께 고치는 파일은 저장하기 직전에 파일이 그사이 바뀌었는지 보고 합쳐서 저장해 주세요 (열 때 읽은 내용·내 것·지금 파일로 3-way).
 
 **열 때만 받기** (`shared.lazy`): 큰 파일(교재 PDF 같은 것)은 동기화할 때 받지 않고, 프로그램이 달라고 할 때만 받아요.
 한 번 받은 파일은 그 뒤로 보통 파일처럼 계속 맞춰요. 내가 만든 파일은 처음부터 내 컴퓨터에 있으니 그대로 맞춰요.
@@ -202,6 +214,76 @@ SDK 없이 하려면 `MAGOEDU_REQUEST_DIR/<요청 ID>.json` 에 `{ "paths": [...
 - 백업 파일도 같은 방법으로 서명하고, 불러올 때 서명이 없거나 맞지 않으면 거부해요.
 - 안드로이드처럼 통합 클라우드 없이 서버에 붙는 앱은 `GET /api/me/data-key` → `{ dataKey }` 로 받아요 (404 면 예전 서버, 웹 화면 세션에는 403 `web_session`).
 
+## 4-3. 학원 학생 명단·학원 AI (`academyInfo`, 통합 클라우드 1.2.0)
+
+학생은 **학원에 속해요.** 명단은 통합 클라우드 서버 한 곳에 있고, 학원 사람(원장·선생님) 누구나 추가·고치기·지우기·되살리기를 해요 (통합 클라우드 앱·웹의 **학생 명단** 화면, 또는 프로그램에서).
+지운 학생은 기본 30일 동안 누구나 되살릴 수 있고, 그 뒤에는 완전히 지워요(4-1번).
+
+**학원 AI**: 원장이 통합 클라우드의 **학원 AI** 화면에서 기본 AI 하나를 정하면 학원 사람 모두의 프로그램이 함께 써요. 세부 설정으로 프로그램마다 다른 AI 를 정할 수도 있어요.
+프로그램은 자기 것(없으면 기본)을 받아요. 사람마다 프로그램 안에서 "학원 AI(기본) / 내 키"를 고를 수 있게 해 주세요.
+
+매니페스트에 `"academyInfo": true` 를 넣으면, 통합 클라우드가 켤 때와 명단·AI 가 바뀔 때마다(실시간) `MAGOEDU_ACADEMY_INFO` 파일을 새로 써요 (원자적으로 바꿔치기).
+
+```json
+{
+  "format": 1,
+  "academy": { "id": 3, "name": "마고학원" },
+  "me": { "id": "<계정 ID>", "name": "김선생", "role": "teacher" },
+  "members": [{ "id": "<계정 ID>", "name": "김선생", "role": "teacher", "roleLabel": "선생님" }],
+  "students": [{ "id": "…", "name": "홍길동", "school": "마고고", "grade": "고1", "teacher": { "id": "…", "name": "김선생" },
+                 "memo": "", "rev": 3, "updatedBy": { "id": "…", "name": "이선생" }, "updatedAt": 0, "deletedAt": null, "purgeAt": null }],
+  "purged": ["<완전히 지운 학생 ID>"],
+  "purgeDays": 30,
+  "ai": { "provider": "gemini", "model": "", "model2": "", "rpm": null, "source": "app", "hasKey": true, "relay": true },
+  "updatedAt": 0
+}
+```
+
+- `students` 에는 지운 학생(`deletedAt`)도 있어요. 화면에서는 숨기거나 '되살리기'로 보여 주세요. `ai` 는 학원 AI 가 없으면 `null` 이고, `provider` 는 `gemini` · `openai`(OpenAI 호환) · `anthropic` 이에요.
+- **학원 AI 키는 프로그램에 오지 않아요** (서버에만 있고, 원장도 끝 4자리만 봐요). `cloud.academyAi(session)` 이 부를 곳을 알려 줘요 → `{ provider, model, model2, rpm, source, baseUrl, apiKey }`.
+  그 AI 의 주소·키 자리에 그대로 넣어 부르면 돼요.
+  - `relay: true` → `baseUrl` 은 `<서버>/api/ai/relay/<프로그램 ID>`, `apiKey` 는 실행 허가증(`MAGOEDU_TICKET`). 서버가 진짜 키로 바꿔 보내요.
+    요청·응답 모양은 그 AI 그대로예요: Gemini `…/v1beta/models/<모델>:generateContent` · `…/v1beta/models` (키는 `x-goog-api-key` 머리글, 주소의 `?key=` 는 버려요),
+    OpenAI 호환 `…/chat/completions` · `…/models` (`Authorization: Bearer`), Claude `…/v1/messages` · `…/v1/models` (`x-api-key`).
+    생성·모델 목록 말고 다른 주소(파일 올리기 등)는 403 `relay_path`, 사람·프로그램마다 10분에 600번까지(429 `rate_limited`).
+    통합 클라우드에서 로그아웃하거나 사용이 중지되면 401 이에요.
+  - `direct: true` → 학원 AI 주소가 학원 안 주소(192.168.x.x, `*.local` 등)라 서버가 부를 수 없어요. 각 PC 에서 `baseUrl` 로 바로 부르세요 (키 없음).
+- 인터넷이 없으면 지난번 파일 그대로예요. 파일이 바뀌면 다시 읽어 주세요 (`watchAcademyInfo`).
+
+```js
+const info = cloud.academyInfo(session);                       // 없으면 null
+const ai = cloud.academyAi(session);                           // 학원 AI 를 부를 곳 (없으면 null)
+const stop = cloud.watchAcademyInfo(session, (info) => refresh(info));
+const r = await cloud.saveStudent(session, { id: newId, name: '홍길동', grade: '고1', teacherId: me });  // 추가 (id 는 영문·숫자·-, 8~64자, 생략 가능)
+const u = await cloud.saveStudent(session, { ...student, memo: '…' });   // rev 가 있으면 고치기
+if (!u.ok && u.errorCode === 'conflict') showLatest(u.student);          // 그사이 다른 사람이 고침 → 지금 것
+await cloud.deleteStudent(session, id);
+await cloud.restoreStudent(session, id);
+```
+
+- 답은 `{ ok, student }` 또는 `{ ok: false, error, errorCode }` 예요 (`conflict` · `student_deleted` · `invalid_name` · `offline` · `timeout` …). 인터넷이 있어야 해요.
+- 답하기 전에 `academy-info.json` 도 새로 써요. 그리고 명단에 없어서 미뤄 둔 학생 폴더 파일을 바로 올려요.
+- SDK 없이: `requests/<요청 ID>.json` 에 `{ "op": "students.save", "student": {...} }` · `{ "op": "students.delete", "id": "…" }` · `{ "op": "students.restore", "id": "…" }` 를 쓰면
+  `<요청 ID>.done.json` 에 `{ "ok": true, "missing": [], "student": {...} }` 또는 `{ "ok": false, "missing": [], "error": "…", "errorCode": "…" }` 로 답해요.
+
+## 4-4. 웹 프로그램과 로그인 (`sso`, 통합 클라우드 1.2.0)
+
+프로그램 목록에는 **웹 프로그램**(플랫폼 '웹', 주소만 있음)도 넣을 수 있어요. 통합 클라우드 앱·웹에서 **열기**를 누르면 브라우저로 열고, 설치·동기화는 하지 않아요.
+웹 프로그램은 통합 클라우드 계정으로만 로그인해요.
+
+1. 웹 프로그램이 브라우저를 `https://<통합 클라우드>/#/sso?app=<웹 프로그램 ID>&state=<임의 값>` 으로 보내요 (state 는 쿠키에도 저장).
+2. 통합 클라우드 웹 화면이 로그인을 확인한 뒤(안 했으면 로그인부터) 60초짜리 일회용 코드를 받아
+   `<웹 프로그램 주소>/api/auth/mago/callback?code=<코드>&state=<값>` 으로 보내요. 돌아갈 주소는 서버가 정해요(프로그램 관리의 주소).
+3. 웹 프로그램 **서버**가 state 를 쿠키와 비교한 뒤 `POST /api/sso/token { appId, secret, code }` 로 코드를 바꿔요.
+   `secret` 은 운영자가 **프로그램 관리 → 앱 비밀값 만들기**에서 한 번만 보여 주는 값이에요 (웹 프로그램 서버의 환경 변수에만 두세요).
+   → `{ token, user }`. `token` 은 **그 프로그램 전용 세션**이라 `/api/me`, 학생 명단(`/api/students…`, `/api/academy/members`), `GET /api/academy/ai`(자기 프로그램 것),
+   학원 AI 중계 `/api/ai/relay/<자기 프로그램 ID>/…`(키 자리에 이 토큰, 4-3번)만 쓸 수 있어요.
+   로그아웃(`POST /api/auth/logout`)·비밀번호 초기화·사용 중지되면 같이 끊겨요. 코드는 한 번만 쓸 수 있어요.
+
+PC 에서 웹 프로그램을 창으로 여는 프로그램(예: 마고 과목내비 PC)은 매니페스트에 `"sso": "<웹 프로그램 ID>"` 를 넣어요.
+통합 클라우드가 켤 때 코드를 받아 `MAGOEDU_SSO_CODE` 로 넘기고(`session.ssoCode`), 실행 중에 다시 필요하면 `await cloud.ssoCode(session)` → `{ ok, code, expiresAt }` 으로 받아요.
+코드를 웹 프로그램 서버에 넘기면(예: `POST /api/auth/mago/code`) 서버가 3번처럼 바꿔요. 7일짜리 실행 허가증은 웹 프로그램에 넘기지 않아요.
+
 ## 5. 업데이트
 
 - 프로그램 안의 자동 업데이트(electron-updater, `update_manager.py`)는 빼요. 통합 클라우드가 새 버전을 **옆 폴더에 받아 두고**, 다음에 켤 때 새 버전으로 켜요.
@@ -233,6 +315,9 @@ SDK 없이 하려면 `MAGOEDU_REQUEST_DIR/<요청 ID>.json` 에 `{ "paths": [...
 
 - 학원 공간(4-1번)을 써요: 교재 `books/<id>/`(생성자 `createdBy`, 원본은 `shared.lazy` 로 열 때만 받음), 학생 명단 `students/`,
   학원 공용 AI 키 `academy.json`, 선생님별 오답노트 `members/<계정>/notes/`. 개인 공간에는 `settings.json` 만.
+- 0.4.0 부터 학생별: 명단은 4-3번(`academyInfo`), 노트는 `students/<학생 ID>/notes/`, 학원 AI 는 통합 클라우드에서 (`academy.json` 은 쓰지 않음).
+  서버는 예전 학생 파일(`students/<id>.json`)을 같은 ID 로 명단에 넣고 `academy.json` 의 키를 학원 기본 AI 로 가져와요.
+  카탈로그의 오답노트 최신 버전이 0.4.0 이상이 되면 `members/<계정>/notes/` 의 노트를 학생 폴더로 옮겨요 (학생을 못 찾은 노트는 그대로).
 - 예전에 따로 설치한 데이터는 `legacy` 로 `local/legacy` 에 받아서 오답노트가 처음 켤 때 새 자리로 옮겨요.
 - 자세한 것은 오답노트 저장소의 `src/main/main.js` '저장 위치'와 `magoedu-app.json`.
 
