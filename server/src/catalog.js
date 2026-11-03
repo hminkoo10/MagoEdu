@@ -6,6 +6,7 @@
 //   source: { type: 'github', repo: 'owner/name', asset: '^Name-(\d+\.\d+\.\d+)-win-x64\.zip$', tagPrefix?: '...' }
 //   source: { type: 'local' }  → <DATA_DIR>/packages/<앱 id>/*.zip 을 그대로 씀 (직접 운영·시험용)
 // 안드로이드 프로그램(platform: 'android')은 같은 방식으로 APK 를 찾아 웹에서 내려받게만 한다 (통합 클라우드가 설치하지 않음).
+// 웹 프로그램(platform: 'web', source: { type: 'web', url })은 주소만 있다 (누르면 열고, 통합 클라우드 계정으로 로그인 — routes/sso.js).
 //
 // 통합 클라우드 프로그램 자체의 업데이트(electron-updater)도 여기서 같이 찾는다.
 
@@ -19,7 +20,7 @@ const { compareVersions, jsonParse } = require('./util');
 const SHA_RE = /^[0-9a-f]{64}$/;
 const DEFAULT_LOCAL_ASSET = '^[A-Za-z0-9_.-]+?-(\\d+\\.\\d+\\.\\d+)(?:-win-x64)?\\.zip$';
 const LAUNCHER_SETUP_RE = /^MagoEduCloud-Setup-(\d+\.\d+\.\d+)\.exe$/;
-const PLATFORMS = ['windows', 'android'];
+const PLATFORMS = ['windows', 'android', 'web'];
 const APK_TYPE = 'application/vnd.android.package-archive';
 
 /** 내려받을 때 파일 이름 (한글 이름도 깨지지 않게) */
@@ -42,6 +43,8 @@ function rowToApp(r) {
     coldStorage: { enabled: !!r.cold_enabled, days: r.cold_days },
     autoLaunchDefault: !!r.auto_launch_default,
     platform: r.platform || 'windows',
+    url: r.platform === 'web' ? jsonParse(r.source, {}).url || null : null,
+    hasSecret: !!r.client_secret_hash,
     release: jsonParse(r.release, null),
     releaseCheckedAt: r.release_checked_at || null,
     releaseError: r.release_error || null,
@@ -277,6 +280,7 @@ class Catalog {
   async refreshApp(id) {
     const app = this.get(id);
     if (!app) return null;
+    if (app.source.type === 'web') return app; // 웹 프로그램은 찾을 버전이 없음
     let release = null;
     let error = null;
     try {

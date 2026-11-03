@@ -110,9 +110,18 @@ test('학원 공간: 교재는 학원 모두가 보고, 만든 사람과 원장�
   });
 
   await t.test('학원 공용 파일(한 단계 경로)은 원장만', async () => {
+    assert.equal((await put(t1, 'notice.json', '{"a":1}')).status, 403);
+    assert.equal((await put(dirA, 'notice.json', '{"a":2}')).status, 200);
+    assert.equal((await get(t1, 'notice.json')).data.toString(), '{"a":2}');
+  });
+
+  await t.test('예전 오답노트 academy.json(학원 AI 키)은 원장만 받음', async () => {
     assert.equal((await put(t1, 'academy.json', '{"ai":{"key":"x"}}')).status, 403);
     assert.equal((await put(dirA, 'academy.json', '{"ai":{"key":"k"}}')).status, 200);
-    assert.equal((await get(t1, 'academy.json')).data.toString(), '{"ai":{"key":"k"}}');
+    assert.equal((await get(t1, 'academy.json')).status, 403);
+    assert.ok(!(await paths(t1)).includes('academy.json'), '선생님 목록에는 없음');
+    assert.ok((await paths(dirA)).includes('academy.json'), '원장 목록에는 있음');
+    assert.equal((await get(dirA, 'academy.json')).data.toString(), '{"ai":{"key":"k"}}');
   });
 
   await t.test('members/<계정>: 본인과 원장만 보고, 본인만 고침', async () => {

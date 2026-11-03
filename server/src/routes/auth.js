@@ -58,7 +58,7 @@ function register(router, deps) {
   });
 
   router.post('/api/auth/logout', (ctx) => {
-    const { session } = svc.authenticate(ctx);
+    const { session } = svc.authenticate(ctx, { app: true });
     db.run('DELETE FROM sessions WHERE id = ?', session.id);
     return { ok: true };
   });
@@ -131,7 +131,7 @@ function register(router, deps) {
 
   // ---------------- 내 계정 ----------------
   router.get('/api/me', (ctx) => {
-    const { user } = svc.authenticate(ctx);
+    const { user } = svc.authenticate(ctx, { app: true }); // 웹 프로그램이 역할·학원을 다시 확인할 때도
     return {
       user: svc.publicUser(user, { withUsage: true }),
       settings: { ticketDays: svc.getSettings().ticketDays },

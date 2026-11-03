@@ -11,14 +11,16 @@ class Router {
     this.routes = [];
   }
 
+  /** pattern 의 :이름 은 한 단계, 맨 끝의 /* 는 나머지 전부 (params.rest, 비어 있을 수 있음) */
   on(method, pattern, handler) {
     const keys = [];
-    const re = new RegExp(
-      `^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/:(\w+)/g, (_m, k) => {
-        keys.push(k);
-        return '([^/]+)';
-      })}/?$`,
-    );
+    const rest = pattern.endsWith('/*');
+    const body = (rest ? pattern.slice(0, -2) : pattern).replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/:(\w+)/g, (_m, k) => {
+      keys.push(k);
+      return '([^/]+)';
+    });
+    if (rest) keys.push('rest');
+    const re = new RegExp(`^${body}${rest ? '(?:/(.*))?$' : '/?$'}`);
     this.routes.push({ method, re, keys, handler });
     return this;
   }
@@ -48,7 +50,7 @@ class Router {
       if (r.method !== method && !(method === 'HEAD' && r.method === 'GET')) continue;
       const params = {};
       r.keys.forEach((k, i) => {
-        params[k] = decodeURIComponent(m[i + 1]);
+        params[k] = k === 'rest' ? m[i + 1] || '' : decodeURIComponent(m[i + 1]);
       });
       return { handler: r.handler, params };
     }

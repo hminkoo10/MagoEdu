@@ -44,5 +44,34 @@
     "exe": "OhdapNote.exe",
     "coldStorage": { "enabled": true, "days": 30 },
     "autoLaunchDefault": false
+  },
+  {
+    "id": "mago-navi",
+    "name": "마고 과목내비",
+    "description": "학생마다 희망 학과·대학에 맞춰 고교 선택과목을 짜 주는 웹 프로그램",
+    "platform": "web",
+    "enabled": false,
+    "color": "#0F9D8A",
+    "source": { "type": "web", "url": "https://magonavi.milky.kr" },
+    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/mago-navi/main/public/icon-512.png",
+    "exe": "",
+    "coldStorage": { "enabled": false, "days": 30 },
+    "autoLaunchDefault": false
+  },
+  {
+    "id": "mago-navi-pc",
+    "name": "마고 과목내비 (PC)",
+    "description": "마고 과목내비를 PC 프로그램 창으로 (통합 클라우드 계정으로 자동 로그인)",
+    "enabled": false,
+    "color": "#0F9D8A",
+    "source": {
+      "type": "github",
+      "repo": "hminkoo10/mago-navi",
+      "asset": "^MagoNavi-(\\d+\\.\\d+\\.\\d+)-win-x64\\.zip$"
+    },
+    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/mago-navi/main/public/icon-512.png",
+    "exe": "MagoNavi.exe",
+    "coldStorage": { "enabled": false, "days": 30 },
+    "autoLaunchDefault": false
   }
 ]

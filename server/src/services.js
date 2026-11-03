@@ -152,7 +152,8 @@ function createServices({ db, config, log }) {
   }
 
   // ---------------- 세션 ----------------
-  function createSession(user, device, ip) {
+  /** appId: 웹 프로그램(예: 마고 과목내비) 서버가 받는 그 프로그램 전용 세션 (authenticate 에서 허용한 곳만 씀) */
+  function createSession(user, device, ip, { appId = null } = {}) {
     const token = `mgc_${randomToken(32)}`;
     const now = Date.now();
     const days = getSettings().sessionDays;
@@ -161,8 +162,8 @@ function createServices({ db, config, log }) {
       // 같은 기기에서 다시 로그인하면 예전 세션은 정리
       db.run('DELETE FROM sessions WHERE user_id = ? AND device_id = ?', user.id, deviceId);
       db.run(
-        `INSERT INTO sessions(token_hash, user_id, device_id, device_name, platform, client_version, ip, created_at, last_seen_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions(token_hash, user_id, device_id, device_name, platform, client_version, ip, created_at, last_seen_at, expires_at, app_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         sha256Hex(token),
         user.id,
         deviceId,
@@ -173,15 +174,20 @@ function createServices({ db, config, log }) {
         now,
         now,
         now + days * DAY,
+        appId,
       );
       db.run('UPDATE users SET last_login_at = ? WHERE id = ?', now, user.id);
     });
     return token;
   }
 
-  function authenticate(ctx) {
+  /**
+   * 로그인 확인. app: 웹 프로그램 전용 세션(sessions.app_id)도 받을지 — 학생 명단·학원 AI·내 정보처럼 그 프로그램에 필요한 곳만 true
+   */
+  /** token: Authorization 머리글 대신 쓸 세션 토큰 (학원 AI 중계처럼 다른 자리로 받을 때) */
+  function authenticate(ctx, { app = false, token = null } = {}) {
     const header = String(ctx.req.headers.authorization || '');
-    const m = /^Bearer\s+(\S+)$/i.exec(header);
+    const m = token ? [null, token] : /^Bearer\s+(\S+)$/i.exec(header);
     if (!m) throw new HttpError(401, '로그인이 필요해요.', 'auth_required');
     const session = db.get('SELECT * FROM sessions WHERE token_hash = ?', sha256Hex(m[1]));
     const now = Date.now();
@@ -196,6 +202,7 @@ function createServices({ db, config, log }) {
       db.run('DELETE FROM sessions WHERE id = ?', session.id);
       throw new HttpError(401, '사용이 중지된 계정이에요. 원장님이나 운영자에게 문의해 주세요.', 'account_suspended');
     }
+    if (session.app_id && !app) throw new HttpError(403, '이 로그인으로는 쓸 수 없는 기능이에요.', 'app_session');
     // 마지막 사용 시각은 1분에 한 번만 기록 (쓸 때마다 만료 기간도 늘어남)
     if (now - session.last_seen_at > 60 * 1000) {
       const days = getSettings().sessionDays;

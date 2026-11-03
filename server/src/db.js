@@ -10,6 +10,23 @@ const TAJONG_ANDROID = {
   source: { type: 'github', repo: 'hminkoo10/Mapl-Tajong', asset: '^MaplTajong-(\\d+\\.\\d+\\.\\d+)\\.apk$' },
 };
 
+// 5번 고침에서 넣는 항목: 마고 과목내비 (웹 + PC 창)
+const MAGO_NAVI = {
+  id: 'mago-navi',
+  name: '마고 과목내비',
+  description: '학생마다 희망 학과·대학에 맞춰 고교 선택과목을 짜 주는 웹 프로그램',
+  color: '#0F9D8A',
+  icon: 'https://raw.githubusercontent.com/hminkoo10/mago-navi/main/public/icon-512.png',
+  source: { type: 'web', url: 'https://magonavi.milky.kr' },
+};
+const MAGO_NAVI_PC = {
+  id: 'mago-navi-pc',
+  name: '마고 과목내비 (PC)',
+  description: '마고 과목내비를 PC 프로그램 창으로 (통합 클라우드 계정으로 자동 로그인)',
+  exe: 'MagoNavi.exe',
+  source: { type: 'github', repo: 'hminkoo10/mago-navi', asset: '^MagoNavi-(\\d+\\.\\d+\\.\\d+)-win-x64\\.zip$' },
+};
+
 const MIGRATIONS = [
   // 1: 처음 구조
   `
@@ -211,6 +228,57 @@ const MIGRATIONS = [
   // 5: 학원 공간 용량 (NULL = 서버 설정의 기본 학원 용량, 0 = 제한 없음)
   `
   ALTER TABLE academies ADD COLUMN quota_mb INTEGER;
+  `,
+
+  // 6: 학원 학생 명단 (학원 사람 누구나 고치고 지우고 되살림. 지우고 오래 두면 purged_at — 행은 남겨서 프로그램이 알 수 있게)
+  //    학원 공용 AI (app_id '' = 기본, 프로그램마다 따로 정할 수 있음. 설정은 서버 비밀값으로 암호화)
+  //    웹 프로그램: source.type 'web' + 앱 비밀값(SSO 코드 교환), 그 프로그램 전용 로그인 세션(sessions.app_id)
+  //    마고 과목내비(웹·PC) 항목은 꺼 둔 채로 넣는다 (배포한 뒤 운영자가 켬)
+  `
+  CREATE TABLE students (
+    id TEXT PRIMARY KEY,
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    school TEXT NOT NULL DEFAULT '',
+    grade TEXT NOT NULL DEFAULT '',
+    teacher_uid TEXT,
+    memo TEXT NOT NULL DEFAULT '',
+    rev INTEGER NOT NULL DEFAULT 1,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    deleted_by TEXT,
+    purged_at INTEGER
+  );
+  CREATE INDEX students_academy ON students(academy_id);
+
+  CREATE TABLE academy_ai (
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    app_id TEXT NOT NULL DEFAULT '',
+    config_enc TEXT NOT NULL,
+    updated_by TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (academy_id, app_id)
+  );
+
+  ALTER TABLE apps ADD COLUMN client_secret_hash TEXT;
+  ALTER TABLE sessions ADD COLUMN app_id TEXT;
+
+  INSERT INTO apps(id, name, description, sort, enabled, source, icon_url, exe, color, cold_enabled, cold_days,
+                   auto_launch_default, platform, created_at, updated_at)
+  SELECT '${MAGO_NAVI.id}', '${MAGO_NAVI.name}', '${MAGO_NAVI.description}', (SELECT COALESCE(MAX(sort), 0) + 1 FROM apps), 0,
+         '${JSON.stringify(MAGO_NAVI.source)}', '${MAGO_NAVI.icon}', '', '${MAGO_NAVI.color}', 0, 30, 0, 'web',
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+  WHERE EXISTS (SELECT 1 FROM apps) AND NOT EXISTS (SELECT 1 FROM apps WHERE id = '${MAGO_NAVI.id}');
+
+  INSERT INTO apps(id, name, description, sort, enabled, source, icon_url, exe, color, cold_enabled, cold_days,
+                   auto_launch_default, platform, created_at, updated_at)
+  SELECT '${MAGO_NAVI_PC.id}', '${MAGO_NAVI_PC.name}', '${MAGO_NAVI_PC.description}', (SELECT COALESCE(MAX(sort), 0) + 1 FROM apps), 0,
+         '${JSON.stringify(MAGO_NAVI_PC.source)}', '${MAGO_NAVI.icon}', '${MAGO_NAVI_PC.exe}', '${MAGO_NAVI.color}', 0, 30, 0, 'windows',
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+  WHERE EXISTS (SELECT 1 FROM apps) AND NOT EXISTS (SELECT 1 FROM apps WHERE id = '${MAGO_NAVI_PC.id}');
   `,
 ];
 

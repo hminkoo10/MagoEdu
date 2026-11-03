@@ -103,6 +103,43 @@ function loadOrCreateSigningKey(dir) {
   return { privateKey, publicKey, x, kid };
 }
 
+// ---------------------------------------------------------------------------
+// 서버에 저장하는 비밀값(학원 공용 AI 키 등) 암호화 — DB 파일만 새어 나가도 읽을 수 없게
+//   비밀 키는 <DATA_DIR>/keys/<name> (32바이트, 처음에 만듦), AES-256-GCM, "v1:<iv>.<tag>.<본문>" (base64url)
+// ---------------------------------------------------------------------------
+
+function loadOrCreateSecret(dir, name) {
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, name);
+  if (fs.existsSync(file)) {
+    const key = Buffer.from(fs.readFileSync(file, 'utf8').trim(), 'base64url');
+    if (key.length === 32) return key;
+  }
+  const key = crypto.randomBytes(32);
+  fs.writeFileSync(file, key.toString('base64url'), { mode: 0o600 });
+  return key;
+}
+
+function seal(key, text) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([c.update(String(text), 'utf8'), c.final()]);
+  return `v1:${iv.toString('base64url')}.${c.getAuthTag().toString('base64url')}.${body.toString('base64url')}`;
+}
+
+/** 풀지 못하면(키가 바뀜·망가짐) null */
+function unseal(key, sealed) {
+  const m = /^v1:([\w-]+)\.([\w-]+)\.([\w-]*)$/.exec(String(sealed || ''));
+  if (!m) return null;
+  try {
+    const d = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(m[1], 'base64url'));
+    d.setAuthTag(Buffer.from(m[2], 'base64url'));
+    return Buffer.concat([d.update(Buffer.from(m[3], 'base64url')), d.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
 const TICKET_PREFIX = 'MGT1';
 
 function signTicket(key, payload) {
@@ -137,6 +174,9 @@ module.exports = {
   DUMMY_HASH,
   RateLimiter,
   loadOrCreateSigningKey,
+  loadOrCreateSecret,
+  seal,
+  unseal,
   signTicket,
   verifyTicket,
   TICKET_PREFIX,

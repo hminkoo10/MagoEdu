@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const { readJson, sendJson, send } = require('../http');
-const { HttpError, bad, forbidden, notFound, intOr, str, randomToken } = require('../util');
+const { HttpError, bad, forbidden, notFound, intOr, str, randomToken, compareVersions } = require('../util');
 const { signTicket } = require('../security');
 const { publicRelease, sniffImageType, PLATFORMS } = require('../catalog');
 
@@ -48,6 +48,7 @@ function register(router, deps) {
       description: app.description,
       color: app.color,
       platform: app.platform,
+      url: app.url,
       iconUrl: `/api/apps/${app.id}/icon`,
       exe: app.exe,
       autoLaunchDefault: app.autoLaunchDefault,
@@ -66,10 +67,15 @@ function register(router, deps) {
   }
 
   // ---------------- 사용자 ----------------
+  // 1.2.0 보다 낮은 통합 클라우드 앱은 웹 프로그램을 모른다 (설치하는 프로그램으로 보여서 숨김)
+  const knowsWeb = (session) => session.platform === 'web' || compareVersions(session.client_version || '0', '1.2.0') >= 0;
+
   router.get('/api/apps', (ctx) => {
-    const { user } = svc.authenticate(ctx);
+    const { user, session } = svc.authenticate(ctx);
+    const web = knowsWeb(session);
     const apps = catalog
       .list()
+      .filter((a) => web || a.platform !== 'web')
       .map((a) => forUser(a, user))
       .filter((a) => a.allowed);
     return { apps };
@@ -120,7 +126,11 @@ function register(router, deps) {
   router.post('/api/apps/:id/ticket', (ctx) => {
     const { user, app } = usable(ctx);
     if (app.platform !== 'windows') {
-      throw new HttpError(400, '휴대폰용 프로그램은 통합 클라우드에서 켜지 않아요. 휴대폰에서 내려받아 설치해 주세요.', 'wrong_platform');
+      const msg =
+        app.platform === 'web'
+          ? '웹 프로그램은 실행 허가증 없이 브라우저에서 열어요.'
+          : '휴대폰용 프로그램은 통합 클라우드에서 켜지 않아요. 휴대폰에서 내려받아 설치해 주세요.';
+      throw new HttpError(400, msg, 'wrong_platform');
     }
     const days = svc.getSettings().ticketDays;
     const iat = Math.floor(Date.now() / 1000);
@@ -156,9 +166,10 @@ function register(router, deps) {
     }
     if (body.platform !== undefined || !existing) {
       const platform = body.platform === undefined ? 'windows' : String(body.platform);
-      if (!PLATFORMS.includes(platform)) throw bad('플랫폼은 Windows 또는 안드로이드 중에서 골라 주세요.', 'invalid_platform');
+      if (!PLATFORMS.includes(platform)) throw bad('플랫폼은 Windows · 안드로이드 · 웹 중에서 골라 주세요.', 'invalid_platform');
       out.platform = platform;
     }
+    const platform = out.platform || existing?.platform;
     if (body.name !== undefined || !existing) {
       out.name = str(body.name, 60);
       if (!out.name) throw bad('프로그램 이름을 입력해 주세요.');
@@ -176,7 +187,14 @@ function register(router, deps) {
         days: intOr(body.coldStorage.days, existing?.coldStorage.days ?? 30, 1, 3650),
       };
     }
-    if (body.source !== undefined || !existing) {
+    if (platform === 'web' && (body.source !== undefined || body.url !== undefined || !existing || existing.platform !== 'web')) {
+      const url = str(body.url ?? body.source?.url ?? existing?.url, 300);
+      if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/[^\s]*)?$/i.test(url)) {
+        throw bad('웹 프로그램 주소는 https:// 로 시작해야 해요.', 'invalid_url');
+      }
+      out.source = { type: 'web', url: url.replace(/\/+$/, '') };
+    } else if (platform !== 'web' && (body.source !== undefined || !existing || existing.platform === 'web')) {
+      const wasWeb = existing?.platform === 'web'; // 웹에서 바꾸면 웹 주소는 버림
       const s = body.source || {};
       if (s.type === 'github') {
         const repo = str(s.repo, 100);
@@ -189,7 +207,7 @@ function register(router, deps) {
           throw bad('파일 이름 규칙(정규식)에 버전을 담는 괄호 ( ) 가 있어야 해요.');
         }
         out.source = { type: 'github', repo, asset, ...(s.tagPrefix ? { tagPrefix: str(s.tagPrefix, 40) } : {}) };
-      } else if (s.type === 'local' || !existing) {
+      } else if (s.type === 'local' || !existing || wasWeb) {
         out.source = { type: 'local', ...(s.asset ? { asset: str(s.asset, 200) } : {}) };
       }
     }

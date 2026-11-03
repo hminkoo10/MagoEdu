@@ -8,6 +8,8 @@
 //
 // 개인 동기화(routes/sync.js)와 같은 방식이다: 파일마다 rev, 올릴 때 baseRev 가 다르면 409.
 // 누가 보고 쓰는지는 sharing.js 의 경로 규칙. 권한이 없으면 403.
+//   403 not_owner: 고칠 권한 없음 (통합 클라우드가 서버 것으로 되돌림)
+//   403 student_pending: students/<학생 ID>/ 인데 그 학생이 아직 명단에 없음 (되돌리지 않고 나중에 다시)
 // 학원 공간은 계정 용량과 따로 학원마다 용량 한도가 있다 (academies.quota_mb, 없으면 서버 설정의 기본 학원 용량).
 // 오래 안 쓴 데이터 정리(콜드 스토리지)는 없다.
 
@@ -15,6 +17,10 @@ const { HttpError, bad, forbidden, notFound, intOr } = require('../util');
 const { SHA_RE } = require('../storage');
 const { validPath, publicEntry } = require('./sync');
 const sharing = require('../sharing');
+const { OHDAP, LEGACY_SETTINGS } = require('../students');
+
+// 예전 오답노트(0.3)의 academy.json 에는 학원 AI 키가 있어 원장·운영자만 받는다 (키는 서버의 학원 AI 로 옮겨 가고, 0.4 는 서버 중계로 씀)
+const secret = (user, appId, p) => appId === OHDAP && p === LEGACY_SETTINGS && user.role !== 'director' && user.role !== 'admin';
 
 function sharedEntry(f) {
   if (!f) return null;
@@ -42,8 +48,22 @@ function register(router, deps) {
     return r ? r.owner_id : null;
   }
 
+  /** 학생 경로(students/<학생 ID>/...)면 그 학생의 상태, 아니면 null */
+  function studentOf(aca, p) {
+    const c = sharing.classify(p);
+    return c?.kind === 'student' ? deps.students.state(aca, c.sid) : null;
+  }
+
   function checkWrite(user, aca, appId, p) {
-    if (!sharing.classify(p)) throw bad('학원 공간에 쓸 수 없는 경로예요.', 'invalid_path');
+    const c = sharing.classify(p);
+    if (!c) throw bad('학원 공간에 쓸 수 없는 경로예요.', 'invalid_path');
+    if (c.kind === 'student') {
+      const st = deps.students.state(aca, c.sid);
+      // 명단에 아직 없는 학생: 통합 클라우드가 되돌리지 않고 나중에 다시 올린다 (학생을 막 추가한 경우)
+      if (!st) throw forbidden('학생 명단에 아직 없는 학생이에요.', 'student_pending');
+      if (st !== 'active') throw forbidden('지운 학생의 자료는 고칠 수 없어요. 먼저 학생을 되살려 주세요.', 'not_owner');
+      return;
+    }
     if (!sharing.canWrite(user, p, ownerOf(aca, appId, p))) {
       throw forbidden('만든 사람이나 원장만 고칠 수 있어요.', 'not_owner');
     }
@@ -70,13 +90,19 @@ function register(router, deps) {
     const { user, app, aca } = open(ctx);
     const since = intOr(ctx.query.get('since'), 0, 0);
     const rows = db.all('SELECT * FROM shared_files WHERE academy_id = ? AND app_id = ? AND seq > ? ORDER BY seq', aca, app.id, since);
+    const states = deps.students.stateMap(aca);
+    const canRead = (p) => {
+      const c = sharing.classify(p);
+      return !secret(user, app.id, p) && sharing.canRead(user, p, c?.kind === 'student' ? states.get(c.sid) ?? null : null);
+    };
     const seq = db.get('SELECT COALESCE(MAX(seq), 0) AS n FROM shared_files WHERE academy_id = ? AND app_id = ?', aca, app.id).n;
     return {
       appId: app.id,
       academyId: aca,
       seq: Math.max(seq, since),
       full: since === 0,
-      entries: rows.filter((f) => sharing.canRead(user, f.path)).map(sharedEntry),
+      // 지운 항목은 내용이 없으니 늘 넘긴다 (그래야 완전히 지운 학생의 자료도 PC 에서 지워짐)
+      entries: rows.filter((f) => f.deleted || canRead(f.path)).map(sharedEntry),
     };
   });
 
@@ -84,7 +110,7 @@ function register(router, deps) {
   router.get('/api/sync/:appId/academy/file', (ctx) => {
     const { user, app, aca } = open(ctx);
     const p = validPath(ctx.query.get('path'));
-    if (!sharing.canRead(user, p)) throw forbidden('볼 수 없는 파일이에요.');
+    if (secret(user, app.id, p) || !sharing.canRead(user, p, studentOf(aca, p))) throw forbidden('볼 수 없는 파일이에요.');
     const f = current(aca, app.id, p);
     if (!f || f.deleted) throw notFound('파일이 없어요.', 'no_file');
     if (!blobs.has(f.sha256)) throw notFound('서버에 파일 내용이 없어요.', 'no_blob');
@@ -209,6 +235,7 @@ function register(router, deps) {
         return current(aca, app.id, p);
       });
       deps.events.publishAcademy(aca, app.id, entry.seq, session.device_id);
+      deps.students.onSharedPut(aca, app.id, p, sha); // 예전 오답노트(0.3)가 만든 학생도 명단에
       if (cur && cur.sha256 && cur.sha256 !== sha) blobs.scheduleGc();
       return { entry: sharedEntry(entry) };
     } finally {

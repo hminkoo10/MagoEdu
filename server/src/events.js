@@ -2,6 +2,7 @@
 
 // 실시간 알림 (Server-Sent Events)
 //   GET /api/sync/events?apps=a,b  →  event: hello / event: change {appId, seq, deviceId[, scope: 'academy']} / ": ping" (25초마다)
+//                                     event: academy {kind: 'students' | 'ai'}  (학원 학생 명단·학원 AI 가 바뀜 → 다시 받기)
 //
 // 계정의 동기화 파일이 바뀌면(올리기·지우기·서버 정리) 그 계정의 연결에 바로 알려 준다.
 // 받는 쪽은 GET /api/sync/<앱>?since=<마지막 seq> 로 바뀐 것만 가져간다.
@@ -93,6 +94,15 @@ class EventHub {
       if (s.apps && !s.apps.has(appId)) continue;
       if (!this.svc.canUseApp(s.user, appId)) continue;
       this._write(s, msg);
+    }
+  }
+
+  /** 학원 명단·학원 AI 가 바뀐 뒤: 그 학원 사람들의 연결에 "다시 받으세요" (event: academy {kind: 'students' | 'ai'}) */
+  publishAcademyInfo(academyId, kind) {
+    if (!this.streams.size) return;
+    const msg = `event: academy\ndata: ${JSON.stringify({ kind })}\n\n`;
+    for (const s of this.streams) {
+      if (s.user.academy_id === academyId) this._write(s, msg);
     }
   }
 

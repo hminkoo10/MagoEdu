@@ -8,12 +8,13 @@ const crypto = require('node:crypto');
 const { openDb } = require('./db');
 const { Router, sendJson, sendError, clientIp, serveStatic } = require('./http');
 const { HttpError, intOr, normalizeUsername, randomPassword } = require('./util');
-const { hashPassword, loadOrCreateSigningKey } = require('./security');
+const { hashPassword, loadOrCreateSigningKey, loadOrCreateSecret } = require('./security');
 const { createServices } = require('./services');
 const { BlobStore } = require('./storage');
 const { Catalog } = require('./catalog');
 const { createJobs } = require('./jobs');
 const { EventHub } = require('./events');
+const { createStudents } = require('./students');
 
 const VERSION = require('../package.json').version;
 // 자동 배포 때 넣는 빌드 정보 (어느 커밋인지) — 배포 후 새 코드가 켜졌는지 확인하는 데 씀
@@ -44,6 +45,9 @@ function loadConfig(env = process.env, overrides = {}) {
     catalogRefreshMinutes: intOr(env.CATALOG_REFRESH_MINUTES, 10, 1, 24 * 60),
     maxFileBytes: intOr(env.MAX_FILE_MB, 2048, 1) * 1024 * 1024,
     catalogFile: env.CATALOG_FILE || path.join(__dirname, '..', 'catalog.default.json'),
+    studentPurgeDays: intOr(env.STUDENT_PURGE_DAYS, 30, 1, 3650), // 지운 학생을 완전히 지우기까지
+    aiRelayPerTenMinutes: intOr(env.AI_RELAY_PER_10_MIN, 600, 1, 100000), // 학원 AI 중계: 사람·프로그램마다 10분에
+    aiRelayAllowPrivate: env.AI_RELAY_ALLOW_PRIVATE === '1', // 시험용: 서버 안쪽 주소로도 중계
     // 없으면 내려받기 안내 페이지(public)만
     webDir: WEB_DIRS.find((d) => fs.existsSync(path.join(d, 'index.html'))) || null,
     background: true, // 주기 작업·프로그램 목록 자동 새로 고침
@@ -108,7 +112,23 @@ function createCloudServer(config = loadConfig()) {
       if (user.role === 'admin') fs.rmSync(path.join(config.dataDir, ADMIN_PASSWORD_FILE), { force: true });
     },
   };
-  deps.jobs = createJobs({ db, svc, blobs, catalog, log, nextSeq, events });
+  deps.students = createStudents({
+    db,
+    svc,
+    blobs,
+    events,
+    catalog,
+    nextSeq,
+    log,
+    aiKey: loadOrCreateSecret(path.join(config.dataDir, 'keys'), 'ai.key'),
+    purgeDays: config.studentPurgeDays,
+  });
+  deps.jobs = createJobs({ db, svc, blobs, catalog, log, nextSeq, events, students: deps.students });
+  try {
+    deps.students.importLegacy(); // 예전 오답노트 학생·학원 AI (다시 해도 안전)
+  } catch (err) {
+    log.warn('[학생 명단] 예전 오답노트 데이터를 가져오지 못했어요', err.message);
+  }
 
   const initialAdmin = seedAdmin(db, config, log);
 
@@ -119,6 +139,9 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/apps').register(router, deps);
   require('./routes/sync').register(router, deps);
   require('./routes/shared').register(router, deps);
+  require('./routes/students').register(router, deps);
+  require('./routes/sso').register(router, deps);
+  require('./routes/ai-relay').register(router, deps);
 
   async function handle(req, res) {
     let url;

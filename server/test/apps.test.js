@@ -300,7 +300,7 @@ test('안드로이드 항목: 이미 쓰던 서버에는 고침(migration)으로
       .run();
     raw.close();
     const db = openDb(file);
-    const rows = db.all('SELECT id, sort, platform, source, icon_url, exe, cold_enabled, auto_launch_default, enabled FROM apps ORDER BY id');
+    const rows = db.all("SELECT id, sort, platform, source, icon_url, exe, cold_enabled, auto_launch_default, enabled FROM apps WHERE id LIKE 'tajong%' ORDER BY id");
     assert.equal(rows.length, 2);
     const [tj, android] = rows;
     assert.equal(tj.platform, 'windows');
@@ -340,7 +340,7 @@ test('안드로이드 아이콘: PC 아이콘을 그대로 쓰던 서버만 보�
       add.run('tajong-android', '마고 타종 (안드로이드)', androidIcon, 'android');
       raw.close();
       const db = openDb(file);
-      const icons = Object.fromEntries(db.all('SELECT id, icon_url FROM apps').map((r) => [r.id, r.icon_url]));
+      const icons = Object.fromEntries(db.all("SELECT id, icon_url FROM apps WHERE id LIKE 'tajong%'").map((r) => [r.id, r.icon_url]));
       db.close();
       return icons;
     };
