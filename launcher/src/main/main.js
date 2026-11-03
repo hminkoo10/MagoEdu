@@ -19,12 +19,18 @@ const { Store } = require('./store');
 const { Cloud } = require('./cloud');
 const { Shortcuts } = require('./shortcuts');
 const { setupSelfUpdate } = require('./selfupdate');
+const { uninstallCleanup } = require('./uninstall');
+const { readJsonSync } = require('../core/fsutil');
 
 const TITLE = '마고에듀 통합 클라우드';
 const DEVELOPER = '구현민';
 const ROOT = path.join(__dirname, '..', '..');
 const startHidden = process.argv.includes('--hidden');
+const uninstalling = process.argv.includes('--uninstall-cleanup'); // 제거 프로그램이 부름 (uninstall.js)
 const isTest = process.env.MAGOEDU_CLOUD_TEST === '1';
+// 배포본에서는 개발자 도구를 막는다 (창의 개발자 도구, 원격 디버깅으로 붙기). 개발 실행(npm start)에서만 열 수 있음
+const devTools = !app.isPackaged;
+const DEBUG_SWITCHES = ['remote-debugging-port', 'remote-debugging-pipe', 'inspect', 'inspect-brk'];
 
 function loadDefaults() {
   try {
@@ -63,6 +69,7 @@ function createWindow({ show }) {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      devTools,
     },
   });
   win.removeMenu();
@@ -73,7 +80,7 @@ function createWindow({ show }) {
   });
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.on('before-input-event', (e, input) => {
-    if (input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) {
+    if (devTools && input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) {
       win.webContents.toggleDevTools();
       e.preventDefault();
     }
@@ -282,7 +289,45 @@ function registerIpc() {
 }
 
 // ---------------------------------------------------------------- 시작
-if (!isTest && !app.requestSingleInstanceLock()) {
+function appPaths() {
+  const userData = app.getPath('userData');
+  const localData = process.env.MAGOEDU_CLOUD_LOCAL_DATA || (process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'MagoEduCloud') : path.join(userData, 'local'));
+  return makePaths({ userData, localData });
+}
+
+// 바로 가기는 설치한 통합 클라우드에서만 (개발 모드의 electron.exe 를 가리키면 안 됨)
+function appShortcuts() {
+  if (!app.isPackaged || process.platform !== 'win32' || isTest) return null;
+  return new Shortcuts({
+    shell,
+    exePath: process.execPath,
+    desktopDir: app.getPath('desktop'),
+    startMenuDir: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    log,
+  });
+}
+
+/** 통합 클라우드를 지울 때: 켜 둔 프로그램 끄기, 설치한 프로그램·프로그램 바로 가기·magoedu:// 주소·자동 실행 등록 지우기 */
+async function runUninstallCleanup() {
+  try {
+    const paths = appPaths();
+    const r = await uninstallCleanup({ paths, config: readJsonSync(paths.configFile, {}), shortcuts: appShortcuts(), log });
+    if (app.isPackaged && !isTest) {
+      app.removeAsDefaultProtocolClient('magoedu');
+      app.setLoginItemSettings({ openAtLogin: false, args: ['--hidden'] });
+    }
+    log.info('[지우기] 정리했어요', r);
+  } catch (err) {
+    log.warn('[지우기] 정리하지 못했어요', err.message);
+  }
+  app.exit(0);
+}
+
+if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) {
+  app.exit(1); // 디버깅 연결을 열고 켜려고 하면 켜지 않음
+} else if (uninstalling) {
+  app.whenReady().then(runUninstallCleanup);
+} else if (!isTest && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => {
@@ -298,22 +343,9 @@ if (!isTest && !app.requestSingleInstanceLock()) {
         /* 무시 */
       }
     }
-    const userData = app.getPath('userData');
-    const localData = process.env.MAGOEDU_CLOUD_LOCAL_DATA || (process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'MagoEduCloud') : path.join(userData, 'local'));
-    const paths = makePaths({ userData, localData });
+    const paths = appPaths();
     const store = new Store({ paths, safeStorage, defaults: loadDefaults() });
-    // 바로 가기는 설치한 통합 클라우드에서만 (개발 모드의 electron.exe 를 가리키면 안 됨)
-    const shortcuts =
-      app.isPackaged && process.platform === 'win32' && !isTest
-        ? new Shortcuts({
-            shell,
-            exePath: process.execPath,
-            desktopDir: app.getPath('desktop'),
-            startMenuDir: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
-            log,
-          })
-        : null;
-    cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts, startedAtLogin: startHidden });
+    cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts: appShortcuts(), startedAtLogin: startHidden });
     let trayKey = '';
     cloud.on('state', (s) => {
       send('state', s);

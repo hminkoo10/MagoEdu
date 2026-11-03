@@ -47,6 +47,17 @@
       "!src/**/*.map"
     ],
     "asar": true,
+    "extraFiles": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.txt"
+      }
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false
+    },
     "protocols": [
       {
         "name": "MagoEdu",
@@ -81,7 +92,9 @@
         "en_US"
       ],
       "language": "1042",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "license": "../LICENSE",
+      "include": "build/installer.nsh"
     },
     "publish": [
       {
