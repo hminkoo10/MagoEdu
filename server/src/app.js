@@ -140,6 +140,8 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/sync').register(router, deps);
   require('./routes/shared').register(router, deps);
   require('./routes/students').register(router, deps);
+  require('./routes/student-accounts').register(router, deps);
+  require('./routes/student-notes').register(router, deps);
   require('./routes/sso').register(router, deps);
   require('./routes/ai-relay').register(router, deps);
 
@@ -163,6 +165,7 @@ function createCloudServer(config = loadConfig()) {
       auth: null,
     };
     try {
+      if (ctx.path.startsWith('/api/')) svc.guardStudentSession(ctx);
       const m = router.match(req.method, url.pathname);
       if (!m) {
         if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) {

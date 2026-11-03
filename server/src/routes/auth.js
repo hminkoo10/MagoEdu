@@ -165,6 +165,7 @@ function register(router, deps) {
     }
     db.run('UPDATE users SET username = ?, updated_at = ? WHERE id = ?', username, Date.now(), user.id);
     svc.audit(ctx, 'me.username', `${user.username} → ${username}`);
+    if (user.role === 'student') deps.events.publishAcademyInfo(user.academy_id, 'students');
     return { user: svc.publicUser(svc.userByUid(user.uid), { withUsage: true }) };
   });
 
@@ -184,6 +185,7 @@ function register(router, deps) {
     );
     if (body.logoutOthers !== false) svc.revokeSessions(user.id, session.id);
     svc.audit(ctx, 'me.password', '');
+    if (user.role === 'student') deps.events.publishAcademyInfo(user.academy_id, 'students');
     deps.onPasswordChanged?.(user);
     return { user: svc.publicUser(svc.userByUid(user.uid), { withUsage: true }) };
   });

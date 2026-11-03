@@ -54,7 +54,7 @@ function register(router, deps) {
     const q = str(ctx.query.get('q'), 40);
     const role = str(ctx.query.get('role'), 20);
     const academy = ctx.query.get('academy');
-    const where = [];
+    const where = ["role != 'student'"];
     const args = [];
     if (actor.role === 'director') {
       where.push('academy_id = ?');

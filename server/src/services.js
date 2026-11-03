@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS = {
   auditKeepDays: 365,
 };
 
-const ROLE_LABEL = { admin: '운영자', director: '원장', teacher: '선생님' };
+const ROLE_LABEL = { admin: '운영자', director: '원장', teacher: '선생님', student: '학생' };
 
 function createServices({ db, config, log }) {
   // ---------------- 설정 ----------------
@@ -97,7 +97,12 @@ function createServices({ db, config, log }) {
 
   function canUseApp(user, appId) {
     const list = allowedApps(user);
-    return list === null || list.includes(appId);
+    if (list !== null && !list.includes(appId)) return false;
+    if (user.role === 'student') {
+      return db.all("SELECT allowed_apps FROM users WHERE academy_id = ? AND role = 'director' AND status = 'active'", user.academy_id)
+        .some((u) => allowedApps(u) === null || allowedApps(u).includes(appId));
+    }
+    return true;
   }
 
   function publicUser(u, { withUsage = false } = {}) {
@@ -116,6 +121,14 @@ function createServices({ db, config, log }) {
       createdAt: u.created_at,
       lastLoginAt: u.last_login_at || null,
     };
+    if (u.role === 'student') {
+      const s = db.get(`SELECT s.id, s.name, s.teacher_uid, t.name AS teacher_name FROM students s
+                        LEFT JOIN users t ON t.uid = s.teacher_uid AND t.academy_id = s.academy_id
+                        WHERE s.id = ? AND s.academy_id = ?`, u.student_id, u.academy_id);
+      out.student = s ? { id: s.id, name: s.name, teacherUid: s.teacher_uid, teacherName: s.teacher_name || null } : null;
+      out.aiMode = u.ai_mode;
+      if (s) out.name = s.name;
+    }
     if (withUsage) {
       out.usageBytes = usageBytes(u.id);
       out.quotaBytes = quotaBytes(u);
@@ -136,6 +149,7 @@ function createServices({ db, config, log }) {
   /** actor 가 target 계정을 관리(수정·삭제·초기화)할 수 있는지 */
   function canManage(actor, target) {
     if (!actor || !target || actor.id === target.id) return false;
+    if (target.role === 'student') return false; // 학생 계정은 명단에 연결한 전용 경로에서만 관리
     if (actor.role === 'admin') return true;
     if (actor.role === 'director') {
       return target.role === 'teacher' && !!actor.academy_id && target.academy_id === actor.academy_id;
@@ -154,6 +168,13 @@ function createServices({ db, config, log }) {
   // ---------------- 세션 ----------------
   /** appId: 웹 프로그램(예: 마고 과목내비) 서버가 받는 그 프로그램 전용 세션 (authenticate 에서 허용한 곳만 씀) */
   function createSession(user, device, ip, { appId = null } = {}) {
+    if (user.role === 'student') {
+      if (device?.platform !== 'web' && !(appId && device?.platform === 'web-app')) {
+        throw forbidden('학생 계정은 웹(mago.milky.kr)에서만 써요.', 'student_web_only');
+      }
+      if (appId && user.must_change_password) throw forbidden('먼저 임시 비밀번호를 바꿔야 해요.', 'password_change_required');
+      assertStudentActive(user);
+    }
     const token = `mgc_${randomToken(32)}`;
     const now = Date.now();
     const days = getSettings().sessionDays;
@@ -181,10 +202,42 @@ function createServices({ db, config, log }) {
     return token;
   }
 
-  /**
-   * 로그인 확인. app: 웹 프로그램 전용 세션(sessions.app_id)도 받을지 — 학생 명단·학원 AI·내 정보처럼 그 프로그램에 필요한 곳만 true
-   */
-  /** token: Authorization 머리글 대신 쓸 세션 토큰 (학원 AI 중계처럼 다른 자리로 받을 때) */
+  function assertStudentActive(user) {
+    if (!db.get('SELECT 1 FROM students WHERE id = ? AND academy_id = ? AND deleted_at IS NULL AND purged_at IS NULL', user.student_id, user.academy_id)) {
+      throw new HttpError(403, '사용할 수 없는 학생 계정이에요.', 'account_suspended');
+    }
+  }
+
+  function assertStudentAccess(ctx, user, session) {
+    if (user.role !== 'student') return;
+    assertStudentActive(user);
+    if (session.platform !== 'web' && !(session.app_id && session.platform === 'web-app')) {
+      throw forbidden('학생 계정은 웹(mago.milky.kr)에서만 써요.', 'student_web_only');
+    }
+    const path = String(ctx.path || '').replace(/\/$/, '');
+    const method = ctx.req.method === 'HEAD' ? 'GET' : ctx.req.method;
+    const basic = (method === 'GET' && path === '/api/me')
+      || (method === 'PATCH' && path === '/api/me/password')
+      || (method === 'POST' && path === '/api/auth/logout');
+    if (user.must_change_password && !basic) throw forbidden('먼저 임시 비밀번호를 바꿔야 해요.', 'password_change_required');
+    const allowed = basic
+      || (method === 'PATCH' && ['/api/me', '/api/me/username'].includes(path))
+      || (method === 'GET' && (path === '/api/notices' || /^\/api\/me\/notes(?:\/[^/]+\/pdf)?$/.test(path)))
+      || (method === 'POST' && path === '/api/sso/authorize')
+      || (['GET', 'POST'].includes(method) && path.startsWith('/api/ai/relay/mago-navi/'))
+      || (session.app_id && method === 'GET' && ['/api/students', '/api/academy/ai'].includes(path));
+    if (!allowed) throw forbidden('학생 계정으로는 쓸 수 없는 기능이에요.', 'student_forbidden');
+  }
+
+  // 공개 API·아직 없는 경로도 학생 세션을 붙인 요청이면 같은 허용 목록을 적용한다.
+  function guardStudentSession(ctx) {
+    const token = /^Bearer\s+(\S+)$/i.exec(String(ctx.req.headers.authorization || ''))?.[1];
+    if (!token) return;
+    const student = db.get("SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.role = 'student'", sha256Hex(token));
+    if (student) authenticate({ ...ctx }, { app: true });
+  }
+
+  /** app: 웹 프로그램 전용 세션도 받을지. token: AI 중계처럼 다른 머리글로 받은 세션 토큰 */
   function authenticate(ctx, { app = false, token = null } = {}) {
     const header = String(ctx.req.headers.authorization || '');
     const m = token ? [null, token] : /^Bearer\s+(\S+)$/i.exec(header);
@@ -202,6 +255,7 @@ function createServices({ db, config, log }) {
       db.run('DELETE FROM sessions WHERE id = ?', session.id);
       throw new HttpError(401, '사용이 중지된 계정이에요. 원장님이나 운영자에게 문의해 주세요.', 'account_suspended');
     }
+    assertStudentAccess(ctx, user, session);
     if (session.app_id && !app) throw new HttpError(403, '이 로그인으로는 쓸 수 없는 기능이에요.', 'app_session');
     // 마지막 사용 시각은 1분에 한 번만 기록 (쓸 때마다 만료 기간도 늘어남)
     if (now - session.last_seen_at > 60 * 1000) {
@@ -258,6 +312,7 @@ function createServices({ db, config, log }) {
     assertManage,
     activeAdminCount,
     createSession,
+    guardStudentSession,
     authenticate,
     requireRole,
     revokeSessions,

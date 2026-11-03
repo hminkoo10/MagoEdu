@@ -41,8 +41,18 @@ function register(router, deps) {
 
   // ---------------- 학생 ----------------
   router.get('/api/students', (ctx) => {
-    const { aca } = who(ctx);
-    return students.list(aca);
+    const { user, aca } = who(ctx);
+    if (user.role === 'student') {
+      const s = db.get('SELECT * FROM students WHERE id = ? AND academy_id = ?', user.student_id, aca);
+      return { academyId: aca, students: [{ id: s.id, name: s.name, school: s.school, grade: s.grade,
+        teacher: s.teacher_uid ? { id: s.teacher_uid, name: svc.publicUser(user).student.teacherName } : null }], purged: [] };
+    }
+    const out = students.list(aca);
+    const accounts = new Map(db.all("SELECT student_id, username, status, must_change_password, ai_mode, last_login_at FROM users WHERE academy_id = ? AND role = 'student'", aca)
+      .map((u) => [u.student_id, { username: u.username, status: u.status === 'active' ? 'active' : 'disabled',
+        mustChangePassword: !!u.must_change_password, aiMode: u.ai_mode, lastLoginAt: u.last_login_at || null }]));
+    for (const s of out.students) s.account = accounts.get(s.id) || null;
+    return out;
   });
 
   router.post('/api/students', async (ctx) => {
@@ -61,14 +71,24 @@ function register(router, deps) {
 
   router.delete('/api/students/:id', (ctx) => {
     const { user, aca } = who(ctx);
-    const s = students.remove(user, aca, ctx.params.id);
+    const s = db.tx(() => {
+      const out = students.remove(user, aca, ctx.params.id);
+      db.run("UPDATE users SET status = 'suspended', updated_at = ? WHERE student_id = ? AND academy_id = ?", Date.now(), out.id, aca);
+      db.run('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE student_id = ? AND academy_id = ?)', out.id, aca);
+      db.run('DELETE FROM student_invites WHERE student_id = ?', out.id);
+      return out;
+    });
     svc.audit(ctx, 'student.delete', s.name, { id: s.id }, aca);
     return { student: s };
   });
 
   router.post('/api/students/:id/restore', (ctx) => {
     const { user, aca } = who(ctx);
-    const s = students.restore(user, aca, ctx.params.id);
+    const s = db.tx(() => {
+      const out = students.restore(user, aca, ctx.params.id);
+      db.run("UPDATE users SET status = 'active', updated_at = ? WHERE student_id = ? AND academy_id = ?", Date.now(), out.id, aca);
+      return out;
+    });
     svc.audit(ctx, 'student.restore', s.name, { id: s.id }, aca);
     return { student: s };
   });

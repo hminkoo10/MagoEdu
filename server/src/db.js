@@ -280,6 +280,58 @@ const MIGRATIONS = [
          CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER), CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
   WHERE EXISTS (SELECT 1 FROM apps) AND NOT EXISTS (SELECT 1 FROM apps WHERE id = '${MAGO_NAVI_PC.id}');
   `,
+
+  // 7: 명단에 연결한 학생 계정과 일회용 초대 코드
+  `
+  CREATE TABLE users_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'director', 'teacher', 'student')),
+    academy_id INTEGER REFERENCES academies(id) ON DELETE SET NULL,
+    password_hash TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+    suspended_reason TEXT,
+    allowed_apps TEXT,
+    quota_mb INTEGER,
+    created_by INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_login_at INTEGER,
+    password_changed_at INTEGER,
+    student_id TEXT REFERENCES students(id) ON DELETE CASCADE,
+    ai_mode TEXT DEFAULT 'academy' CHECK (ai_mode IN ('academy', 'teacher')),
+    CHECK ((role = 'student' AND student_id IS NOT NULL AND academy_id IS NOT NULL AND ai_mode IS NOT NULL)
+        OR (role != 'student' AND student_id IS NULL))
+  );
+  INSERT INTO users_new(id, uid, username, name, role, academy_id, password_hash, must_change_password,
+                        status, suspended_reason, allowed_apps, quota_mb, created_by, created_at, updated_at,
+                        last_login_at, password_changed_at, ai_mode)
+  SELECT id, uid, username, name, role, academy_id, password_hash, must_change_password,
+         status, suspended_reason, allowed_apps, quota_mb, created_by, created_at, updated_at,
+         last_login_at, password_changed_at, NULL FROM users;
+  DROP TABLE users;
+  ALTER TABLE users_new RENAME TO users;
+  CREATE INDEX users_academy ON users(academy_id);
+  CREATE UNIQUE INDEX users_student ON users(student_id) WHERE student_id IS NOT NULL;
+
+  ALTER TABLE academies ADD COLUMN code TEXT;
+  CREATE UNIQUE INDEX academies_code ON academies(code) WHERE code IS NOT NULL;
+
+  CREATE TABLE student_invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code_hash TEXT NOT NULL UNIQUE,
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+  );
+  CREATE INDEX student_invites_student ON student_invites(student_id);
+  `,
 ];
 
 function openDb(file) {
@@ -292,14 +344,28 @@ function openDb(file) {
 function migrate(db) {
   const current = db.prepare('PRAGMA user_version').get().user_version;
   for (let v = current; v < MIGRATIONS.length; v += 1) {
+    const rebuildUsers = v === 6;
+    const schema = rebuildUsers ? db.prepare("SELECT name, sql FROM sqlite_schema WHERE tbl_name = 'users' AND type IN ('index', 'trigger') AND sql IS NOT NULL").all() : [];
+    const sequence = rebuildUsers ? db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'users'").get()?.seq : null;
+    // 트랜잭션 안에서 foreign_keys 를 끄면 적용되지 않고, DROP TABLE 이 기존 세션까지 지워 버린다.
+    if (rebuildUsers) db.exec('PRAGMA foreign_keys = OFF');
     db.exec('BEGIN');
     try {
       db.exec(MIGRATIONS[v]);
+      if (rebuildUsers) {
+        for (const item of schema) {
+          if (!db.prepare('SELECT 1 FROM sqlite_schema WHERE name = ?').get(item.name)) db.exec(item.sql);
+        }
+        if (sequence != null) db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'users'").run(sequence);
+        if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('학생 계정 고침 뒤 외래 키가 맞지 않아요.');
+      }
       db.exec(`PRAGMA user_version = ${v + 1}`);
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
       throw err;
+    } finally {
+      if (rebuildUsers) db.exec('PRAGMA foreign_keys = ON');
     }
   }
 }

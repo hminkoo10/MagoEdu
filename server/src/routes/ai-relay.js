@@ -141,6 +141,7 @@ function register(router, deps) {
       if (!p || p.typ !== 'app' || p.app !== appId) throw new HttpError(401, '실행 허가가 확인되지 않았어요. 통합 클라우드에서 다시 켜 주세요.', 'ticket_invalid');
       user = db.get('SELECT * FROM users WHERE uid = ?', String(p.sub));
       if (!user) throw new HttpError(401, '계정이 삭제되었어요.', 'session_invalid');
+      if (user.role === 'student') throw forbidden('학생 계정은 웹(mago.milky.kr)에서만 써요.', 'student_web_only');
       if (user.status !== 'active') throw new HttpError(401, '사용이 중지된 계정이에요. 원장님이나 운영자에게 문의해 주세요.', 'account_suspended');
       // 그 컴퓨터의 통합 클라우드 로그인이 살아 있을 때만 (로그아웃·비밀번호 재설정·다른 곳에서 끊으면 같이 끊김)
       if (!db.get('SELECT 1 FROM sessions WHERE user_id = ? AND device_id = ? AND app_id IS NULL AND expires_at > ?', user.id, String(p.dev || ''), Date.now())) {
@@ -150,6 +151,10 @@ function register(router, deps) {
       const auth = svc.authenticate(ctx, { app: true, token });
       if (auth.session.app_id && auth.session.app_id !== appId) throw forbidden('이 로그인으로는 쓸 수 없는 프로그램이에요.', 'app_session');
       user = auth.user;
+    }
+    if (user.role === 'student') {
+      if (appId !== 'mago-navi') throw forbidden('학생 계정으로는 쓸 수 없는 프로그램이에요.', 'student_forbidden');
+      if (user.ai_mode !== 'academy') throw forbidden('담당 선생님의 AI 키로 이용해야 해요.', 'student_ai_teacher');
     }
     const app = db.get('SELECT id, enabled FROM apps WHERE id = ?', appId);
     if (!app || !app.enabled) throw notFound('프로그램을 찾을 수 없어요.');
