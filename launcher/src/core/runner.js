@@ -188,13 +188,14 @@ class Runner extends EventEmitter {
       this.emit('error', appId, err);
     });
     child.on('exit', (code) => {
+      const stopped = !!this.running.get(appId)?.stopped;
       this.running.delete(appId);
       try {
         fs.rmSync(this.paths.app(appId).running, { force: true });
       } catch {
         /* 무시 */
       }
-      this.emit('exit', appId, { code, restart: code === m.restartExitCode, userId: rec.userId });
+      this.emit('exit', appId, { code, restart: !stopped && code === m.restartExitCode, stopped, startedAt: rec.startedAt, userId: rec.userId });
     });
     this.emit('start', appId, rec);
     return rec;
@@ -257,8 +258,10 @@ class Runner extends EventEmitter {
     const r = this.running.get(appId);
     const pid = r?.pid || readRunning(this.paths.app(appId).running)?.pid;
     if (!pid) return false;
+    // 사용자 끄기·로그아웃 뒤 강제 종료 코드가 와도 충돌로 복구하지 않는다.
+    if (r) r.stopped = true;
     try {
-      if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T'], { windowsHide: true });
+      if (process.platform === 'win32') this.spawn('taskkill', ['/PID', String(pid), '/T'], { windowsHide: true });
       else process.kill(pid, 'SIGTERM');
     } catch {
       return false;
@@ -267,7 +270,7 @@ class Runner extends EventEmitter {
     setTimeout(() => {
       if (!this.isRunning(appId) || this.runningInfo(appId)?.pid !== pid) return;
       try {
-        if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
+        if (process.platform === 'win32') this.spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
         else process.kill(pid, 'SIGKILL');
       } catch {
         /* 이미 꺼짐 */

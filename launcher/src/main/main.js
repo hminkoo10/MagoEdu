@@ -3,7 +3,7 @@
 // 마고에듀 통합 클라우드 - 구현민 개발
 // Electron 메인 프로세스: 창, 트레이, 자동 실행, 화면과 주고받는 기능(IPC)
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage, clipboard, safeStorage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage, clipboard, safeStorage, powerMonitor } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const log = require('electron-log/main');
@@ -384,7 +384,7 @@ if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) 
     createWindow({ show: !hidden && !linkStart });
     createTray();
     applyAutoStart(store.config);
-    updater = setupSelfUpdate({ app, cloud, log, isWindowVisible: () => !!win && win.isVisible() });
+    updater = setupSelfUpdate({ app, cloud, log, powerMonitor, isWindowVisible: () => !!win && win.isVisible() });
     await cloud.init();
     handleProtocol(process.argv);
   });

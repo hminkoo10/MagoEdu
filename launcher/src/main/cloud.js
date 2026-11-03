@@ -27,6 +27,8 @@ const LOCAL_DELAY = 1000; // 이 컴퓨터에서 파일이 바뀜 → 쓰기가 
 const QUEUE_MAX_WAIT = 5000; // 계속 바뀌어도 이보다 오래 미루지는 않음
 const REQUEST_DELAY = 100; // 프로그램이 학원 공간 파일을 달라고 함 → 바로 받기
 const STOP_WAIT = 15 * 1000; // 로그아웃·계정 바꿈: 켜 둔 프로그램이 꺼지길 이만큼까지 기다림 (runner 는 10초 뒤 강제로 끔)
+const CRASH_RETRY_DELAY = 3000;
+const CRASH_RETRY_WINDOW = 2 * 60 * 1000; // 복구한 앱이 곧바로 다시 죽으면 반복해서 켜지 않음
 const REQUEST_RE = /^[A-Za-z0-9_-]{1,64}\.json$/; // requests/<rid>.json (답은 <rid>.done.json)
 const ACADEMY_INFO_DELAY = 300; // 학원 명단·AI 가 바뀌었다는 알림 → 잠깐 모았다가 academy-info.json 다시 쓰기
 
@@ -125,6 +127,10 @@ class Cloud extends EventEmitter {
     this.locks = new Map();
     this.installTasks = new Map(); // 실행 중·잠금 대기 중인 설치 수 (화면용 tasks 와 별개)
     this.restarting = new Set(); // 종료 코드에 따라 다시 켜는 동안에도 자체 업데이트는 기다림
+    this.restartTimers = new Map();
+    this.crashRestarts = new Map(); // id → 마지막 충돌 복구의 계정·시각
+    this.autoLaunching = new Map(); // 기다리는 중 끄기·로그아웃하면 자동 실행 요청도 취소
+    this.quitting = false;
     this.timers = [];
     this.adopted = new Map(); // 통합 클라우드를 다시 켜기 전에 실행한 프로그램 id → 그때 기록 (버전·계정)
     this.settled = false; // 로그인한 뒤 세션 확인·목록 새로 고침이 끝났는지
@@ -369,6 +375,7 @@ class Cloud extends EventEmitter {
   }
 
   async logout() {
+    this._stopTimers(); // 종료를 기다리는 사이 예약된 충돌 복구가 실행되지 않게
     // 이 계정으로 켠 프로그램은 끄고, 끄면서 저장한 데이터까지 올린 뒤 로그아웃한다
     // (다른 계정으로 로그인했는데 예전 계정으로 계속 돌고, 통합 클라우드에도 '이미 켜져 있음'으로 남지 않게)
     const uid = this.user?.id;
@@ -398,7 +405,7 @@ class Cloud extends EventEmitter {
   /** 조건에 맞는 계정으로 켠 프로그램을 끄고, 꺼질 때까지 기다린다. 끈 프로그램 ID 목록 */
   async _stopApps(match) {
     const ids = Object.keys(this.installed).filter((id) => this.runner.isRunning(id) && match(this.runner.runningInfo(id) || {}));
-    for (const id of ids) this.runner.stop(id);
+    for (const id of ids) this.stop(id);
     const end = Date.now() + STOP_WAIT;
     while (ids.some((id) => this.runner.isRunning(id)) && Date.now() < end) await new Promise((r) => setTimeout(r, 200));
     for (const id of ids) if (!this.runner.isRunning(id)) this.adopted.delete(id);
@@ -1063,12 +1070,14 @@ class Cloud extends EventEmitter {
   /**
    * 켜기. 예전 데이터가 있으면 먼저 물어봐야 하므로 { needsLegacy } 를 돌려줄 수 있다.
    */
-  async launch(id, { skipLegacyCheck = false } = {}) {
+  async launch(id, { skipLegacyCheck = false, automatic = false } = {}) {
     if (!this.user) throw new Error('로그인이 필요해요.');
     const uid = this.user.id;
+    const autoRequest = this.autoLaunching.get(id);
     // 기다리는 사이 로그인이 끊기거나(예: 계정 사용 중지) 다른 계정으로 바뀌었으면 켜지 않는다
     const sameUser = () => {
       if (this.user?.id !== uid) throw new Error(this.authMessage || '로그인한 계정이 바뀌어서 켜지 않았어요.');
+      if (automatic && (!this._canAutoLaunch(id) || this.autoLaunching.get(id) !== autoRequest)) throw new Error('자동 실행이 취소됐어요.');
     };
     const known = this.apps.find((a) => a.id === id);
     if (known && !isDesktop(known)) throw new Error(known.platform === 'web' ? notDesktop(known) : `${known.name}은(는) 휴대폰에서 쓰는 프로그램이에요.`);
@@ -1079,7 +1088,7 @@ class Cloud extends EventEmitter {
         sameUser();
       }
     }
-    if (this.runner.isRunning(id)) return this._focusRunning(id);
+    if (this.runner.isRunning(id)) return automatic ? { already: true } : this._focusRunning(id);
     if (!this.installed[id]) await this.install(id);
     else if (this.installer.needsUpdate(this.installed[id], this._app(id))) {
       await this.install(id, { quiet: true }).catch((err) => this._toast(`업데이트하지 못해 지금 버전으로 켤게요: ${err.message}`, 'warning'));
@@ -1092,7 +1101,7 @@ class Cloud extends EventEmitter {
     return this._lock(id, async () => {
       // 바로 가기와 자동 실행이 거의 같이 부르면 먼저 켠 쪽만
       sameUser();
-      if (this.runner.isRunning(id)) return this._focusRunning(id);
+      if (this.runner.isRunning(id)) return automatic ? { already: true } : this._focusRunning(id);
       this._setTask(id, { kind: 'launch', phase: 'sync', progress: null, text: '데이터를 맞추는 중' });
       try {
         sameUser();
@@ -1145,6 +1154,9 @@ class Cloud extends EventEmitter {
   }
 
   stop(id) {
+    this.autoLaunching.delete(id);
+    this._cancelRestart(id);
+    this.adopted.delete(id); // 직접 끈 이전 실행을 업데이트 재시작으로 오해하지 않음
     return this.runner.stop(id);
   }
 
@@ -1182,16 +1194,41 @@ class Cloud extends EventEmitter {
 
   _onAppExit(id, info) {
     this.emitState();
-    if (info.restart && this.user && info.userId === this.user.id) {
+    const sameUser = !this.quitting && this.user && info.userId === this.user.id;
+    const crashed = !info.stopped && !info.restart && typeof info.code === 'number' && info.code !== 0 && info.code !== 75;
+    const recover = sameUser && crashed && this._canAutoLaunch(id);
+    const previous = this.crashRestarts.get(id);
+    const tooSoon = previous && previous.userId === info.userId && Date.now() - (info.startedAt ?? previous.at) < CRASH_RETRY_WINDOW;
+    if (!info.stopped && sameUser && (info.restart || (recover && !tooSoon))) {
+      this._cancelRestart(id);
       this.restarting.add(id);
-      setTimeout(() => this.launch(id, { skipLegacyCheck: true })
-        .catch((err) => this._toast(err.message, 'error'))
-        .finally(() => this.restarting.delete(id)), 600);
+      if (recover) this.crashRestarts.set(id, { userId: info.userId, at: Date.now() });
+      const timer = setTimeout(async () => {
+        this.restartTimers.delete(id);
+        try {
+          if (this.quitting || this.user?.id !== info.userId) return;
+          if (info.restart) await this.launch(id, { skipLegacyCheck: true });
+          else await this._autoLaunchApp(id, info.userId);
+        } catch (err) {
+          this._toast(err.message, 'error');
+        } finally {
+          this.restarting.delete(id);
+        }
+      }, info.restart ? 600 : CRASH_RETRY_DELAY);
+      timer.unref?.();
+      this.restartTimers.set(id, timer);
       return;
     }
+    if (recover && tooSoon) this._toast(`${this._name(id)}이(가) 다시 예기치 않게 종료됐어요. 잠시 뒤 다시 켜 주세요.`, 'error');
     if (this.user && info.userId === this.user.id) this.syncApp(id, { quiet: true });
     if (info.code && info.code !== 0) this.log.warn(`[실행] ${id} 종료 코드 ${info.code}`);
     this.installer.cleanup(id).catch(() => {});
+  }
+
+  _cancelRestart(id) {
+    clearTimeout(this.restartTimers.get(id));
+    this.restartTimers.delete(id);
+    this.restarting.delete(id);
   }
 
   setAutoLaunch(id, on) {
@@ -1203,16 +1240,26 @@ class Cloud extends EventEmitter {
     else this.emitState();
   }
 
+  _canAutoLaunch(id) {
+    if (!this.user || this.phase !== 'ready' || this.quitting) return false;
+    const a = this.apps.find((app) => app.id === id);
+    return !!(a && isDesktop(a) && this.installed[id] && (this.store.accountSettings(this.user.id).autoLaunch[id] ?? a.autoLaunchDefault));
+  }
+
+  async _autoLaunchApp(id, userId = this.user?.id) {
+    if (this.user?.id !== userId || !this._canAutoLaunch(id) || this.runner.isRunning(id) || this.autoLaunching.has(id)) return;
+    const request = {};
+    this.autoLaunching.set(id, request);
+    // 예전처럼 자동 실행은 예전 데이터 확인을 건너뜀 (종은 울려야 함). 이미 켜졌으면 창을 앞으로 가져오지 않음
+    return this.launch(id, { automatic: true, skipLegacyCheck: true })
+      .catch((err) => {
+        if (this.autoLaunching.get(id) === request) this._toast(`${this._name(id)} 자동 실행 실패: ${err.message}`, 'warning');
+      })
+      .finally(() => { if (this.autoLaunching.get(id) === request) this.autoLaunching.delete(id); });
+  }
+
   _autoLaunch() {
-    if (!this.user) return;
-    const s = this.store.accountSettings(this.user.id);
-    for (const a of this.apps) {
-      if (!isDesktop(a)) continue;
-      const on = s.autoLaunch[a.id] ?? a.autoLaunchDefault;
-      if (on && this.installed[a.id] && !this.runner.isRunning(a.id)) {
-        this.launch(a.id, { skipLegacyCheck: true }).catch((err) => this._toast(`${a.name} 자동 실행 실패: ${err.message}`, 'warning'));
-      }
-    }
+    for (const a of this.apps) this._autoLaunchApp(a.id);
   }
 
   _autoUpdate() {
@@ -1220,13 +1267,20 @@ class Cloud extends EventEmitter {
     for (const a of this.apps) {
       const inst = this.installed[a.id];
       if (inst && this.installer.needsUpdate(inst, a) && !this.installTasks.has(a.id) && this.tasks.get(a.id)?.kind !== 'uninstall') {
-        this.install(a.id, { quiet: true }).catch((err) => this.log.warn('[자동 업데이트]', a.id, err.message));
+        const userId = this.user?.id;
+        const restarting = this._canAutoLaunch(a.id) && !this.runner.isRunning(a.id) && !this.restarting.has(a.id);
+        // 설치 완료 알림과 재실행 사이에도 자체 업데이트가 먼저 종료하지 않게
+        if (restarting) this.restarting.add(a.id);
+        this.install(a.id, { quiet: true })
+          .then((updated) => updated.version !== inst.version ? this._autoLaunchApp(a.id, userId) : undefined)
+          .catch((err) => this.log.warn('[자동 업데이트]', a.id, err.message))
+          .finally(() => { if (restarting) this.restarting.delete(a.id); });
       }
     }
   }
 
   anyRunning() {
-    return this.restarting.size > 0 || Object.keys(this.installed).some((id) => this.runner.isRunning(id));
+    return this.restarting.size > 0 || this.autoLaunching.size > 0 || Object.keys(this.installed).some((id) => this.runner.isRunning(id));
   }
 
   anyAppInstallTask() {
@@ -1253,6 +1307,8 @@ class Cloud extends EventEmitter {
   _stopTimers() {
     for (const t of this.timers) clearInterval(t);
     this.timers = [];
+    for (const id of this.restartTimers.keys()) this._cancelRestart(id);
+    this.autoLaunching.clear();
   }
 
   _watchAdopted() {
@@ -1371,6 +1427,7 @@ class Cloud extends EventEmitter {
   }
 
   shutdown() {
+    this.quitting = true;
     this._stopTimers();
     this._stopRealtime();
   }
