@@ -1,7 +1,8 @@
 // 학생 명단: 담당 선생님이 바뀔 수 있어서 학원 사람(원장·선생님) 누구나 추가·수정·삭제·되살리기
 //   삭제한 학생은 정한 기간(기본 30일) 동안 ‘삭제한 학생’에 있다가, 그 학생의 자료와 함께 완전히 지워진다
 //   운영자: 학원을 골라서 본다
-import { h, ic, btn, busy, toast, dialog, field, input, select, segmented, pill, ago, reveal, put } from '../ui.js';
+import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, segmented, checkbox, toggle, pill, ago, date, secretDialog, reveal, put } from '../ui.js';
+import { editAcademyCode, showCredentials } from '../student-accounts.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const LEVEL = ['초', '중', '고'];
@@ -50,6 +51,7 @@ export class StudentsView {
     this.isAdmin = u.role === 'admin';
     this.academy = ''; // 운영자가 고른 학원
     this.students = [];
+    this.selected = new Set();
     this.members = [];
     this.grades = [];
     this.purgeDays = 30;
@@ -59,6 +61,11 @@ export class StudentsView {
     this.filter = { who: u.role === 'teacher' ? 'mine' : 'all', grade: '', q: '' };
     this.table = h('div', { class: 'table-wrap' });
     this.count = h('span', { class: 'muted' });
+    this.bulk = btn('계정 일괄 생성', { variant: 'soft', disabled: true });
+    this.bulk.addEventListener('click', async () => {
+      await busy(this.bulk, () => this.bulkAccounts());
+      this.updateSelection();
+    });
     this.deletedNote = h('div', { class: 'note', style: { marginBottom: '14px', display: 'none' } }, ic('info', 18), h('span'));
     this.gradeSel = select([['', '모든 학년']], '', { cls: 'page', style: 'width: 140px' });
     this.gradeSel.addEventListener('change', () => {
@@ -79,6 +86,10 @@ export class StudentsView {
     if (this.isAdmin) {
       this.picker = academyPicker(cloud, (id) => {
         this.academy = id;
+        this.selected.clear();
+        this.loaded = false;
+        this.updateSelection();
+        put(this.table, h('div', { class: 'empty' }, '학생 명단을 불러오고 있어요.'));
         this.load(true);
       });
       toolbar.append(this.picker.el);
@@ -89,12 +100,14 @@ export class StudentsView {
         this.filter.who,
         (v) => {
           this.filter.who = v;
+          this.selected.clear();
           this.render(true);
         },
         { onPage: true },
       ),
       this.gradeSel,
       search,
+      this.bulk,
       h('div', { class: 'spacer' }),
       this.count,
     );
@@ -148,6 +161,8 @@ export class StudentsView {
       const [r, m] = await Promise.all([this.cloud.api('GET', `/api/students${this.qs()}`), this.cloud.api('GET', `/api/academy/members${this.qs()}`)]);
       if (seq !== this.seq) return;
       this.students = r.students;
+      const activeIds = new Set(this.students.filter((s) => !s.deletedAt).map((s) => s.id));
+      for (const id of this.selected) if (!activeIds.has(id)) this.selected.delete(id);
       this.purgeDays = r.purgeDays;
       this.members = m.members;
       const first = !this.loaded;
@@ -199,6 +214,7 @@ export class StudentsView {
     if (f.grade) list = list.filter((s) => s.grade === f.grade);
     if (f.q) list = list.filter((s) => [s.name, s.school, s.memo].some((t) => String(t || '').toLowerCase().includes(f.q)));
     this.count.textContent = `${list.length}명`;
+    this.updateSelection();
     if (!list.length) {
       const text = filtered
         ? '찾는 학생이 없어요'
@@ -210,7 +226,12 @@ export class StudentsView {
       put(this.table, h('div', { class: 'empty' }, ic(trash ? 'trash' : 'graduationCap', 40, 1.6), text));
       return;
     }
-    const head = trash ? ['이름', '학교·학년', '삭제한 사람', '남은 기간', ''] : ['이름', '학교·학년', '담당 선생님', '마지막 수정', ''];
+    const all = checkbox('선택', list.every((s) => this.selected.has(s.id)), (on) => {
+      for (const s of list) on ? this.selected.add(s.id) : this.selected.delete(s.id);
+      this.render();
+    });
+    all.querySelector('input').indeterminate = list.some((s) => this.selected.has(s.id)) && !list.every((s) => this.selected.has(s.id));
+    const head = trash ? ['이름', '학교·학년', '삭제한 사람', '남은 기간', ''] : [all, '이름', '학교·학년', '담당 선생님', '계정', '마지막 수정', ''];
     put(
       this.table,
       h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), h('tbody', {}, ...list.map((s) => (trash ? this.deletedRow(s) : this.row(s))))),
@@ -220,9 +241,15 @@ export class StudentsView {
 
   row(s) {
     const mine = s.teacher?.id === this.me;
+    const pick = checkbox('', this.selected.has(s.id), (on) => {
+      on ? this.selected.add(s.id) : this.selected.delete(s.id);
+      this.render();
+    });
+    pick.querySelector('input').setAttribute('aria-label', `${s.name} 선택`);
     return h(
       'tr',
       {},
+      h('td', {}, pick),
       h(
         'td',
         {},
@@ -231,6 +258,13 @@ export class StudentsView {
       ),
       h('td', {}, schoolGrade(s) || h('span', { class: 'subtle' }, '-')),
       h('td', {}, s.teacher ? h('span', { class: mine ? 'hl' : '' }, s.teacher.name) : h('span', { class: 'subtle' }, '없음')),
+      h('td', {},
+        s.account ? h('div', {}, h('div', { class: 'mono selectable' }, s.account.username),
+          s.account.status === 'disabled' ? pill('꺼짐', 'grey') : pill('켜짐', 'green'),
+          s.account.mustChangePassword ? pill('비밀번호 바꿔야 해요', 'yellow') : null,
+        ) : h('span', { class: 'subtle' }, '없음'),
+        btn(s.account ? '계정 관리' : '계정 만들기', { size: 'sm', variant: 'subtle', onClick: () => this.account(s) }),
+      ),
       h('td', { class: 'subtle' }, [s.updatedBy?.name, ago(s.updatedAt)].filter(Boolean).join(' · ')),
       h(
         'td',
@@ -239,6 +273,120 @@ export class StudentsView {
         btn('', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '삭제', onClick: () => this.remove(s) }),
       ),
     );
+  }
+
+  updateSelection() {
+    this.bulk.disabled = !this.selected.size || this.filter.who === 'deleted';
+    this.bulk.textContent = this.selected.size ? `계정 일괄 생성 (${this.selected.size}명)` : '계정 일괄 생성';
+  }
+
+  async bulkAccounts() {
+    const qs = this.qs();
+    const studentIds = [...this.selected];
+    if (!studentIds.length) return;
+    try {
+      const r = await this.cloud.api('GET', `/api/academy${qs}`);
+      if (!(r.academy || r).code) {
+        if (!['director', 'admin'].includes(this.role)) throw new Error('일괄 생성 전에 원장님이 학원 코드를 정해야 해요. 원장님께 학원 코드 설정을 부탁해 주세요.');
+        if (!(await editAcademyCode(this.cloud, qs))) return;
+      }
+      let result;
+      const ok = await dialog({
+        title: `${studentIds.length}명의 계정을 만들까요?`,
+        sub: '이미 계정이 있는 학생은 건너뛰어요. 새 임시 비밀번호는 한 번만 보여요.',
+        ok: '일괄 생성',
+        onOk: async () => {
+          try {
+            result = await this.cloud.api('POST', `/api/students/accounts/bulk${qs}`, { studentIds });
+          } catch (e) {
+            if (e.code !== 'academy_code_required') throw e;
+            if (!['director', 'admin'].includes(this.role)) throw new Error('원장님께 학원 코드 설정을 부탁해 주세요.');
+            if (!(await editAcademyCode(this.cloud, qs))) return false;
+            result = await this.cloud.api('POST', `/api/students/accounts/bulk${qs}`, { studentIds });
+          }
+        },
+      });
+      if (!ok || !result) return;
+      this.selected.clear();
+      this.load();
+      await showCredentials(result);
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      this.updateSelection();
+    }
+  }
+
+  async account(s) {
+    const qs = this.qs();
+    const path = `/api/students/${encodeURIComponent(s.id)}`;
+    const a = s.account;
+    const username = input({ value: a?.username || '', placeholder: '영문 소문자·숫자·._- 3~32자' });
+    const password = passwordInput({ placeholder: '6자 이상', autocomplete: 'new-password' });
+    const ai = select([['academy', '학원 AI'], ['teacher', '담당 선생님 키']], a?.aiMode || 'academy');
+    let active = a?.status !== 'disabled';
+    const action = (label, fn, danger = false) => {
+      const b = btn(label, { size: 'sm', variant: danger ? 'danger' : 'soft' });
+      b.addEventListener('click', () => busy(b, async () => {
+        try { await fn(); } catch (e) { toast(e.message, 'error'); }
+      }));
+      return b;
+    };
+    let close;
+    const refresh = () => { close?.click(); this.load(); };
+    const invite = action('초대 코드 만들기', async () => {
+      let r;
+      const ok = await dialog({ title: `${s.name} 초대 코드를 만들까요?`, sub: '7일 동안 한 번 쓸 수 있어요. 새 코드를 만들면 이전 코드는 쓸 수 없어요.', ok: '만들기', onOk: async () => { r = await this.cloud.api('POST', `${path}/invite${qs}`, {}); } });
+      if (!ok || !r) return;
+      const url = new URL(this.store.state.config.serverUrl);
+      url.hash = `/join?code=${encodeURIComponent(r.code)}`;
+      const copy = action('가입 주소 복사', async () => { await this.cloud.copy(url.href); toast('가입 주소를 복사했어요', 'success'); });
+      const copyCode = action('코드 복사', async () => { await this.cloud.copy(r.code); toast('코드를 복사했어요', 'success'); });
+      await dialog({ title: '학생 초대 코드를 만들었어요', sub: `${date(r.expiresAt, true)}까지 한 번 쓸 수 있어요. 코드는 지금 한 번만 보여요.`,
+        body: h('div', {}, h('div', { class: 'secret' }, h('span', { class: 'mono selectable' }, r.code), copyCode), h('p', { class: 'selectable', style: { overflowWrap: 'anywhere' } }, url.href)),
+        footLeft: copy, ok: '닫기', cancel: null });
+    });
+    const revoke = action('초대 코드 취소', async () => {
+      await dialog({ title: '초대 코드를 취소할까요?', sub: '이 학생에게 발급한 초대 코드로 더 가입할 수 없어요.', ok: '초대 취소', danger: true,
+        onOk: async () => { await this.cloud.api('DELETE', `${path}/invite${qs}`); toast('초대 코드를 취소했어요', 'success'); } });
+    });
+    const reset = action('비밀번호 초기화', async () => {
+      let r;
+      const ok = await dialog({ title: `${s.name} 비밀번호를 초기화할까요?`, sub: '로그인한 기기는 로그아웃돼요. 새 임시 비밀번호는 한 번만 보여요.', ok: '초기화', danger: true,
+        onOk: async () => { r = await this.cloud.api('PATCH', `${path}/account${qs}`, { resetPassword: true }); } });
+      if (!ok || !r) return;
+      refresh();
+      await secretDialog('임시 비밀번호를 만들었어요', '지금 한 번만 보여요. 학생에게 전달해 주세요. 처음 로그인할 때 바꿔야 해요.', r.password);
+    });
+    const remove = action('계정 지우기', async () => {
+      const ok = await dialog({ title: `${s.name} 계정을 지울까요?`, sub: '학생 명단과 자료는 남고, 로그인 계정만 지워져요.', ok: '계정 지우기', danger: true,
+        onOk: () => this.cloud.api('DELETE', `${path}/account${qs}`) });
+      if (ok) { refresh(); toast('계정을 지웠어요', 'success'); }
+    }, true);
+    const shown = dialog({
+      title: `${s.name} ${a ? '계정 관리' : '계정 만들기'}`,
+      sub: a ? '아이디·사용 여부·과목내비 AI를 바꿀 수 있어요.' : '직접 만들거나 초대 코드로 학생이 아이디·비밀번호를 정하게 해요.',
+      body: h('div', {}, field('아이디', username),
+        a ? field('계정 켜기', toggle(active, (on) => { active = on; }), '끄면 학생이 로그인할 수 없어요.') : field('비밀번호', password),
+        a ? field('마고 과목내비 AI', ai, '담당 선생님 키는 명단의 담당 선생님이 등록한 키를 써요.') : null,
+        a ? h('p', { class: 'muted' }, `마지막 로그인: ${a.lastLoginAt ? date(a.lastLoginAt, true) : '아직 없어요'}`) : null,
+        h('div', { class: 'toolbar' }, ...(a ? [reset, remove] : [invite, revoke])),
+      ),
+      ok: a ? '저장' : '직접 만들기', cancel: '닫기',
+      onOk: async () => {
+        const value = username.value.trim();
+        if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(value)) throw new Error('아이디는 영문 소문자·숫자로 시작하고, 영문 소문자·숫자·._-로 3~32자를 넣어 주세요.');
+        if (!a && password.input.value.length < 6) throw new Error('비밀번호는 6자 이상 넣어 주세요.');
+        await this.cloud.api(a ? 'PATCH' : 'POST', `${path}/account${qs}`, a
+          ? { username: value, status: active ? 'active' : 'disabled', aiMode: ai.value }
+          : { username: value, password: password.input.value });
+        toast(a ? '계정을 저장했어요' : '계정을 만들었어요', 'success');
+      },
+    });
+    close = username.closest('.dialog').querySelector('.dialog-head button');
+    await shown;
+    password.input.value = '';
+    this.load();
   }
 
   deletedRow(s) {

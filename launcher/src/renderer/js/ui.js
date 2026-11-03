@@ -187,7 +187,7 @@ export function dialog({ title, sub, body, ok = '확인', cancel = '취소', dan
     const dim = h('div', { class: 'dim' }, box);
     let done = false;
     const close = (value) => {
-      if (done) return;
+      if (done || okBtn?.disabled && !okDisabled) return;
       done = true;
       dim.classList.add('out');
       document.removeEventListener('keydown', onKey);
@@ -207,6 +207,7 @@ export function dialog({ title, sub, body, ok = '확인', cancel = '취소', dan
       }
     };
     const onKey = (e) => {
+      if ([...document.querySelectorAll('.dim:not(.out)')].at(-1) !== dim) return;
       if (e.key === 'Escape') close(null);
       if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'BUTTON') accept();
     };
@@ -339,4 +340,4 @@ export function initial(name) {
   return (String(name || '?').trim()[0] || '?').toUpperCase();
 }
 
-export const ROLE = { admin: '운영자', director: '원장', teacher: '선생님' };
+export const ROLE = { admin: '운영자', director: '원장', teacher: '선생님', student: '학생' };

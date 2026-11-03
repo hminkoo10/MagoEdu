@@ -11,6 +11,7 @@ import { ServerView } from './views/server.js';
 import { SettingsView } from './views/settings.js';
 import { StudentsView } from './views/students.js';
 import { AcademyAiView } from './views/academy-ai.js';
+import { StudentNotesView, StudentNaviView, StudentJoinView } from './views/student.js';
 
 // 앱은 preload 의 window.cloud, 웹은 같은 서버 API 로 바로
 const cloud = window.cloud || (await import('./web-cloud.js')).createWebCloud();
@@ -27,6 +28,11 @@ export const store = {
 };
 
 function navFor(user) {
+  if (user.role === 'student') return [
+    { id: 'my-notes', icon: 'list', label: '내 오답노트' },
+    { id: 'student-navi', icon: 'graduationCap', label: '마고 과목내비' },
+    { id: 'account', icon: 'user', label: '내 계정' },
+  ];
   const items = [
     { id: 'home', icon: 'apps', label: '프로그램' },
     { id: 'notices', icon: 'megaphone', label: '공지사항' },
@@ -52,6 +58,8 @@ function navFor(user) {
 }
 
 const VIEWS = {
+  'my-notes': StudentNotesView,
+  'student-navi': StudentNaviView,
   home: HomeView,
   notices: NoticesView,
   account: AccountView,
@@ -167,6 +175,11 @@ class Shell {
   }
 
   go(id, opts = {}) {
+    const user = store.state.user;
+    if (user.role === 'student') {
+      if (user.mustChangePassword) id = 'account';
+      else if (!navFor(user).some((it) => it.id === id)) id = 'my-notes';
+    } else if (id === 'my-notes' || id === 'student-navi') id = 'home';
     if (!VIEWS[id]) id = 'home';
     if (id === 'people' && store.state.user.role === 'director') id = 'teachers';
     const same = id === this.current && this.view;
@@ -196,7 +209,7 @@ class Shell {
 
   update(s) {
     this.offline.style.display = s.online ? 'none' : '';
-    const n = s.unreadNotices;
+    const n = s.user.role === 'student' ? 0 : s.unreadNotices;
     const nEl = this.navEls.get('notices');
     if (nEl) {
       nEl.querySelector('.badge-num')?.remove();
@@ -287,7 +300,7 @@ function loginView() {
       try {
         await cloud.login(user.value, pw.input.value);
       } catch (e) {
-        err.textContent = e.message;
+        err.textContent = e.code === 'student_web_only' || /student_web_only/.test(e.message) ? '학생 계정은 웹(mago.milky.kr)에서만 써요.' : e.message;
         err.style.display = '';
         pw.input.select();
       }
@@ -305,6 +318,7 @@ function loginView() {
   server.addEventListener('click', () => mount(serverView({ back: () => render(true) })));
   const signup = h('button', { class: 'link' }, '원장 가입 코드가 있어요');
   signup.addEventListener('click', () => mount(signupView()));
+  const studentJoin = s.web ? h('button', { class: 'link', onClick: () => { location.hash = '/join'; } }, '학생 초대 코드가 있어요') : null;
   // 웹: 서버 주소는 이 페이지 주소라 바꿀 수 없음, 대신 앱 내려받기
   const download =
     s.web && s.launcher
@@ -321,10 +335,20 @@ function loginView() {
     h('div', { style: { height: '20px' } }),
     go,
     s.web ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, signup) : h('div', { class: 'auth-links' }, signup, server),
+    studentJoin ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, studentJoin) : null,
     download,
   );
   setTimeout(() => (user.value ? pw.input : user).focus(), 50);
   return view;
+}
+
+function joinView() {
+  const query = new URLSearchParams(location.hash.split('?')[1] || '');
+  const view = new StudentJoinView({ cloud, code: query.get('code') || '', back: () => {
+    history.replaceState(null, '', '#/home');
+    render(true);
+  } });
+  return authFrame(authHead('학생 가입', '선생님께 받은 초대로 내 계정을 만들어요.'), view.el);
 }
 
 function signupView() {
@@ -501,6 +525,7 @@ let lastPhase = null;
 let lastUserKey = null;
 
 function mount(el) {
+  shell?.view?.destroy?.();
   shell = null;
   ssoPage = null;
   put(root, el);
@@ -508,7 +533,7 @@ function mount(el) {
 
 function render(force = false) {
   const s = store.state;
-  const userKey = s.user ? `${s.user.id}|${s.user.role}` : null;
+  const userKey = s.user ? `${s.user.id}|${s.user.role}|${!!s.user.mustChangePassword}` : null;
   if (!force && s.phase === lastPhase && userKey === lastUserKey) {
     if (shell) shell.update(s);
     else ssoPage?.update(s);
@@ -520,15 +545,17 @@ function render(force = false) {
   if (s.phase === 'setup') return mount(serverView());
   if (s.phase === 'login') {
     if (sso) sso.auto = true; // 로그인하면 묻지 않고 바로 웹 프로그램으로
+    if (s.web && /^#\/join(?:\?|$)/.test(location.hash)) return mount(joinView());
     return mount(loginView());
   }
-  if (sso) {
+  if (sso && !(s.user.role === 'student' && s.user.mustChangePassword)) {
     const page = ssoView();
     mount(page.el);
     ssoPage = page;
     return;
   }
   const prev = shell?.current || (s.web && hashView(s.user)) || 'home';
+  shell?.view?.destroy?.();
   shell = new Shell();
   put(root, shell.el);
   shell.go(prev, { force: true, replace: true });
@@ -549,7 +576,7 @@ async function start() {
     store.state = s;
     render();
     store.listeners.forEach((fn) => fn(s));
-    if (s.phase === 'ready' && s.user?.mustChangePassword) forcePasswordChange();
+    if (s.phase === 'ready' && s.user?.mustChangePassword && s.user.role !== 'student') forcePasswordChange();
   });
   cloud.onToast((t) => toast(t.text, t.kind));
   cloud.onNavigate(async (n) => {
@@ -558,7 +585,12 @@ async function start() {
     if (n.legacyFor && n.legacy) await askLegacy(cloud, n.legacyFor, n.legacy, store);
   });
   if (store.state.web) {
-    window.addEventListener('popstate', () => {
+    const navigate = () => {
+      if (store.state.phase === 'login' && /^#\/join(?:\?|$)/.test(location.hash)) {
+        sso = null;
+        render(true);
+        return;
+      }
       // 주소창에서 #/sso 로 바꾸거나, 거기서 뒤로 가면
       const next = readSso();
       if (next || sso) {
@@ -567,12 +599,15 @@ async function start() {
         return;
       }
       if (shell && store.state.phase === 'ready') shell.go(hashView(store.state.user) || 'home', { fromHistory: true });
-    });
+      else if (store.state.phase === 'login') render(true);
+    };
+    window.addEventListener('popstate', navigate);
+    window.addEventListener('hashchange', navigate);
   }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && shell?.el.classList.contains('nav-open')) shell.toggleNav(false);
   });
-  if (store.state.phase === 'ready' && store.state.user?.mustChangePassword) forcePasswordChange();
+  if (store.state.phase === 'ready' && store.state.user?.mustChangePassword && store.state.user.role !== 'student') forcePasswordChange();
 }
 
 window.addEventListener('error', (e) => console.error(e.error || e.message));

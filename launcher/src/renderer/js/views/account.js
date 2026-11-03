@@ -5,18 +5,22 @@ export class AccountView {
   constructor({ cloud, store }) {
     this.cloud = cloud;
     this.store = store;
+    this.student = store.state.user.role === 'student';
+    this.required = this.student && store.state.user.mustChangePassword;
     this.profile = h('div', { class: 'card' });
     this.storage = h('div', { class: 'card' });
     this.devices = h('div', { class: 'card' });
     this.el = h(
       'div',
       {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '내 계정'), h('div', { class: 'subtitle' }, '아이디와 비밀번호를 바꾸고, 로그인한 기기를 관리해요.'))),
-      h('div', { class: 'grid2' }, h('div', { class: 'stack' }, this.profile, this.usernameCard(), this.passwordCard()), h('div', { class: 'stack' }, this.storage, this.devices)),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, this.required ? '새 비밀번호를 정해 주세요' : '내 계정'), h('div', { class: 'subtitle' }, this.required ? '처음 받은 비밀번호나 초기화된 비밀번호는 다른 화면을 쓰기 전에 바꿔야 해요.' : this.student ? '아이디와 비밀번호를 바꿔요. 이름과 담당 선생님은 선생님이 관리해요.' : '아이디와 비밀번호를 바꾸고, 로그인한 기기를 관리해요.'))),
+      h('div', { class: 'grid2' }, h('div', { class: 'stack' }, this.required ? null : this.profile, this.required ? null : this.usernameCard(), this.passwordCard()), this.student ? null : h('div', { class: 'stack' }, this.storage, this.devices)),
     );
     this.renderProfile(store.state.user);
-    this.loadStorage();
-    this.loadDevices();
+    if (!this.student) {
+      this.loadStorage();
+      this.loadDevices();
+    }
   }
 
   update(s) {
@@ -52,7 +56,7 @@ export class AccountView {
         ),
       ),
       h('div', { style: { height: '16px' } }),
-      h('div', { class: 'form-row', style: { alignItems: 'flex-end' } }, field('이름', nameInput), h('div', { style: { flex: 'none' } }, save)),
+      this.student ? h('div', { class: 'muted' }, `담당 선생님: ${u.student?.teacherName || '아직 정하지 않았어요'}`) : h('div', { class: 'form-row', style: { alignItems: 'flex-end' } }, field('이름', nameInput), h('div', { style: { flex: 'none' } }, save)),
     );
   }
 
@@ -78,7 +82,7 @@ export class AccountView {
       h('h2', { class: 'card-title' }, ic('user', 18), '아이디 바꾸기'),
       h('p', { class: 'card-desc' }, '아이디를 바꿔도 데이터는 그대로예요. 다른 기기에서는 새 아이디로 로그인해요.'),
       field('새 아이디', nu, '영어 소문자·숫자·._- 로 3~32자'),
-      field('지금 비밀번호', pw),
+      this.student ? null : field('지금 비밀번호', pw),
       h('div', { style: { marginTop: '16px', display: 'flex', justifyContent: 'flex-end' } }, go),
     );
   }
@@ -96,7 +100,7 @@ export class AccountView {
           await this.cloud.changePassword(cur.input.value, pw.input.value, others);
           toast('비밀번호를 바꿨어요', 'success');
           for (const x of [cur, pw, pw2]) x.input.value = '';
-          this.loadDevices();
+          if (!this.student) this.loadDevices();
         } catch (e) {
           toast(e.message, 'error');
         }

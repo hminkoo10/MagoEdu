@@ -1,6 +1,7 @@
 // 계정 관리
 //   원장: 우리 학원 선생님 계정 만들기·지우기·비밀번호 초기화·사용 중지·프로그램 권한
 //   운영자: 모든 계정 (원장·선생님·운영자), 학원
+import { editAcademyCode } from '../student-accounts.js';
 import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, checkbox, toggle, segmented, pill, menu, bytes, ago, initial, ROLE, confirmDialog, secretDialog, reveal, put } from '../ui.js';
 
 export class PeopleView {
@@ -63,7 +64,7 @@ export class PeopleView {
           h('h1', { class: 'title' }, this.isAdmin ? '계정 관리' : '선생님 관리'),
           h('div', { class: 'subtitle' }, this.isAdmin ? '원장·선생님·운영자 계정을 직접 만들고 관리해요.' : `${u.academy?.name || '우리 학원'} 선생님 계정을 만들고 관리해요.`),
         ),
-        h('div', { class: 'right' }, this.isAdmin ? null : btn('학원 이름 바꾸기', { variant: 'white', iconName: 'edit', onClick: () => this.renameAcademy() }), add),
+        h('div', { class: 'right' }, this.isAdmin ? null : btn('학원 이름 바꾸기', { variant: 'white', iconName: 'edit', onClick: () => this.renameAcademy() }), this.isAdmin ? null : btn('학원 코드', { variant: 'white', onClick: () => editAcademyCode(this.cloud).catch((e) => toast(e.message, 'error')) }), add),
       ),
       toolbar,
       this.table,
@@ -468,7 +469,8 @@ export class PeopleView {
               toast(e.message, 'error');
             }
           });
-          return h('div', { class: 'row' }, ic('building', 20), h('div', { class: 'grow' }, h('div', { class: 'row-title' }, a.name), h('div', { class: 'row-desc' }, `원장 ${a.directors}명 · 선생님 ${a.teachers}명 · 학원 공간 ${bytes(a.usageBytes)}${a.quotaBytes ? ` / ${bytes(a.quotaBytes)}` : ' (제한 없음)'}`)), edit, quota, del);
+          const code = btn('학원 코드', { variant: 'subtle', size: 'sm', onClick: () => editAcademyCode(this.cloud, `?academy=${encodeURIComponent(a.id)}`).catch((e) => toast(e.message, 'error')) });
+          return h('div', { class: 'row' }, ic('building', 20), h('div', { class: 'grow' }, h('div', { class: 'row-title' }, a.name), h('div', { class: 'row-desc' }, `원장 ${a.directors}명 · 선생님 ${a.teachers}명 · 학원 공간 ${bytes(a.usageBytes)}${a.quotaBytes ? ` / ${bytes(a.quotaBytes)}` : ' (제한 없음)'}`)), code, edit, quota, del);
         }),
       );
       if (!this.academies.length) put(list, h('div', { class: 'empty' }, '학원이 없어요'));

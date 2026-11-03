@@ -231,7 +231,7 @@ class WebCloud {
   }
 
   // ---------------------------------------------------------------- 서버 요청
-  async request(method, p, { json, auth = true, timeout = 20000 } = {}) {
+  async request(method, p, { json, auth = true, timeout = 20000, blob = false } = {}) {
     const token = auth ? this.token : null;
     const headers = {};
     if (token) headers.authorization = `Bearer ${token}`;
@@ -250,6 +250,7 @@ class WebCloud {
     if (!res.ok) throw await this._error(res, token);
     this._online(true);
     if (res.status === 204) return null;
+    if (blob) return res.blob();
     const type = res.headers.get('content-type') || '';
     return type.includes('json') ? res.json() : res.text();
   }
@@ -265,6 +266,15 @@ class WebCloud {
     const err = cloudError(e.message || `서버 응답 오류 (${res.status})`, e.code || `http_${res.status}`, res.status, e);
     // 지난 세션의 늦은 응답이 새 세션을 끊지 않게 같은 토큰일 때만
     if (res.status === 401 && token && token === this.token && AUTH_LOST.includes(err.code)) this._authLost(err);
+    if (res.status === 403 && token && token === this.token) {
+      if (err.code === 'password_change_required' && this.user) {
+        this.user = { ...this.user, mustChangePassword: true };
+        this._saveSession();
+        this.emitState();
+        err.message = '먼저 새 비밀번호를 정해 주세요.';
+      } else if (err.code === 'student_forbidden') err.message = '학생 계정에서는 이 화면을 쓸 수 없어요.';
+      else if (err.code === 'student_web_only') err.message = '학생 계정은 웹(mago.milky.kr)에서만 써요.';
+    }
     return err;
   }
 
@@ -336,6 +346,21 @@ class WebCloud {
     return r.user;
   }
 
+  checkStudentInvite(code) {
+    return this.request('GET', `/api/join/${encodeURIComponent(code)}`, { auth: false });
+  }
+
+  async joinStudent({ code, username, password }) {
+    const r = await this.request('POST', '/api/join', { json: { code, username, password }, auth: false });
+    save(KEY.lastUsername, r.user.username);
+    await this._loggedIn(r);
+    return r.user;
+  }
+
+  studentNotePdf(id) {
+    return this.request('GET', `/api/me/notes/${encodeURIComponent(id)}/pdf`, { blob: true, timeout: 120000 });
+  }
+
   async _loggedIn(r) {
     this.token = r.token;
     this.user = r.user;
@@ -348,9 +373,11 @@ class WebCloud {
   }
 
   async _afterLogin({ fromSession }) {
-    this._startTimers();
     this.lastWake = Date.now();
-    if (fromSession) await this.refreshMe().catch(() => {});
+    if (fromSession || this.user?.role === 'student') await this.refreshMe().catch(() => {});
+    if (this.phase !== 'ready') return;
+    this._startTimers();
+    if (this.user?.role === 'student') return;
     await Promise.all([this.refreshApps().catch(() => {}), this.refreshNotices().catch(() => {})]);
   }
 
@@ -401,7 +428,8 @@ class WebCloud {
   }
 
   async changeUsername(username, password) {
-    await this.request('PATCH', '/api/me/username', { json: { username, password } });
+    if (this.user?.role === 'student') await this.request('PATCH', '/api/me', { json: { username } });
+    else await this.request('PATCH', '/api/me/username', { json: { username, password } });
     const u = await this.refreshMe();
     save(KEY.lastUsername, u.username);
     return u;
@@ -421,6 +449,7 @@ class WebCloud {
 
   // ---------------------------------------------------------------- 목록·공지
   async refreshApps() {
+    if (this.user?.role === 'student') return [];
     const r = await this.request('GET', '/api/apps');
     if (this.phase !== 'ready') return r.apps;
     this.apps = r.apps;
@@ -429,6 +458,7 @@ class WebCloud {
   }
 
   async refreshNotices() {
+    if (this.user?.role === 'student') return [];
     const r = await this.request('GET', '/api/notices');
     if (this.phase !== 'ready') return r.notices;
     this.notices = r.notices;
@@ -443,6 +473,7 @@ class WebCloud {
   }
 
   async refreshStorage() {
+    if (this.user?.role === 'student') throw cloudError('학생 계정에서는 저장 공간을 쓸 수 없어요.', 'student_forbidden', 403);
     const r = await this.request('GET', '/api/sync');
     if (this.phase !== 'ready') return r;
     this.storage = { usageBytes: r.usageBytes, quotaBytes: r.quotaBytes, apps: r.apps, academy: r.academy || null };
@@ -454,6 +485,10 @@ class WebCloud {
   _startTimers() {
     this._stopTimers();
     const every = (ms, fn) => this.timers.push(setInterval(() => this.phase === 'ready' && fn(), ms));
+    if (this.user?.role === 'student') {
+      every(NOTICES_EVERY, () => this.refreshMe().catch(() => {}));
+      return;
+    }
     every(APPS_EVERY, () => this.refreshApps().catch(() => {}));
     every(NOTICES_EVERY, () => this.refreshNotices().catch(() => {}));
   }
@@ -515,6 +550,9 @@ export function createWebCloud() {
     login: call((u, p) => c.login(u, p)),
     checkCode: call((code) => c.checkCode(code)),
     signup: call((fields) => c.signup(fields)),
+    checkStudentInvite: call((code) => c.checkStudentInvite(code)),
+    joinStudent: call((fields) => c.joinStudent(fields)),
+    studentNotePdf: call((id) => c.studentNotePdf(id)),
     logout: call(() => c.logout()),
 
     refreshMe: call(() => c.refreshMe()),
