@@ -10,6 +10,43 @@ const { readJson, writeJson } = require('./fsutil');
 
 const PREFIX = 'MGT1';
 
+function validServerUrl(value) {
+  if (typeof value !== 'string' || !/^https?:\/\//i.test(value.trim())) return null;
+  try {
+    const u = new URL(value.trim());
+    if (!u.hostname || u.username || u.password) return null;
+    return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}${u.search}${u.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeTrust(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.format !== 1) return null;
+  const serverUrl = validServerUrl(value.serverUrl);
+  if (!serverUrl || typeof value.serverId !== 'string' || value.serverId.length > 200 || !Array.isArray(value.keys)) return null;
+  const keys = value.keys
+    .filter((key) => key && typeof key === 'object' && /^[A-Za-z0-9_-]{8,64}$/.test(key.kid) && typeof key.x === 'string' && /^[A-Za-z0-9_-]{40,64}$/.test(key.x))
+    .map((key) => ({ kid: key.kid, alg: key.alg === 'Ed25519' ? 'Ed25519' : undefined, x: key.x }));
+  if (!keys.length) return null;
+  return { format: 1, serverUrl, serverId: value.serverId, keys, updatedAt: Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0 ? value.updatedAt : 0 };
+}
+
+function sanitizeTickets(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out = {};
+  for (const [id, item] of Object.entries(value)) {
+    if (!/^[a-z][a-z0-9-]{1,31}$/.test(id) || !item || typeof item !== 'object' || typeof item.ticket !== 'string' || item.ticket.length > 20000) continue;
+    if (!Number.isSafeInteger(item.expiresAt) || item.expiresAt < 0 || !Number.isSafeInteger(item.savedAt) || item.savedAt < 0) continue;
+    out[id] = { ticket: item.ticket, expiresAt: item.expiresAt, savedAt: item.savedAt };
+  }
+  return out;
+}
+
+async function readTrust(file) {
+  return sanitizeTrust(await readJson(file, null));
+}
+
 function decodeTicket(ticket) {
   const parts = String(ticket || '').split('.');
   if (parts.length !== 3 || parts[0] !== PREFIX) return null;
@@ -40,7 +77,7 @@ function verifyTicket(keys, ticket, { now = Date.now(), appId } = {}) {
 }
 
 async function writeTrust(file, { serverUrl, serverId, keys }) {
-  const cur = await readJson(file, null);
+  const cur = await readTrust(file);
   const next = { format: 1, serverUrl, serverId, keys, updatedAt: Date.now() };
   if (cur && cur.serverId === serverId && JSON.stringify(cur.keys) === JSON.stringify(keys) && cur.serverUrl === serverUrl) return cur;
   await writeJson(file, next);
@@ -53,17 +90,17 @@ class TicketStore {
   }
 
   async get(appId, keys) {
-    const all = (await readJson(this.file, {})) || {};
+    const all = sanitizeTickets(await readJson(this.file, {}));
     const t = all[appId];
     if (!t) return null;
     return verifyTicket(keys, t.ticket, { appId }) ? t : null;
   }
 
   async put(appId, ticket, expiresAt) {
-    const all = (await readJson(this.file, {})) || {};
+    const all = sanitizeTickets(await readJson(this.file, {}));
     all[appId] = { ticket, expiresAt, savedAt: Date.now() };
     await writeJson(this.file, all);
   }
 }
 
-module.exports = { decodeTicket, verifyTicket, writeTrust, TicketStore, PREFIX };
+module.exports = { decodeTicket, verifyTicket, writeTrust, readTrust, sanitizeTrust, sanitizeTickets, TicketStore, PREFIX };

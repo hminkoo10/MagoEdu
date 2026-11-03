@@ -11,8 +11,49 @@ const fsp = fs.promises;
 const path = require('node:path');
 const { readJson, writeJson } = require('./fsutil');
 const { extractZip } = require('./zip');
-const { readManifest } = require('./manifest');
+const { readManifest, normalizeManifest } = require('./manifest');
 const { compareVersions } = require('./version');
+
+const VERSION_RE = /^[0-9A-Za-z._-]{1,80}$/;
+
+function safeVersion(value) {
+  return typeof value === 'string' && VERSION_RE.test(value) && value !== '.' && value !== '..' ? value : null;
+}
+
+function safeExe(value) {
+  if (typeof value !== 'string' || !value || /[\u0000-\u001f]/.test(value)) return null;
+  const normalized = value.replace(/\\/g, '/');
+  if (path.isAbsolute(normalized) || normalized.split('/').some((part) => !part || part === '..')) return null;
+  return normalized;
+}
+
+function sanitizeInstalled(value, appId, root) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const version = safeVersion(value.version);
+  if (!version || (value.id !== undefined && value.id !== appId)) return null;
+  const dir = path.resolve(root, version);
+  if (!dir.startsWith(`${path.resolve(root)}${path.sep}`)) return null;
+  let manifest;
+  try {
+    manifest = normalizeManifest(value.manifest, { id: appId, version });
+  } catch {
+    return null;
+  }
+  const exe = safeExe(manifest.exe);
+  if (!exe) return null;
+  manifest = { ...manifest, id: appId, version, exe };
+  if (!Number.isSafeInteger(manifest.restartExitCode) || manifest.restartExitCode < -1 || manifest.restartExitCode > 255) manifest.restartExitCode = 75;
+  manifest.singleInstance = manifest.singleInstance !== false;
+  return {
+    id: appId,
+    name: typeof value.name === 'string' && value.name.length <= 200 ? value.name : appId,
+    version,
+    sha256: typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(value.sha256) ? value.sha256 : null,
+    installedAt: Number.isSafeInteger(value.installedAt) && value.installedAt >= 0 ? value.installedAt : 0,
+    manifest,
+    dir,
+  };
+}
 
 class Installer {
   constructor({ paths, log = console }) {
@@ -21,10 +62,10 @@ class Installer {
   }
 
   async installed(appId) {
-    const info = await readJson(this.paths.app(appId).installed, null);
-    if (!info || !info.version) return null;
-    if (!fs.existsSync(path.join(this.paths.app(appId).root, info.version))) return null;
-    return { ...info, dir: path.join(this.paths.app(appId).root, info.version) };
+    const ap = this.paths.app(appId);
+    const info = sanitizeInstalled(await readJson(ap.installed, null), appId, ap.root);
+    if (!info || !fs.existsSync(info.dir) || !fs.existsSync(path.join(info.dir, ...info.manifest.exe.split('/')))) return null;
+    return info;
   }
 
   async listInstalled() {
@@ -102,7 +143,7 @@ class Installer {
   /** 지금 버전이 아닌 폴더를 지운다. keep: 켜져 있는 버전처럼 남겨 둘 버전 */
   async cleanup(appId, keep = []) {
     const ap = this.paths.app(appId);
-    const cur = await readJson(ap.installed, null);
+    const cur = sanitizeInstalled(await readJson(ap.installed, null), appId, ap.root);
     let names = [];
     try {
       names = await fsp.readdir(ap.root);

@@ -15,11 +15,12 @@ log.initialize();
 log.transports.file.level = 'info';
 
 const { makePaths } = require('../core/paths');
-const { Store } = require('./store');
+const { Store, validServerUrl } = require('./store');
 const { Cloud } = require('./cloud');
 const { Shortcuts } = require('./shortcuts');
 const { setupSelfUpdate } = require('./selfupdate');
 const { uninstallCleanup } = require('./uninstall');
+const { sanitizeDefaults, sanitizeResume } = require('./startup');
 const { readJsonSync, writeJsonSync } = require('../core/fsutil');
 
 const TITLE = '마고에듀 통합 클라우드';
@@ -34,7 +35,8 @@ const DEBUG_SWITCHES = ['remote-debugging-port', 'remote-debugging-pipe', 'inspe
 
 function loadDefaults() {
   try {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, 'defaults.json'), 'utf8'));
+    const value = JSON.parse(fs.readFileSync(path.join(__dirname, 'defaults.json'), 'utf8'));
+    return sanitizeDefaults(value, validServerUrl);
   } catch {
     return {};
   }
@@ -294,13 +296,13 @@ function registerIpc() {
 const resumeFile = () => path.join(app.getPath('userData'), 'update-resume.json');
 
 function takeResume() {
-  const r = readJsonSync(resumeFile(), null);
+  const value = readJsonSync(resumeFile(), null);
   try {
     fs.rmSync(resumeFile(), { force: true });
   } catch {
     /* 무시 */
   }
-  return process.argv.includes('--updated') && r && Date.now() - (r.at || 0) < 10 * 60 * 1000 ? r : null;
+  return process.argv.includes('--updated') ? sanitizeResume(value) : null;
 }
 
 function appPaths() {

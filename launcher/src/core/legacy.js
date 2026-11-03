@@ -12,6 +12,21 @@ const path = require('node:path');
 const { walk, readJson, writeJson, insideOf } = require('./fsutil');
 const { globToRegExp } = require('./rules');
 
+function sanitizeMarks(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out = {};
+  for (const [id, mark] of Object.entries(value)) {
+    if (!/^[A-Za-z0-9._:-]{1,80}$/.test(id) || ['__proto__', 'prototype', 'constructor'].includes(id) || !mark || typeof mark !== 'object' || Array.isArray(mark)) continue;
+    const item = {};
+    if (typeof mark.by === 'string' && mark.by.length <= 200 && !/[\u0000-\u001f]/.test(mark.by)) item.by = mark.by;
+    if (Number.isSafeInteger(mark.at) && mark.at >= 0 && mark.at <= Date.now() + 24 * 60 * 60 * 1000) item.at = mark.at;
+    if (typeof mark.from === 'string' && mark.from.length <= 4096 && !/[\u0000]/.test(mark.from)) item.from = mark.from;
+    if (Number.isSafeInteger(mark.copied) && mark.copied >= 0 && mark.copied <= 1000000) item.copied = mark.copied;
+    if (Object.keys(item).length) out[id] = item;
+  }
+  return out;
+}
+
 function expandPath(template, env = process.env) {
   const home = os.homedir();
   const vars = {
@@ -36,8 +51,8 @@ function resolveTarget(appDirs, to) {
 
 /** 이 컴퓨터에 예전 데이터가 있는지 → [{ id, label, from, files, bytes, importedBy, importedAt }] */
 async function detectLegacy(manifest, { appDirs, pcMarkerFile, env } = {}) {
-  const pcMarks = (await readJson(pcMarkerFile, {})) || {};
-  const accMarks = appDirs ? (await readJson(appDirs.legacy, {})) || {} : {};
+  const pcMarks = sanitizeMarks(await readJson(pcMarkerFile, {}));
+  const accMarks = appDirs ? sanitizeMarks(await readJson(appDirs.legacy, {})) : {};
   const found = [];
   for (const l of manifest.legacy || []) {
     const from = expandPath(l.from, env);
@@ -109,15 +124,15 @@ async function importLegacy(manifest, legacyId, { appDirs, pcMarkerFile, account
     bytes = st.size;
   }
   const at = Date.now();
-  const accMarks = (await readJson(appDirs.legacy, {})) || {};
+  const accMarks = sanitizeMarks(await readJson(appDirs.legacy, {}));
   accMarks[l.id] = { at, from, copied };
   await writeJson(appDirs.legacy, accMarks);
   if (pcMarkerFile) {
-    const pcMarks = (await readJson(pcMarkerFile, {})) || {};
+    const pcMarks = sanitizeMarks(await readJson(pcMarkerFile, {}));
     pcMarks[`${manifest.id}:${l.id}`] = { by: accountLabel || null, at };
     await writeJson(pcMarkerFile, pcMarks);
   }
   return { copied, skipped, bytes };
 }
 
-module.exports = { detectLegacy, importLegacy, expandPath, resolveTarget };
+module.exports = { detectLegacy, importLegacy, expandPath, resolveTarget, sanitizeMarks };

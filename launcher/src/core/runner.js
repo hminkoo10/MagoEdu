@@ -13,6 +13,20 @@ const { writeJsonSync, readJsonSync } = require('./fsutil');
 
 const STOP_GRACE_MS = 10 * 1000; // 끄기: 창 닫기 신호 뒤 이만큼 기다렸다가 강제로 끔
 
+function sanitizeRunning(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (!Number.isSafeInteger(value.pid) || value.pid <= 0 || value.pid > 0x7fffffff) return null;
+  const out = { pid: value.pid };
+  if (Number.isSafeInteger(value.startedAt) && value.startedAt >= 0 && value.startedAt <= Date.now() + 24 * 60 * 60 * 1000) out.startedAt = value.startedAt;
+  if (typeof value.version === 'string' && /^[0-9A-Za-z._-]{1,80}$/.test(value.version)) out.version = value.version;
+  if (typeof value.userId === 'string' && value.userId.length <= 80 && !/[\u0000-\u001f]/.test(value.userId)) out.userId = value.userId;
+  return out;
+}
+
+function readRunning(file) {
+  return sanitizeRunning(readJsonSync(file, null));
+}
+
 function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, requests = academy, academyInfo = false, ssoCode = '', dataKey = '', serverUrl, launcherVersion, trustFile }) {
   return {
     ...base,
@@ -51,7 +65,7 @@ class Runner extends EventEmitter {
     const r = this.running.get(appId);
     if (r) return true;
     // 통합 클라우드를 다시 켰을 때, 그 전에 켜 둔 프로그램이 아직 돌고 있는지
-    const rec = readJsonSync(this.paths.app(appId).running, null);
+    const rec = readRunning(this.paths.app(appId).running);
     if (!rec?.pid) return false;
     // 컴퓨터를 다시 켠 뒤라면 예전 기록 (같은 번호를 다른 프로그램이 쓰고 있을 수 있음)
     const bootedAt = Date.now() - os.uptime() * 1000;
@@ -70,7 +84,7 @@ class Runner extends EventEmitter {
   runningInfo(appId) {
     const r = this.running.get(appId);
     if (r) return { pid: r.pid, startedAt: r.startedAt, version: r.version, userId: r.userId };
-    const rec = readJsonSync(this.paths.app(appId).running, null);
+    const rec = readRunning(this.paths.app(appId).running);
     return rec && this.isRunning(appId) ? rec : null;
   }
 
@@ -112,7 +126,7 @@ class Runner extends EventEmitter {
 
   stop(appId, { graceMs = STOP_GRACE_MS } = {}) {
     const r = this.running.get(appId);
-    const pid = r?.pid || readJsonSync(this.paths.app(appId).running, null)?.pid;
+    const pid = r?.pid || readRunning(this.paths.app(appId).running)?.pid;
     if (!pid) return false;
     try {
       if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T'], { windowsHide: true });
@@ -134,4 +148,4 @@ class Runner extends EventEmitter {
   }
 }
 
-module.exports = { Runner, buildEnv };
+module.exports = { Runner, buildEnv, sanitizeRunning };

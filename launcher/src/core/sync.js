@@ -24,6 +24,63 @@ const { ApiError, Cancelled } = require('./api');
 
 const STATE_VERSION = 1;
 
+function safeRelPath(value) {
+  return typeof value === 'string' && value.length <= 1000 && /^[^/\\:\u0000-\u001f]+(?:\/[^/\\:\u0000-\u001f]+)*$/.test(value) && !value.split('/').some((part) => part === '.' || part === '..') ? value : null;
+}
+
+function safeNumber(value, max = Number.MAX_SAFE_INTEGER) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= max ? value : null;
+}
+
+function sanitizeStateEntry(value, kind) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out = {};
+  if (kind === 'cache') {
+    const size = safeNumber(value.size, 1024 * 1024 * 1024 * 1024);
+    const mtimeMs = safeNumber(value.mtimeMs, Date.now() + 24 * 60 * 60 * 1000);
+    if (size === null || mtimeMs === null || typeof value.sha !== 'string' || !/^[a-f0-9]{64}$/i.test(value.sha)) return null;
+    return { size, mtimeMs, sha: value.sha };
+  }
+  const rev = safeNumber(value.rev);
+  if (rev === null) return null;
+  // 서버가 준 항목의 다른 값(path·updatedBy 등)은 그대로 둔다 — 짧은 글자·숫자·참거짓만
+  for (const [k, v] of Object.entries(value)) {
+    if (['__proto__', 'prototype', 'constructor'].includes(k)) continue;
+    if ((typeof v === 'string' && v.length <= 4096) || (typeof v === 'number' && Number.isFinite(v)) || typeof v === 'boolean' || v === null) out[k] = v;
+  }
+  delete out.sha;
+  delete out.sha256;
+  delete out.size;
+  delete out.evicted;
+  delete out.deleted;
+  out.rev = rev;
+  if (typeof value.sha === 'string' && /^[a-f0-9]{64}$/i.test(value.sha)) out.sha = value.sha;
+  if (typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(value.sha256)) out.sha256 = value.sha256;
+  if (typeof value.size === 'number' && Number.isFinite(value.size) && value.size >= 0 && value.size <= 1024 * 1024 * 1024 * 1024) out.size = value.size;
+  if (value.evicted === true) out.evicted = true;
+  if (value.deleted === true) out.deleted = true;
+  return out;
+}
+
+function sanitizeState(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.v !== STATE_VERSION) return null;
+  const seq = safeNumber(value.seq);
+  if (seq === null) return null;
+  const maps = {};
+  for (const kind of ['remote', 'base', 'cache']) {
+    maps[kind] = {};
+    const source = value[kind];
+    if (!source || typeof source !== 'object' || Array.isArray(source)) continue;
+    for (const [key, item] of Object.entries(source)) {
+      const p = safeRelPath(key);
+      const clean = p && sanitizeStateEntry(item, kind);
+      if (clean && kind === 'remote') clean.path = p;
+      if (clean) maps[kind][p] = clean;
+    }
+  }
+  return { v: STATE_VERSION, seq, ...maps };
+}
+
 class SyncEngine {
   constructor({ api, appId, base, dirs, rules, log = console, concurrency = 3 }) {
     this.api = api;
@@ -36,9 +93,7 @@ class SyncEngine {
   }
 
   async _loadState() {
-    const s = await readJson(this.dirs.state, null);
-    if (!s || s.v !== STATE_VERSION) return { v: STATE_VERSION, seq: 0, remote: {}, base: {}, cache: {} };
-    return { v: STATE_VERSION, seq: s.seq || 0, remote: s.remote || {}, base: s.base || {}, cache: s.cache || {} };
+    return sanitizeState(await readJson(this.dirs.state, null)) || { v: STATE_VERSION, seq: 0, remote: {}, base: {}, cache: {} };
   }
 
   async _fetchRemote(state) {
@@ -341,4 +396,4 @@ class SyncEngine {
   }
 }
 
-module.exports = { SyncEngine };
+module.exports = { SyncEngine, sanitizeState };

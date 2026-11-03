@@ -12,7 +12,7 @@ const { Installer } = require('../core/installer');
 const { SyncEngine } = require('../core/sync');
 const { compileRules } = require('../core/rules');
 const { detectLegacy, importLegacy } = require('../core/legacy');
-const { writeTrust, TicketStore, verifyTicket } = require('../core/tickets');
+const { writeTrust, readTrust, TicketStore, verifyTicket } = require('../core/tickets');
 const { Runner, buildEnv } = require('../core/runner');
 const { EventStream } = require('../core/events');
 const { readJsonSync, writeJson, formatBytes, dirSize } = require('../core/fsutil');
@@ -28,6 +28,34 @@ const REQUEST_DELAY = 100; // 프로그램이 학원 공간 파일을 달라고 
 const STOP_WAIT = 15 * 1000; // 로그아웃·계정 바꿈: 켜 둔 프로그램이 꺼지길 이만큼까지 기다림 (runner 는 10초 뒤 강제로 끔)
 const REQUEST_RE = /^[A-Za-z0-9_-]{1,64}\.json$/; // requests/<rid>.json (답은 <rid>.done.json)
 const ACADEMY_INFO_DELAY = 300; // 학원 명단·AI 가 바뀌었다는 알림 → 잠깐 모았다가 academy-info.json 다시 쓰기
+
+const APP_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
+
+function sanitizeCatalog(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { apps: [], notices: [], icons: {} };
+  const apps = (Array.isArray(value.apps) ? value.apps : [])
+    .filter((a) => a && typeof a === 'object' && APP_ID_RE.test(a.id))
+    .map((a) => {
+      const app = { ...a, id: a.id };
+      if (typeof app.name !== 'string' || app.name.length > 200) app.name = app.id;
+      if (app.platform !== 'windows' && app.platform !== 'web' && app.platform !== 'android') app.platform = 'windows';
+      if (app.release && typeof app.release === 'object' && /^[0-9A-Za-z._-]{1,80}$/.test(app.release.version || '')) {
+        app.release = {
+          ...app.release,
+          version: app.release.version,
+          sha256: typeof app.release.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(app.release.sha256) ? app.release.sha256 : null,
+          size: Number.isSafeInteger(app.release.size) && app.release.size >= 0 ? app.release.size : 0,
+        };
+      } else app.release = null;
+      return app;
+    });
+  const notices = (Array.isArray(value.notices) ? value.notices : []).filter((n) => n && typeof n === 'object' && Number.isSafeInteger(n.id) && n.id >= 0).map((n) => ({ ...n, id: n.id }));
+  const icons = {};
+  if (value.icons && typeof value.icons === 'object' && !Array.isArray(value.icons)) {
+    for (const [id, icon] of Object.entries(value.icons)) if (APP_ID_RE.test(id) && typeof icon === 'string' && icon.length <= 2 * 1024 * 1024) icons[id] = icon;
+  }
+  return { apps, notices, icons };
+}
 
 // 동기화 폴더를 지켜볼 때 건너뛰는 것: 통합 클라우드·프로그램의 임시 파일
 const IGNORE_LOCAL = [/(^|\/)\.sync-state\.json$/, /^conflicts(\/|$)/, /\.tmp$/i, /\.magoedu-dl(\.part)?$/i, /(^|\/)\.magoedu/];
@@ -242,12 +270,10 @@ class Cloud extends EventEmitter {
   }
 
   _loadCachedCatalog() {
-    const c = this._catalogCache() && readJsonSync(this._catalogCache(), null);
-    if (c) {
-      this.apps = c.apps || [];
-      this.notices = c.notices || [];
-      this.icons = c.icons || {};
-    }
+    const c = sanitizeCatalog(this._catalogCache() && readJsonSync(this._catalogCache(), null));
+    this.apps = c.apps;
+    this.notices = c.notices;
+    this.icons = c.icons;
   }
 
   async _saveCachedCatalog() {
@@ -1010,7 +1036,7 @@ class Cloud extends EventEmitter {
       return r.ticket;
     } catch (err) {
       if (!(err instanceof ApiError && err.offline)) throw err;
-      const trust = readJsonSync(this.paths.trustFile, null);
+      const trust = await readTrust(this.paths.trustFile);
       const cached = await store.get(id, trust?.keys || []);
       if (cached) return cached.ticket;
       throw new Error('서버에 연결할 수 없고, 인터넷 없이 쓸 수 있는 기간도 지났어요. 인터넷에 연결한 뒤 다시 해 주세요.');
