@@ -3,128 +3,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const http = require('node:http');
+const { openEvents, until } = require('./event-helpers');
 const { startServer, ADMIN_PASSWORD } = require('./helpers');
 
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 const DAY = 24 * 60 * 60 * 1000;
 
-/**
- * 실시간 알림을 조금씩 읽는다 (helpers 의 request() 는 본문을 끝까지 기다려서 못 씀)
- *   next(event, ms) → 아직 꺼내지 않은 것 중 그 종류의 다음 알림 ({ event, data } / 주석은 event: 'comment')
- */
-function openEvents(base, token, query = '') {
-  return new Promise((resolve, reject) => {
-    const headers = token ? { authorization: `Bearer ${token}` } : {};
-    const req = http.get(`${base}/api/sync/events${query}`, { headers }, (res) => {
-      const events = [];
-      const waiters = new Set();
-      let cursor = 0;
-      let buf = '';
-      let ended = false;
-      const kick = () => waiters.forEach((w) => w());
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
-        buf += chunk;
-        let i;
-        while ((i = buf.indexOf('\n\n')) >= 0) {
-          const block = buf.slice(0, i);
-          buf = buf.slice(i + 2);
-          if (block.startsWith(':')) {
-            events.push({ event: 'comment', data: block.slice(1).trim() });
-            continue;
-          }
-          let event = 'message';
-          const data = [];
-          for (const line of block.split('\n')) {
-            if (line.startsWith('event:')) event = line.slice(6).trim();
-            else if (line.startsWith('data:')) data.push(line.slice(5).trim());
-          }
-          let parsed = data.join('\n');
-          try {
-            parsed = JSON.parse(parsed);
-          } catch {
-            /* 글자 그대로 */
-          }
-          events.push({ event, data: parsed });
-        }
-        kick();
-      });
-      res.on('close', () => {
-        ended = true;
-        kick();
-      });
-      const stream = {
-        status: res.statusCode,
-        headers: res.headers,
-        events,
-        get ended() {
-          return ended;
-        },
-        next(event, ms = 3000) {
-          return new Promise((ok, fail) => {
-            const check = () => {
-              for (let j = cursor; j < events.length; j += 1) {
-                if (events[j].event !== event) continue;
-                cursor = j + 1;
-                done();
-                ok(events[j]);
-                return;
-              }
-              if (ended) {
-                done();
-                fail(new Error(`스트림이 끝났어요 (${event} 기다리는 중)`));
-              }
-            };
-            const timer = setTimeout(() => {
-              done();
-              fail(new Error(`${event} 가 ${ms}ms 안에 오지 않았어요`));
-            }, ms);
-            const done = () => {
-              clearTimeout(timer);
-              waiters.delete(check);
-            };
-            waiters.add(check);
-            check();
-          });
-        },
-        waitEnd(ms = 3000) {
-          return new Promise((ok, fail) => {
-            if (ended) return ok();
-            const timer = setTimeout(() => fail(new Error(`${ms}ms 안에 끊기지 않았어요`)), ms);
-            res.once('close', () => {
-              clearTimeout(timer);
-              ok();
-            });
-            return undefined;
-          });
-        },
-        close() {
-          req.destroy();
-        },
-      };
-      if (res.statusCode !== 200) {
-        const chunks = [];
-        res.removeAllListeners('data');
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => {
-          try {
-            stream.body = JSON.parse(chunks.join(''));
-          } catch {
-            stream.body = chunks.join('');
-          }
-          resolve(stream);
-        });
-        return;
-      }
-      resolve(stream);
-    });
-    req.on('error', reject);
-  });
-}
-
 test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async (t) => {
-  const s = await startServer({ eventPingMs: 150, eventRecheckMs: 200 });
+  // 예전의 450ms 고정 대기보다 늦게 갱신해도 알림을 놓치지 않아야 한다.
+  const s = await startServer({ eventPingMs: 150, eventRecheckMs: 1200 });
   t.after(() => s.close());
   const { request: rq } = s;
   const admin = await s.login('admin', ADMIN_PASSWORD, 'admin-pc');
@@ -157,7 +44,7 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
     assert.equal(st.headers['content-type'], 'text/event-stream; charset=utf-8');
     assert.equal(st.headers['cache-control'], 'no-cache, no-transform');
     assert.equal(st.headers['x-accel-buffering'], 'no');
-    const hello = await st.next('hello');
+    const hello = st.hello;
     assert.match(hello.data.time, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
     st.close();
   });
@@ -173,7 +60,6 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
 
   await t.test('다른 기기가 올리고 지우면 change', async () => {
     const st = await open(pc1);
-    await st.next('hello');
     const up = await put(pc2, 'ohdapnote', 'data/a.json', Buffer.from('{"a":1}'));
     assert.equal(up.status, 200);
     const c1 = await st.next('change');
@@ -192,7 +78,6 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
 
   await t.test('apps 로 고른 프로그램만', async () => {
     const st = await open(pc1, '?apps=tajong');
-    await st.next('hello');
     await put(pc2, 'ohdapnote', 'data/c.json', Buffer.from('c'));
     const tj = await put(pc2, 'tajong', 'config.json', Buffer.from('{}'));
     const c = await st.next('change');
@@ -208,10 +93,13 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
     const denied = await open(pc1, '?apps=tajong');
     assert.equal(denied.status, 403);
     const st = await open(pc1);
-    await st.next('hello');
+    // 정해진 시간을 재지 않고, 이 구독에 새 권한이 반영된 뒤에 파일을 올린다.
+    const { events, svc } = s.app.deps;
+    const subscription = [...events.streams].findLast((stream) => stream.authorization === `Bearer ${pc1}`);
+    assert.ok(subscription);
+    assert.equal(svc.canUseApp(subscription.user, 'tajong'), false);
     await rq('PATCH', `/api/users/${id}`, { token: admin, body: { allowedApps: ['ohdapnote', 'tajong'] } });
-    // 연결할 때의 권한(tajong 없음)으로 보내다가, 다시 확인한 뒤(200ms)부터 tajong 도 보냄
-    await new Promise((r) => setTimeout(r, 450));
+    await until(() => svc.canUseApp(subscription.user, 'tajong'), '프로그램 권한 재확인');
     const tj = await put(pc2, 'tajong', 'state.json', Buffer.from('{}'));
     const c = await st.next('change');
     assert.equal(c.data.seq, tj.data.entry.seq);
@@ -220,7 +108,6 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
 
   await t.test('다른 계정에는 가지 않음', async () => {
     const mine = await open(other);
-    await mine.next('hello');
     await put(pc1, 'ohdapnote', 'data/secret.json', Buffer.from('secret'));
     const own = await put(other, 'ohdapnote', 'data/mine.json', Buffer.from('mine'));
     const c = await mine.next('change');
@@ -230,7 +117,6 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
 
   await t.test('서버가 오래된 데이터를 정리해도 알림 (기기 없음)', async () => {
     const st = await open(pc1, '?apps=ohdapnote');
-    await st.next('hello');
     const buf = Buffer.from('old');
     const up = await rq('PUT', `/api/sync/ohdapnote/file?path=data/projects/old/p.pdf&baseRev=0&group=data/projects/old`, {
       token: pc2,
@@ -251,8 +137,7 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
 
   await t.test('연결을 살려 두는 ping', async () => {
     const st = await open(pc1);
-    await st.next('hello');
-    const ping = await st.next('comment', 2000);
+    const ping = await st.next('comment');
     assert.equal(ping.data, 'ping');
     st.close();
   });
@@ -261,10 +146,9 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
     const list = [];
     for (let i = 0; i < 6; i += 1) {
       const st = await open(pc2);
-      await st.next('hello');
       list.push(st);
     }
-    await list[0].waitEnd(2000);
+    await list[0].waitEnd();
     assert.equal(list[1].ended, false);
     assert.equal(list[5].ended, false);
     list.forEach((st) => st.close());
@@ -273,27 +157,30 @@ test('실시간 알림: 계정의 파일이 바뀌면 바로 알려 줌', async 
   await t.test('로그아웃하면 연결도 끊김', async () => {
     const tmp = await s.login('teach', 'pass1234', 'pc-tmp');
     const st = await open(tmp);
-    await st.next('hello');
     await rq('POST', '/api/auth/logout', { token: tmp });
-    await st.waitEnd(2000);
+    await st.waitEnd();
   });
 
   await t.test('닫은 연결은 정리됨', async () => {
     for (const st of streams) st.close();
     const hub = s.app.deps.events;
-    for (let i = 0; i < 50 && hub.size; i += 1) await new Promise((r) => setTimeout(r, 20));
+    await until(() => hub.size === 0, '닫은 연결 정리');
     assert.equal(hub.size, 0);
     assert.equal(hub.timers, null, '연결이 없으면 타이머도 멈춤');
   });
 });
 
-test('실시간 알림: 연결이 열려 있어도 서버는 바로 꺼짐', async () => {
+test('실시간 알림: 연결이 열려 있어도 서버는 바로 꺼짐', async (t) => {
   const s = await startServer();
+  let closing;
+  const close = () => (closing ||= s.close());
+  t.after(close);
   const admin = await s.login('admin', ADMIN_PASSWORD);
   const st = await openEvents(s.base, admin);
-  await st.next('hello');
+  t.after(() => st.close());
+
   const started = Date.now();
-  await s.close();
+  await close();
   assert.ok(Date.now() - started < 2000, `${Date.now() - started}ms`);
-  await st.waitEnd(1000);
+  await st.waitEnd();
 });

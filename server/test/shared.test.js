@@ -5,41 +5,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const http = require('node:http');
+const { openEvents, settleEvents } = require('./event-helpers');
 const { startServer, ADMIN_PASSWORD } = require('./helpers');
 
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
-
-/** 실시간 알림에서 change 만 모은다 */
-function listen(base, token) {
-  return new Promise((resolve, reject) => {
-    const changes = [];
-    const req = http.get(`${base}/api/sync/events?apps=ohdapnote`, { headers: { authorization: `Bearer ${token}` } }, (res) => {
-      let buf = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
-        buf += chunk;
-        let i;
-        while ((i = buf.indexOf('\n\n')) >= 0) {
-          const block = buf.slice(0, i);
-          buf = buf.slice(i + 2);
-          if (!block.startsWith('event: change')) continue;
-          changes.push(JSON.parse(block.split('\n').find((l) => l.startsWith('data:')).slice(5)));
-        }
-      });
-      resolve({ changes, close: () => req.destroy() });
-    });
-    req.on('error', reject);
-  });
-}
-
-async function until(fn, ms = 3000) {
-  const end = Date.now() + ms;
-  while (!fn()) {
-    if (Date.now() > end) throw new Error('시간 안에 되지 않았어요');
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}
 
 test('학원 공간: 교재는 학원 모두가 보고, 만든 사람과 원장만 고침', async (t) => {
   const s = await startServer();
@@ -163,19 +132,16 @@ test('학원 공간: 교재는 학원 모두가 보고, 만든 사람과 원장�
     assert.ok(s.app.deps.blobs.has(sha('PDF1')));
   });
 
-  await t.test('실시간: 같은 학원 사람에게만 바로 알림', async () => {
-    const a2 = await listen(s.base, t2);
-    const b = await listen(s.base, dirB);
-    t.after(() => {
-      a2.close();
-      b.close();
-    });
-    await new Promise((r) => setTimeout(r, 100));
+  await t.test('실시간: 같은 학원 사람에게만 바로 알림', async (t) => {
+    const a2 = await openEvents(s.base, t2, '?apps=ohdapnote');
+    t.after(() => a2.close());
+    const b = await openEvents(s.base, dirB, '?apps=ohdapnote');
+    t.after(() => b.close());
     const r = await put(t1, 'books/b3/book.json', '{"name":"새 교재"}');
-    await until(() => a2.changes.length > 0);
-    assert.deepEqual(a2.changes[0], { appId: 'ohdapnote', seq: r.data.entry.seq, deviceId: 'dev-1', scope: 'academy' });
-    await new Promise((r2) => setTimeout(r2, 150));
-    assert.equal(b.changes.length, 0, '다른 학원에는 알리지 않음');
+    assert.equal(r.status, 200);
+    assert.deepEqual((await a2.next('change')).data, { appId: 'ohdapnote', seq: r.data.entry.seq, deviceId: 'dev-1', scope: 'academy' });
+    await settleEvents(s.app.deps.events, b);
+    assert.equal(b.events.filter((e) => e.event === 'change').length, 0, '다른 학원에는 알리지 않음');
   });
 });
 

@@ -7,41 +7,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const http = require('node:http');
+const { openEvents, settleEvents } = require('./event-helpers');
 const { startServer, ADMIN_PASSWORD } = require('./helpers');
 
 const DAY = 24 * 60 * 60 * 1000;
-
-/** 실시간 알림에서 event: academy 만 모은다 */
-function listenAcademy(base, token) {
-  return new Promise((resolve, reject) => {
-    const got = [];
-    const req = http.get(`${base}/api/sync/events`, { headers: { authorization: `Bearer ${token}` } }, (res) => {
-      let buf = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
-        buf += chunk;
-        let i;
-        while ((i = buf.indexOf('\n\n')) >= 0) {
-          const block = buf.slice(0, i);
-          buf = buf.slice(i + 2);
-          if (!block.startsWith('event: academy')) continue;
-          got.push(JSON.parse(block.split('\n').find((l) => l.startsWith('data:')).slice(5)));
-        }
-      });
-      resolve({ got, close: () => req.destroy() });
-    });
-    req.on('error', reject);
-  });
-}
-
-async function until(fn, ms = 3000) {
-  const end = Date.now() + ms;
-  while (!fn()) {
-    if (Date.now() > end) throw new Error('시간 안에 되지 않았어요');
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}
 
 /** 원장 A·B(다른 학원), A학원 선생님 둘 */
 async function setup(s) {
@@ -169,19 +138,16 @@ test('학생 명단: 학원 사람 누구나 추가·수정·삭제·되살리�
     assert.equal((await rq('POST', `/api/students/${sid}/restore`, { token: dirB })).status, 404);
   });
 
-  await t.test('바뀌면 같은 학원에 실시간 알림 (academy {kind: students})', async () => {
-    const a = await listenAcademy(s.base, t2);
-    const b = await listenAcademy(s.base, dirB);
-    t.after(() => {
-      a.close();
-      b.close();
-    });
-    await new Promise((r) => setTimeout(r, 100));
-    await rq('PATCH', `/api/students/${sid}`, { token: t1, body: { grade: '고2' } });
-    await until(() => a.got.length > 0);
-    assert.deepEqual(a.got[0], { kind: 'students' });
-    await new Promise((r) => setTimeout(r, 150));
-    assert.equal(b.got.length, 0, '다른 학원에는 알리지 않음');
+  await t.test('바뀌면 같은 학원에 실시간 알림 (academy {kind: students})', async (t) => {
+    const a = await openEvents(s.base, t2);
+    t.after(() => a.close());
+    const b = await openEvents(s.base, dirB);
+    t.after(() => b.close());
+    const r = await rq('PATCH', `/api/students/${sid}`, { token: t1, body: { grade: '고2' } });
+    assert.equal(r.status, 200);
+    assert.deepEqual((await a.next('academy')).data, { kind: 'students' });
+    await settleEvents(s.app.deps.events, b);
+    assert.equal(b.events.filter((e) => e.event === 'academy').length, 0, '다른 학원에는 알리지 않음');
   });
 
   await t.test('감사 기록', async () => {
