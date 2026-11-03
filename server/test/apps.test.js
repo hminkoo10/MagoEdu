@@ -142,7 +142,7 @@ test('프로그램: GitHub Releases 에서 새 버전 찾기', async (t) => {
 
   for (const token of ['', 'ghp_test']) {
     await t.test(token ? '토큰이 있으면 서버가 대신 받아서 보냄' : '공개 저장소면 GitHub 주소로 넘김', async () => {
-      const s = await startServer({ githubApi: `http://127.0.0.1:${gh.address().port}`, githubToken: token });
+      const s = await startServer({ githubApi: `http://127.0.0.1:${gh.address().port}`, githubToken: 'ghp_test' });
       try {
         const admin = await s.login('admin', ADMIN_PASSWORD);
         await s.request('POST', '/api/admin/apps', {
@@ -154,6 +154,7 @@ test('프로그램: GitHub Releases 에서 새 버전 찾기', async (t) => {
         assert.equal(app.release.version, '2.0.0', '미리보기(prerelease)는 건너뜀');
         assert.equal(app.release.sha256, sha(zip), '.sha256 파일에서 값을 읽음');
         assert.equal(app.release.notes, '- 2.0');
+        s.app.deps.config.githubToken = token; // 조회는 토큰으로, 공개 다운로드는 토큰 없이
         const dl = await s.request('GET', '/api/apps/tool/download', { token: admin });
         if (token) {
           assert.equal(dl.status, 200);
@@ -430,13 +431,13 @@ test('통합 클라우드 업데이트: 방금 나온 버전도 ‘확인’하�
         ]),
       );
     }
-    if (req.url.startsWith('/dl/latest.yml')) return res.end(`version: ${new URL(req.url, 'http://x').searchParams.get('v')}\n`);
+    if (req.url === '/api/yml') return res.end(`version: ${version}\n`);
     res.statusCode = 404;
     res.end();
   });
   await new Promise((r) => gh.listen(0, '127.0.0.1', r));
   t.after(() => gh.close());
-  const s = await startServer({ githubApi: `http://127.0.0.1:${gh.address().port}`, launcherRepo: 'owner/cloud' });
+  const s = await startServer({ githubApi: `http://127.0.0.1:${gh.address().port}`, launcherRepo: 'owner/cloud', githubToken: 'ghp_test' });
   t.after(() => s.close());
   const catalog = s.app.deps.catalog;
 

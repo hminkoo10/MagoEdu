@@ -46,7 +46,7 @@ async function fixture(t, overrides = {}) {
   });
   await new Promise((resolve) => gh.listen(0, '127.0.0.1', resolve));
   const config = loadConfig({}, {
-    dataDir, adminPassword: 'admin-pass-1234', launcherRepo: 'owner/cloud',
+    dataDir, adminPassword: 'admin-pass-1234', launcherRepo: 'owner/cloud', githubToken: 'test-token',
     githubApi: `http://127.0.0.1:${gh.address().port}`, catalogFile: path.join(dataDir, 'catalog.json'),
     background: false, quiet: true, ...overrides,
   });
@@ -85,6 +85,7 @@ test('GitHub 캐시: 재시작 직후 런처와 앱 버전을 복원하고 바�
   s.state.status = 403;
   s.state.headers = { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.ceil(Date.now() / 1000) + 3600) };
   const before = s.requests.length;
+  s.config.githubToken = ''; // API 대체 조회로 채운 캐시는 토큰 없이도 쓸 수 있음
   await s.restart();
   assert.deepEqual(s.catalog.launcher, launcher);
   assert.deepEqual(s.catalog.get('tool').release, release);

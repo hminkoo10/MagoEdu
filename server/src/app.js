@@ -40,6 +40,7 @@ function loadConfig(env = process.env, overrides = {}) {
     adminPassword: env.ADMIN_PASSWORD || '',
     githubToken: env.GITHUB_TOKEN || '',
     githubApi: (env.GITHUB_API || 'https://api.github.com').replace(/\/+$/, ''),
+    githubOidcJwksUrl: 'https://token.actions.githubusercontent.com/.well-known/jwks',
     launcherRepo: env.LAUNCHER_REPO === undefined ? 'hminkoo10/MagoEdu' : env.LAUNCHER_REPO,
     trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true',
     catalogRefreshMinutes: intOr(env.CATALOG_REFRESH_MINUTES, 10, 1, 24 * 60),
@@ -137,6 +138,7 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/users').register(router, deps);
   require('./routes/admin').register(router, deps);
   require('./routes/apps').register(router, deps);
+  require('./routes/ci').register(router, deps);
   require('./routes/sync').register(router, deps);
   require('./routes/shared').register(router, deps);
   require('./routes/students').register(router, deps);

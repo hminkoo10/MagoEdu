@@ -15,7 +15,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { Readable } = require('node:stream');
-const { compareVersions, jsonParse } = require('./util');
+const { compareVersions, jsonParse, bad, notFound } = require('./util');
 
 const SHA_RE = /^[0-9a-f]{64}$/;
 const DEFAULT_LOCAL_ASSET = '^[A-Za-z0-9_.-]+?-(\\d+\\.\\d+\\.\\d+)(?:-win-x64)?\\.zip$';
@@ -28,7 +28,7 @@ const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const isUrl = (v) => typeof v === 'string' && /^https?:\/\/[^\s]+$/.test(v);
 const isTime = (v) => Number.isSafeInteger(v) && v >= 0 && v <= 8640000000000000;
 const isAsset = (a) => isObject(a) && typeof a.name === 'string' && !!a.name &&
-  Number.isSafeInteger(a.size) && a.size >= 0 && isUrl(a.url) && isUrl(a.apiUrl) && !('localFile' in a) &&
+  Number.isSafeInteger(a.size) && a.size >= 0 && isUrl(a.url) && (a.apiUrl == null || isUrl(a.apiUrl)) && !('localFile' in a) &&
   (a.digest == null || typeof a.digest === 'string');
 const isReleases = (list) => Array.isArray(list) && list.every((r) => isObject(r) &&
   ['draft', 'prerelease'].every((k) => r[k] === undefined || typeof r[k] === 'boolean') &&
@@ -245,6 +245,7 @@ class Catalog {
   }
 
   async _githubRequest(url, max = 0) {
+    if (!this.config.githubToken) throw new Error('GitHub API 대체 조회는 토큰을 설정해야 해요.');
     this._checkGithubLimit();
     const entry = this._githubCache.responses[url];
     const cached = entry && (max ? typeof entry.body === 'string' && !!entry.body : isReleases(entry.body)) ? entry : null;
@@ -368,10 +369,66 @@ class Catalog {
   }
 
   // ---------------- 새로 고침 ----------------
+  _storeRelease(app, release, checkedAt) {
+    this.db.run('UPDATE apps SET release = ?, release_checked_at = ?, release_error = NULL WHERE id = ?',
+      release ? JSON.stringify(release) : null, checkedAt, app.id);
+    if (app.source.type === 'github') {
+      this._githubCache.apps = { ...this._githubCache.apps,
+        [app.id]: { source: JSON.stringify(app.source), release, checkedAt } };
+    }
+  }
+
+  // 인증된 repository 에 속한 항목만 갱신한다. 관계없는 플랫폼·태그는 그대로 둔다.
+  acceptCiRelease(repo, body) {
+    const apps = this.list({ includeDisabled: true }).filter((a) => a.source.type === 'github' && a.source.repo === repo);
+    const isLauncherRepo = repo === this.config.launcherRepo;
+    if (!apps.length && !isLauncherRepo) throw notFound('등록된 GitHub 저장소가 아니에요.');
+    const now = Date.now();
+    const releaseUrl = `https://github.com/${repo}/releases/tag/${encodeURIComponent(body.tag)}`;
+    const assets = body.assets.map((a) => ({ ...a, sha256: a.sha256.toLowerCase(),
+      url: `https://github.com/${repo}/releases/download/${encodeURIComponent(body.tag)}/${encodeURIComponent(a.name)}` }));
+    const changes = [];
+    for (const app of apps) {
+      if (app.source.tagPrefix && !body.tag.startsWith(app.source.tagPrefix)) continue;
+      const re = new RegExp(app.source.asset);
+      const asset = assets.find((a) => re.test(a.name));
+      if (!asset) continue;
+      if (re.exec(asset.name)?.[1] !== body.version) throw bad('파일 이름과 알림의 버전이 달라요.');
+      if (app.release && compareVersions(body.version, app.release.version) < 0) continue;
+      changes.push({ app, release: { version: body.version, fileName: asset.name, size: asset.size,
+        sha256: asset.sha256, url: asset.url, tag: body.tag, releaseUrl, notes: body.notes, publishedAt: now } });
+    }
+    let launcher = null;
+    const setup = assets.find((a) => LAUNCHER_SETUP_RE.test(a.name));
+    if (body.latestYml !== undefined || (isLauncherRepo && setup)) {
+      if (!isLauncherRepo || !setup || setup.name !== `MagoEduCloud-Setup-${body.version}.exe` ||
+          !assets.some((a) => a.name === 'latest.yml') || !body.latestYml) throw bad('통합 클라우드 설치 파일과 latest.yml 이 필요해요.');
+      if (!this.launcher || compareVersions(body.version, this.launcher.version) >= 0) {
+        launcher = { version: body.version, ymlText: body.latestYml, setupName: setup.name,
+          assets: Object.fromEntries(assets.map((a) => [a.name, a])), notes: body.notes, publishedAt: now };
+      }
+    }
+    // 모든 파일 정보를 확인한 뒤 저장한다. 잘못된 런처 알림이 앱만 바꾸지 않게 한다.
+    this.db.tx(() => {
+      for (const { app, release } of changes) this._storeRelease(app, release, now);
+    });
+    const updated = changes.map(({ app }) => app.id);
+    if (launcher) {
+      this.launcher = launcher;
+      this.launcherError = null;
+      this._launcherCheckedAt = now;
+      this._githubCache.launcher = { repo, release: launcher };
+      updated.push('launcher');
+    }
+    if (updated.length) this._saveGithubCache();
+    return updated;
+  }
+
   async refreshApp(id) {
     const app = this.get(id);
     if (!app) return null;
     if (app.source.type === 'web') return app; // 웹 프로그램은 찾을 버전이 없음
+    if (app.source.type === 'github' && !this.config.githubToken) return app; // CI 알림·디스크 캐시만 사용
     let release = null;
     let error = null;
     try {
@@ -384,15 +441,8 @@ class Catalog {
     if (error) {
       this.db.run('UPDATE apps SET release_checked_at = ?, release_error = ? WHERE id = ?', Date.now(), error, id);
     } else {
-      const checkedAt = Date.now();
-      this.db.run(
-        'UPDATE apps SET release = ?, release_checked_at = ?, release_error = NULL WHERE id = ?',
-        release ? JSON.stringify(release) : null,
-        checkedAt,
-        id,
-      );
+      this._storeRelease(app, release, Date.now());
       if (app.source.type === 'github') {
-        this._githubCache.apps = { ...this._githubCache.apps, [id]: { source: JSON.stringify(app.source), release, checkedAt } };
         this._saveGithubCache();
       }
     }
@@ -404,12 +454,12 @@ class Catalog {
     try {
       const local = await this._localLauncher();
       if (local) this.launcher = local;
-      else if (this.config.launcherRepo) {
+      else if (this.config.launcherRepo && this.config.githubToken) {
         const release = await this._githubLauncher(this.config.launcherRepo);
         this.launcher = release;
         this._githubCache.launcher = { repo: this.config.launcherRepo, release };
         this._saveGithubCache();
-      } else this.launcher = null;
+      } else if (!this.config.launcherRepo) this.launcher = null;
       this.launcherError = null;
     } catch (err) {
       this.launcherError = String(err.message || err);
@@ -418,7 +468,7 @@ class Catalog {
     return this.launcher;
   }
 
-  /** 통합 클라우드가 업데이트를 물을 때: 확인한 지 1분이 지났으면 다시 확인해서, 방금 나온 버전도 바로 알려 준다 */
+  /** 1분마다 로컬 파일 확인. GitHub API 대체 조회는 토큰이 있을 때만 한다. */
   async freshLauncher(maxAgeMs = 60 * 1000) {
     if (Date.now() - this._launcherCheckedAt >= maxAgeMs) {
       this._launcherFresh ??= this.refreshLauncher().finally(() => (this._launcherFresh = null));
@@ -522,7 +572,7 @@ class Catalog {
       fs.createReadStream(asset.localFile).pipe(res);
       return undefined;
     }
-    if (!this.config.githubToken) {
+    if (!this.config.githubToken || !asset.apiUrl) {
       res.writeHead(302, { location: asset.url, 'cache-control': 'no-store' });
       return res.end();
     }
