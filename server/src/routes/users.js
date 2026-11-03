@@ -19,6 +19,7 @@ const {
   DAY,
 } = require('../util');
 const { hashPassword } = require('../security');
+const { MEMBERS } = require('../sharing');
 
 function register(router, deps) {
   const { db, svc } = deps;
@@ -274,6 +275,104 @@ function register(router, deps) {
   });
 
   // ---------------- 계정 삭제 ----------------
+  // 학원 공간에 남긴 것(members/<계정>/ 파일, 주인인 묶음, 담당 학생)은 같은 학원 원장에게 넘긴다.
+  // 개인 공간 파일은 함께 지운다. 넘겨받을 원장이 없으면 학원 공간 것은 그대로 둔다 (예전처럼)
+
+  /** 넘겨받을 수 있는 사람: 같은 학원 원장 (학원이 있는 운영자도, 원장 다음에) */
+  function receivers(target) {
+    if (target.academy_id == null) return [];
+    return db.all(
+      "SELECT * FROM users WHERE academy_id = ? AND role IN ('director', 'admin') AND id != ? ORDER BY role = 'admin', created_at",
+      target.academy_id,
+      target.id,
+    );
+  }
+
+  /** uid 가 없으면 지우는 사람(원장일 때), 아니면 처음 원장 */
+  function pickReceiver(actor, target, uid) {
+    const list = receivers(target);
+    if (uid) {
+      const r = list.find((u) => u.uid === uid);
+      if (!r) throw bad('넘겨받을 원장을 찾을 수 없어요.', 'invalid_receiver');
+      return r;
+    }
+    return list.find((u) => u.id === actor.id) || list[0] || null;
+  }
+
+  /** 넘길 파일: members/<계정>/ 의 하위 폴더 것만. 바로 아래 파일(예: 오답노트 profile.json = 그 사람 이름)은 그 사람에 대한 것이라 그대로 둠 */
+  function memberFiles(target) {
+    if (target.academy_id == null) return [];
+    const prefix = `${MEMBERS}/${target.uid}/`;
+    return db
+      .all('SELECT * FROM shared_files WHERE academy_id = ? AND deleted = 0 AND substr(path, 1, ?) = ?', target.academy_id, prefix.length, prefix)
+      .filter((f) => f.path.slice(prefix.length).includes('/'));
+  }
+
+  function handoverCounts(target) {
+    const files = memberFiles(target);
+    const aca = target.academy_id ?? -1;
+    return {
+      files: files.length,
+      bytes: files.reduce((n, f) => n + f.size, 0),
+      items: db.get('SELECT COUNT(*) AS n FROM shared_items WHERE academy_id = ? AND owner_id = ?', aca, target.id).n,
+      students: db.get('SELECT COUNT(*) AS n FROM students WHERE academy_id = ? AND teacher_uid = ? AND purged_at IS NULL', aca, target.uid).n,
+    };
+  }
+
+  /** db.tx 안에서. members/<target>/... → members/<to>/... (원장에게 같은 경로가 있으면 원래 자리에 둠 — 원장은 볼 수 있음) */
+  function handOver(target, to, actor) {
+    const aca = target.academy_id;
+    const from = `${MEMBERS}/${target.uid}/`;
+    const dest = `${MEMBERS}/${to.uid}/`;
+    const out = { files: 0, kept: 0, items: 0, students: 0 };
+    const touched = new Map(); // 프로그램 → 마지막 seq
+    const now = Date.now();
+    for (const f of memberFiles(target)) {
+      const path = dest + f.path.slice(from.length);
+      const dst = db.get('SELECT * FROM shared_files WHERE academy_id = ? AND app_id = ? AND path = ?', aca, f.app_id, path);
+      if (dst && !dst.deleted) {
+        out.kept += 1;
+        continue;
+      }
+      const s1 = deps.nextSeq();
+      if (dst) {
+        db.run(
+          'UPDATE shared_files SET rev = rev + 1, seq = ?, sha256 = ?, size = ?, mtime = ?, deleted = 0, device_id = NULL, updated_by = ?, updated_at = ? WHERE id = ?',
+          s1, f.sha256, f.size, f.mtime, f.updated_by, now, dst.id,
+        );
+      } else {
+        db.run(
+          `INSERT INTO shared_files(academy_id, app_id, path, rev, seq, sha256, size, mtime, deleted, device_id, updated_by, updated_at)
+           VALUES (?, ?, ?, 1, ?, ?, ?, ?, 0, NULL, ?, ?)`,
+          aca, f.app_id, path, s1, f.sha256, f.size, f.mtime, f.updated_by, now,
+        );
+      }
+      const s2 = deps.nextSeq();
+      db.run('UPDATE shared_files SET rev = rev + 1, seq = ?, sha256 = NULL, size = 0, deleted = 1, device_id = NULL, updated_at = ? WHERE id = ?', s2, now, f.id);
+      touched.set(f.app_id, s2);
+      out.files += 1;
+    }
+    out.items = Number(db.run('UPDATE shared_items SET owner_id = ? WHERE academy_id = ? AND owner_id = ?', to.id, aca, target.id).changes);
+    out.students = Number(
+      db.run(
+        'UPDATE students SET teacher_uid = ?, rev = rev + 1, updated_by = ?, updated_at = ? WHERE academy_id = ? AND teacher_uid = ? AND purged_at IS NULL',
+        to.uid, actor.uid, now, aca, target.uid,
+      ).changes,
+    );
+    return { out, touched };
+  }
+
+  router.get('/api/users/:id/handover', (ctx) => {
+    const actor = svc.requireRole(ctx, 'admin', 'director');
+    const target = svc.userByUid(ctx.params.id);
+    svc.assertManage(actor, target);
+    return {
+      ...handoverCounts(target),
+      to: receivers(target).map((u) => ({ id: u.uid, name: u.name, role: u.role })),
+      defaultTo: pickReceiver(actor, target, null)?.uid || null,
+    };
+  });
+
   router.delete('/api/users/:id', (ctx) => {
     const actor = svc.requireRole(ctx, 'admin', 'director');
     const target = svc.userByUid(ctx.params.id);
@@ -281,12 +380,21 @@ function register(router, deps) {
     if (target.role === 'admin' && svc.activeAdminCount() <= 1 && target.status === 'active') {
       throw bad('마지막 운영자 계정은 삭제할 수 없어요.');
     }
+    const to = pickReceiver(actor, target, str(ctx.query.get('to'), 64));
+    let handed = null;
     db.tx(() => {
+      if (to) handed = handOver(target, to, actor);
       db.run('DELETE FROM users WHERE id = ?', target.id); // 세션·파일 기록은 함께 지워짐
     });
+    if (handed) {
+      for (const [appId, seq] of handed.touched) deps.events.publishAcademy(target.academy_id, appId, seq, null);
+      if (handed.out.students) deps.events.publishAcademyInfo(target.academy_id, 'students');
+    }
     deps.blobs.scheduleGc();
-    svc.audit(ctx, 'user.delete', label(target), { role: target.role }, target.academy_id);
-    return { ok: true };
+    const moved = handed && Object.values(handed.out).some(Boolean);
+    const detail = { role: target.role, ...(moved && { to: label(to), ...handed.out }) };
+    svc.audit(ctx, 'user.delete', label(target), detail, target.academy_id);
+    return { ok: true, handedTo: to ? { id: to.uid, name: to.name, ...handed.out } : null };
   });
 
   // ---------------- 학원 ----------------

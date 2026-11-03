@@ -381,15 +381,29 @@ export class PeopleView {
 
   async remove(u) {
     const typed = input({ placeholder: u.username });
+    // 학원 공간에 남긴 것(개인 폴더 파일, 만든 공유 자료, 담당 학생)은 원장에게 넘김 (예전 서버면 묻지 않음)
+    const ho = await this.cloud.api('GET', `/api/users/${u.id}/handover`).catch(() => null);
+    const what = ho
+      ? [ho.files && `파일 ${ho.files}개(${bytes(ho.bytes)})`, ho.items && `만든 공유 자료 ${ho.items}개`, ho.students && `담당 학생 ${ho.students}명`].filter(Boolean)
+      : [];
+    const pick = what.length && ho.to.length > 1 ? select(ho.to.map((r) => [r.id, `${r.name} (${ROLE[r.role]})`]), ho.defaultTo) : null;
+    let handover = '';
+    if (what.length) {
+      const one = ho.to.find((r) => r.id === ho.defaultTo);
+      if (!one) handover = `학원 공간에 남긴 것(${what.join(', ')})은 넘겨받을 원장이 없어 그대로 남아요.\n`;
+      else if (pick) handover = `학원 공간에 남긴 것(${what.join(', ')})은 아래에서 고른 사람에게 넘겨요.\n`;
+      else handover = `학원 공간에 남긴 것(${what.join(', ')})은 ${one.name} ${ROLE[one.role]}에게 넘겨요.\n`;
+    }
     const ok = await dialog({
       title: `${u.name} 계정을 삭제할까요?`,
-      sub: `서버에 있는 이 계정의 데이터(${bytes(u.usageBytes)})도 함께 지워지고 되살릴 수 없어요.\n확인하려면 아이디 ${u.username} 을(를) 입력해 주세요.`,
-      body: typed,
+      sub: `서버에 있는 이 계정의 개인 데이터(${bytes(u.usageBytes)})는 함께 지워지고 되살릴 수 없어요.\n${handover}확인하려면 아이디 ${u.username} 을(를) 입력해 주세요.`,
+      body: pick ? h('div', {}, field('넘겨받을 사람', pick), field('아이디', typed)) : typed,
       ok: '삭제',
       danger: true,
       onOk: async () => {
         if (typed.value.trim().toLowerCase() !== u.username) throw new Error('아이디가 맞지 않아요.');
-        await this.cloud.api('DELETE', `/api/users/${u.id}`);
+        const to = pick ? pick.value : ho?.defaultTo;
+        await this.cloud.api('DELETE', `/api/users/${u.id}${to ? `?to=${encodeURIComponent(to)}` : ''}`);
       },
     });
     if (ok) {

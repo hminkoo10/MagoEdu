@@ -36,6 +36,7 @@ function detailText(e) {
   const d = e.detail;
   if (!d) return '';
   if (e.action === 'storage.cold_evict' || e.action === 'storage.cold_run') return `${d.groups || 0}묶음 · 파일 ${d.files || 0}개 · ${bytes(d.bytes || 0)}`;
+  if (e.action === 'user.delete' && d.to) return `학원 공간 자료는 ${d.to}에게 넘김 (파일 ${d.files || 0}개)`;
   if (e.action === 'user.create' && d.role) return { admin: '운영자', director: '원장', teacher: '선생님' }[d.role] || '';
   if (d.reason) return `이유: ${d.reason}`;
   if (d.academy) return d.academy;
