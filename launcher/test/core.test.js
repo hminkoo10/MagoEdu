@@ -61,6 +61,7 @@ test('통합 클라우드 핵심: 설치·동기화·보관 기간·예전 데�
     format: 1,
     id: 'notes',
     exe: 'bin/notes.sh',
+    stopArgs: ['--quit'],
     sync: { include: ['data/**'], exclude: ['**/*.tmp'], groups: [{ pattern: 'data/projects/*', cold: true }] },
     legacy: [{ id: 'old', label: '예전 노트', from: '{APPDATA}/OldNotes/data', to: 'sync/data' }],
   };
@@ -101,6 +102,8 @@ test('통합 클라우드 핵심: 설치·동기화·보관 기간·예전 데�
     assert.ok(steps.includes('download') && steps.includes('extract'));
     assert.equal(read(path.join(installed.dir, 'res', 'a.txt')), 'v1', '상위 폴더(Notes/)는 벗겨 냄');
     assert.equal(installed.manifest.exe, 'bin/notes.sh');
+    assert.deepEqual(installed.manifest.stopArgs, ['--quit']);
+    assert.deepEqual(JSON.parse(read(A.paths.app('notes').installed)).manifest.stopArgs, ['--quit']);
     assert.deepEqual(Object.keys(await inst.listInstalled()), ['notes']);
   });
 

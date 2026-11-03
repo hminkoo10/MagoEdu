@@ -9,6 +9,7 @@ const path = require('node:path');
 const { makePaths } = require('../src/core/paths');
 const { Store } = require('../src/main/store');
 const { Installer } = require('../src/core/installer');
+const { normalizeManifest } = require('../src/core/manifest');
 const { Runner, sanitizeRunning } = require('../src/core/runner');
 const { SyncEngine, sanitizeState } = require('../src/core/sync');
 const { sanitizeMarks } = require('../src/core/legacy');
@@ -20,6 +21,15 @@ const writeJson = (file, value) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(value));
 };
+
+test('종료 인수: 문자열 배열만 허용하고 개수·길이·제어문자를 검증', () => {
+  assert.deepEqual(normalizeManifest({ stopArgs: ['--quit', '공백 포함'] }).stopArgs, ['--quit', '공백 포함']);
+  const boundary = Array(8).fill('x'.repeat(200));
+  assert.deepEqual(normalizeManifest({ stopArgs: boundary }).stopArgs, boundary);
+  for (const stopArgs of [undefined, null, [], '--quit', [1], ['--quit', null], Array(9).fill('x'), ['x'.repeat(201)], ['a\n'], ['a\0'], ['a\x7f'], ['a\x85']]) {
+    assert.equal(normalizeManifest({ stopArgs }).stopArgs, null);
+  }
+});
 
 test('손으로 고친 config·계정 설정은 허용된 값만 읽는다', () => {
   const root = tmp('store');
@@ -88,10 +98,11 @@ test('installed.json의 버전·실행 파일은 앱 설치 폴더 안에서만 
     assert.equal(await installer.installed('notes'), null);
     writeJson(app.installed, { id: 'notes', version: '1.0.0', manifest: { exe: '../../outside.exe' } });
     assert.equal(await installer.installed('notes'), null);
-    writeJson(app.installed, { id: 'notes', version: '1.0.0', manifest: { exe: 'bin/notes.exe' } });
+    writeJson(app.installed, { id: 'notes', version: '1.0.0', manifest: { exe: 'bin/notes.exe', stopArgs: ['--quit'] } });
     const installed = await installer.installed('notes');
     assert.equal(installed.version, '1.0.0');
     assert.equal(installed.dir, path.join(app.root, '1.0.0'));
+    assert.deepEqual(installed.manifest.stopArgs, ['--quit']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

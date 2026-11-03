@@ -26,6 +26,9 @@ function normalizeManifest(raw, fallback = {}) {
     version: String(m.version || fallback.version || ''),
     exe,
     args: cleanList(m.args),
+    // 잘못된 종료 인수는 일부만 전달하지 않고 통째로 무시한다 (일반 실행으로 오인하지 않게).
+    stopArgs: Array.isArray(m.stopArgs) && m.stopArgs.length > 0 && m.stopArgs.length <= 8
+      && m.stopArgs.every((arg) => typeof arg === 'string' && arg.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(arg)) ? [...m.stopArgs] : null,
     sync: {
       include: cleanList(sync.include).length ? cleanList(sync.include) : ['**'],
       exclude: cleanList(sync.exclude),

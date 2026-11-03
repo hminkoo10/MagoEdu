@@ -12,6 +12,7 @@ const { EventEmitter } = require('node:events');
 const { writeJsonSync, readJsonSync } = require('./fsutil');
 
 const STOP_GRACE_MS = 10 * 1000; // 끄기: 창 닫기 신호 뒤 이만큼 기다렸다가 강제로 끔
+const STOP_POLL_MS = 100; // 이전 런처가 켠 앱은 exit 이벤트가 없으므로 끄는 동안만 확인
 const FOCUS_PROBE_MS = 5000;
 const FOCUS_SCRIPT = `
 $ProgressPreference = 'SilentlyContinue'
@@ -135,6 +136,7 @@ class Runner extends EventEmitter {
     this.killFocusProbe = killImpl;
     this.focusing = new Map();
     this.running = new Map(); // appId → { pid, child, startedAt, userId, version }
+    this.stopping = new Map();
   }
 
   isRunning(appId) {
@@ -254,21 +256,44 @@ class Runner extends EventEmitter {
     return { focused: !!(await focus()) };
   }
 
-  stop(appId, { graceMs = STOP_GRACE_MS } = {}) {
+  stop(appId, { graceMs = STOP_GRACE_MS, installed } = {}) {
     const r = this.running.get(appId);
-    const pid = r?.pid || readRunning(this.paths.app(appId).running)?.pid;
+    const info = this.runningInfo(appId);
+    const pid = info?.pid;
     if (!pid) return false;
+    const previous = this.stopping.get(appId);
+    if (previous?.pid === pid && previous.startedAt === info.startedAt) return true;
     // 사용자 끄기·로그아웃 뒤 강제 종료 코드가 와도 충돌로 복구하지 않는다.
     if (r) r.stopped = true;
+    // 직접 켠 앱은 당시 실행 파일, 이어받은 앱은 검증된 설치 정보를 쓴다.
+    const app = r?.installed || installed;
+    const stopArgs = app?.manifest.stopArgs;
+    const requestFailed = (err) => this.log.warn?.(`[끄기] ${appId}: 종료 요청 실패`, err.message);
     try {
-      if (process.platform === 'win32') this.spawn('taskkill', ['/PID', String(pid), '/T'], { windowsHide: true });
+      if (stopArgs?.length) {
+        // 요청 실행은 원본과 별개다. 기다리거나 실행 기록에 넣지 않고 실제 원본 종료를 확인한다.
+        const request = this.spawn(path.join(app.dir, ...app.manifest.exe.split('/')), stopArgs, {
+          cwd: app.dir,
+          env: r?.env,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        request.once('error', requestFailed);
+        request.unref?.();
+      } else if (process.platform === 'win32') this.spawn('taskkill', ['/PID', String(pid), '/T'], { windowsHide: true });
       else process.kill(pid, 'SIGTERM');
-    } catch {
-      return false;
+    } catch (err) {
+      if (!stopArgs?.length) return false;
+      requestFailed(err);
     }
-    // 창을 닫으면 트레이로 숨기만 하는 프로그램(타종)도 있어서, 잠시 뒤에도 켜져 있으면 강제로 끈다
-    setTimeout(() => {
-      if (!this.isRunning(appId) || this.runningInfo(appId)?.pid !== pid) return;
+    this.stopping.set(appId, info);
+    const sameRun = () => {
+      const current = this.runningInfo(appId);
+      return current?.pid === pid && current.startedAt === info.startedAt;
+    };
+    // 종료 요청을 무시하거나 창 닫기로 숨기만 하는 구버전도 있어서, 유예 뒤에도 켜져 있으면 강제로 끈다
+    const forceTimer = setTimeout(() => {
+      if (!sameRun()) return;
       try {
         if (process.platform === 'win32') this.spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
         else process.kill(pid, 'SIGKILL');
@@ -276,6 +301,22 @@ class Runner extends EventEmitter {
         /* 이미 꺼짐 */
       }
     }, graceMs).unref();
+    // 창 숨김을 종료로 보지 않는다. 실제 종료 뒤 바로 화면·동기화를 갱신하고 유예 타이머도 정리한다.
+    const poll = setInterval(() => {
+      if (sameRun()) return;
+      clearTimeout(forceTimer);
+      clearInterval(poll);
+      if (this.stopping.get(appId) === info) this.stopping.delete(appId);
+      // 직접 켠 앱은 child의 exit에서 이미 통지한다. 새 실행의 기록은 건드리지 않는다.
+      if (r || this.runningInfo(appId)) return;
+      try {
+        fs.rmSync(this.paths.app(appId).running, { force: true });
+      } catch {
+        /* 무시 */
+      }
+      this.emit('exit', appId, { code: null, restart: false, stopped: true, startedAt: info.startedAt, userId: info.userId });
+    }, STOP_POLL_MS);
+    poll.unref();
     return true;
   }
 }

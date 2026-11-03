@@ -1186,7 +1186,7 @@ class Cloud extends EventEmitter {
     this.autoLaunching.delete(id);
     this._cancelRestart(id);
     this.adopted.delete(id); // 직접 끈 이전 실행을 업데이트 재시작으로 오해하지 않음
-    return this.runner.stop(id);
+    return this.runner.stop(id, { installed: this.installed[id] });
   }
 
   /**
