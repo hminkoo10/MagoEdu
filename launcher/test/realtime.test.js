@@ -18,7 +18,7 @@ const { compileRules } = require('../src/core/rules');
 const { EventStream, parseBlock } = require('../src/core/events');
 const { Store } = require('../src/main/store');
 const { Cloud } = require('../src/main/cloud');
-const { linkName } = require('../src/main/shortcuts');
+const { Shortcuts } = require('../src/main/shortcuts');
 
 const quiet = { info() {}, warn() {}, error() {} };
 const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), `magoedu-${name}-`));
@@ -132,13 +132,33 @@ test('통합 클라우드: 실시간 동기화·바로 가기·안드로이드 �
   const paths = makePaths({ userData: path.join(root, 'roaming'), localData: path.join(root, 'local') });
   const store = new Store({ paths, defaults: { serverUrl: s.base } });
   const links = { written: [], removed: [] };
+  const shortcutDir = path.join(root, 'shortcuts');
+  const exePath = path.join(root, 'MagoEduCloud.exe');
+  const realShortcuts = new Shortcuts({
+    exePath,
+    desktopDir: path.join(shortcutDir, 'desktop'),
+    startMenuDir: path.join(shortcutDir, 'start'),
+    shell: {
+      writeShortcutLink(file, _action, opts) {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(opts));
+        return true;
+      },
+      readShortcutLink: () => ({ target: exePath }),
+    },
+    log: quiet,
+  });
   const shortcuts = {
-    fileName: linkName,
+    fileName: (name) => realShortcuts.fileName(name),
+    exists: (name) => realShortcuts.exists(name),
     write: (o) => {
       links.written.push(o);
-      return linkName(o.name);
+      return realShortcuts.write(o);
     },
-    remove: (name) => links.removed.push(name),
+    remove: (name) => {
+      links.removed.push(name);
+      return realShortcuts.remove(name);
+    },
   };
   const cloud = new Cloud({ paths, store, version: '1.0.0', log: quiet, shortcuts });
   t.after(() => cloud.shutdown());
@@ -173,7 +193,7 @@ test('통합 클라우드: 실시간 동기화·바로 가기·안드로이드 �
     assert.equal(w.name, '노트');
     assert.equal(w.desktop, true, '바탕 화면은 기본으로 켬');
     assert.equal(w.icon, path.join(inst.dir, 'bin', 'notes.sh'));
-    assert.deepEqual(store.config.shortcuts.notes, { desktop: true, name: '노트.lnk' });
+    assert.deepEqual(store.config.shortcuts.notes, { desktop: true, startMenu: true, name: '노트.lnk' });
     assert.ok(cloud.watchers.has('notes'));
     assert.equal(cloud.snapshot().apps.find((a) => a.id === 'notes').desktopShortcut, true);
   });
@@ -248,6 +268,22 @@ test('통합 클라우드: 실시간 동기화·바로 가기·안드로이드 �
     assert.equal(cloud.snapshot().apps.find((a) => a.id === 'notes').desktopShortcut, false);
     await cloud.setDesktopShortcut('notes', true);
     assert.equal(links.written[1].desktop, true);
+  });
+
+  await t.test('지운 바로 가기는 업데이트 때 되살리지 않고, 다시 켜면 실제 파일을 만듦', async () => {
+    const [desktop, startMenu] = realShortcuts._files('노트.lnk');
+    fs.rmSync(desktop, { force: true });
+    assert.equal(cloud._refreshShortcutState(), true);
+    links.written.length = 0;
+    cloud._writeShortcuts('notes');
+    assert.equal(fs.existsSync(desktop), false);
+    assert.equal(fs.existsSync(startMenu), true);
+    assert.equal(cloud.snapshot().apps.find((a) => a.id === 'notes').desktopShortcut, false);
+    assert.equal(store.config.shortcuts.notes.desktop, false);
+    await cloud.setDesktopShortcut('notes', true);
+    assert.equal(fs.existsSync(desktop), true);
+    assert.equal(fs.existsSync(startMenu), true);
+    assert.equal(cloud.snapshot().apps.find((a) => a.id === 'notes').desktopShortcut, true);
   });
 
   await t.test('안드로이드 항목은 설치·실행·동기화하지 않음', async () => {

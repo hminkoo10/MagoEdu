@@ -7,11 +7,84 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const { writeJsonSync, readJsonSync } = require('./fsutil');
 
 const STOP_GRACE_MS = 10 * 1000; // 끄기: 창 닫기 신호 뒤 이만큼 기다렸다가 강제로 끔
+const FOCUS_PROBE_MS = 5000;
+const FOCUS_SCRIPT = `
+$ProgressPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class MagoEduWindow {
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr extra);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr window);
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr window, int index);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
+  public delegate bool EnumWindowsProc(IntPtr window, IntPtr extra);
+  public static bool Focus(int pid) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((window, extra) => {
+      uint owner;
+      GetWindowThreadProcessId(window, out owner);
+      if (owner != pid || GetWindowTextLength(window) == 0 || (GetWindowLong(window, -20) & 0x80) != 0) return true;
+      // 숨긴 창(트레이)을 여기서 띄우면 프로그램은 숨긴 줄 알아서, 보이는 창(최소화 포함)만. 숨긴 창은 두 번째 실행으로 연다
+      if (IsWindowVisible(window)) { found = window; return false; }
+      return true;
+    }, IntPtr.Zero);
+    if (found == IntPtr.Zero) return false;
+    ShowWindowAsync(found, IsIconic(found) ? 9 : 5);
+    for (int i = 0; i < 20; i++) {
+      if (IsWindowVisible(found)) {
+        if (GetForegroundWindow() == found || SetForegroundWindow(found)) return true;
+      }
+      System.Threading.Thread.Sleep(25);
+    }
+    return false;
+  }
+}
+'@
+$targetPid = [int]$env:MAGOEDU_FOCUS_PID
+if ([MagoEduWindow]::Focus($targetPid)) { exit 0 }
+# 묶음 실행 파일이 실제 창을 자식 프로세스에 둔 경우 (PyInstaller 등)
+foreach ($child in (Get-CimInstance Win32_Process -Filter "ParentProcessId = $targetPid" -ErrorAction SilentlyContinue)) {
+  if ([MagoEduWindow]::Focus([int]$child.ProcessId)) { exit 0 }
+}
+exit 1
+`;
+
+function focusWindowByPid(pid, { platform = process.platform, execImpl = execFile } = {}) {
+  if (platform !== 'win32' || !Number.isInteger(pid) || pid <= 0) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    try {
+      execImpl('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(FOCUS_SCRIPT, 'utf16le').toString('base64')], {
+        env: { ...process.env, MAGOEDU_FOCUS_PID: String(pid) },
+        timeout: 8000,
+        windowsHide: true,
+      }, (err) => resolve(!err));
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+function killFocusProbe(child) {
+  if (process.platform !== 'win32') {
+    child.kill('SIGKILL');
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000 }, (err) => err ? reject(err) : resolve());
+  });
+}
 
 function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, requests = academy, academyInfo = false, ssoCode = '', dataKey = '', serverUrl, launcherVersion, trustFile }) {
   return {
@@ -39,11 +112,14 @@ function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = 
 }
 
 class Runner extends EventEmitter {
-  constructor({ paths, log = console, spawnImpl = spawn }) {
+  constructor({ paths, log = console, spawnImpl = spawn, focusImpl = focusWindowByPid, killImpl = killFocusProbe }) {
     super();
     this.paths = paths;
     this.log = log;
     this.spawn = spawnImpl;
+    this.focusImpl = focusImpl;
+    this.killFocusProbe = killImpl;
+    this.focusing = new Map();
     this.running = new Map(); // appId → { pid, child, startedAt, userId, version }
   }
 
@@ -87,7 +163,7 @@ class Runner extends EventEmitter {
       windowsHide: false,
     });
     const rec = { pid: child.pid, startedAt: Date.now(), userId: env.MAGOEDU_USER_ID, version: installed.version };
-    this.running.set(appId, { ...rec, child });
+    this.running.set(appId, { ...rec, child, env, installed });
     try {
       writeJsonSync(this.paths.app(appId).running, rec);
     } catch {
@@ -108,6 +184,59 @@ class Runner extends EventEmitter {
     });
     this.emit('start', appId, rec);
     return rec;
+  }
+
+  /** 먼저 기존 창을 찾고, 필요하면 같은 실행에 두 번째 실행을 전달한다. 연타는 한 번으로 합침 */
+  focus({ appId, timeoutMs = FOCUS_PROBE_MS }) {
+    if (this.focusing.has(appId)) return this.focusing.get(appId);
+    const work = this._focus(appId, timeoutMs).finally(() => this.focusing.delete(appId));
+    this.focusing.set(appId, work);
+    return work;
+  }
+
+  async _focus(appId, timeoutMs) {
+    const info = this.runningInfo(appId);
+    if (!info?.pid) return { focused: false };
+    const focus = () => Promise.resolve().then(() => this.focusImpl(info.pid)).catch(() => false);
+    if (await focus()) return { focused: true };
+    const r = this.running.get(appId);
+    // 다시 켠 런처는 원래 환경을 모르므로 PID로만 복구. 업데이트된 exe를 대신 실행하지 않음
+    if (r?.pid === info.pid && r.env && r.installed && r.installed.manifest.singleInstance !== false && !r.focusRelayFailed) {
+      const { installed, env } = r;
+      const m = installed.manifest;
+      const exe = path.join(installed.dir, ...m.exe.split('/'));
+      try {
+        if (!fs.existsSync(exe)) throw new Error('실행 파일이 없어요.');
+        const probe = this.spawn(exe, m.args || [], {
+          cwd: installed.dir,
+          env,
+          detached: false,
+          stdio: 'ignore',
+          windowsHide: false,
+        });
+        const probeExited = await new Promise((resolve) => {
+          let done = false;
+          let timer;
+          const finish = (exited) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            resolve(exited);
+          };
+          timer = setTimeout(() => finish(false), timeoutMs);
+          probe.once('exit', () => finish(true));
+          probe.once('error', () => finish(true));
+        });
+        if (!probeExited) {
+          r.focusRelayFailed = true;
+          await this.killFocusProbe(probe);
+        }
+      } catch (err) {
+        this.log.warn?.(`[창 복구] ${appId}: 두 번째 실행 전달 실패`, err.message);
+      }
+    }
+    if (this.runningInfo(appId)?.pid !== info.pid) return { focused: false };
+    return { focused: !!(await focus()) };
   }
 
   stop(appId, { graceMs = STOP_GRACE_MS } = {}) {
@@ -134,4 +263,4 @@ class Runner extends EventEmitter {
   }
 }
 
-module.exports = { Runner, buildEnv };
+module.exports = { Runner, buildEnv, focusWindowByPid };

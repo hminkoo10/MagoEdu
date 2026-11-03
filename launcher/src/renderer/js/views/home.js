@@ -255,9 +255,9 @@ export class HomeView {
       iconName = 'download';
       disabled = !a.release;
     } else if (a.running) {
-      label = '켜져 있음';
+      label = '열기';
       variant = 'soft';
-      iconName = 'circleCheck';
+      iconName = 'play';
     } else if (a.updateAvailable) {
       label = '업데이트';
       iconName = 'download';
@@ -447,12 +447,8 @@ export class HomeView {
         if (a.release) await openInApp(this.cloud, this.store, a.id);
         return;
       }
-      if (!a.installed || a.updateAvailable) {
+      if (!a.running && (!a.installed || a.updateAvailable)) {
         await this.cloud.install(a.id);
-        return;
-      }
-      if (a.running) {
-        toast(`${a.name}은(는) 이미 켜져 있어요. 작업 표시줄이나 트레이를 확인해 주세요.`, 'info');
         return;
       }
       await this.launch(a);

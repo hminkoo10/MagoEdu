@@ -35,14 +35,22 @@ class Shortcuts {
     return [path.join(this.desktopDir, file), path.join(this.startMenuDir, file)];
   }
 
+  exists(file) {
+    if (!file) return { desktop: false, startMenu: false };
+    const [desktop, startMenu] = this._files(file);
+    return { desktop: fs.existsSync(desktop), startMenu: fs.existsSync(startMenu) };
+  }
+
   /** 만들거나 다시 쓴다. 쓴 파일 이름을 돌려준다. previous: 지난번 이름 (프로그램 이름이 바뀌었으면 지움) */
-  write({ id, name, description, icon, desktop, previous }) {
+  write({ id, name, description, icon, desktop, startMenu = true, previous }) {
     const file = linkName(name);
     if (previous && previous !== file) this.remove(previous);
     const [desk, start] = this._files(file);
     const opts = { target: this.exePath, args: `magoedu://launch/${id}`, description: description || name, icon, iconIndex: 0 };
-    fs.mkdirSync(this.startMenuDir, { recursive: true });
-    if (!this.shell.writeShortcutLink(start, 'create', opts)) throw new Error('시작 메뉴 바로 가기를 만들지 못했어요.');
+    if (startMenu) {
+      fs.mkdirSync(this.startMenuDir, { recursive: true });
+      if (!this.shell.writeShortcutLink(start, 'create', opts)) throw new Error('시작 메뉴 바로 가기를 만들지 못했어요.');
+    }
     if (desktop) {
       if (!this.shell.writeShortcutLink(desk, 'create', opts)) throw new Error('바탕 화면 바로 가기를 만들지 못했어요.');
     } else {

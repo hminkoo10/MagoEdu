@@ -21,6 +21,7 @@ const SYNC_EVERY = 5 * 60 * 1000; // 실시간 알림이 끊겨 있어도 이 �
 const APPS_EVERY = 30 * 60 * 1000;
 const NOTICES_EVERY = 10 * 60 * 1000;
 const WATCH_EVERY = 15 * 1000;
+const SHORTCUTS_EVERY = 15 * 1000;
 const REMOTE_DELAY = 300; // 다른 기기에서 바뀌었다는 알림 → 잠깐 모았다가 받기
 const LOCAL_DELAY = 1000; // 이 컴퓨터에서 파일이 바뀜 → 쓰기가 끝나길 잠깐 기다렸다가 올리기
 const QUEUE_MAX_WAIT = 5000; // 계속 바뀌어도 이보다 오래 미루지는 않음
@@ -158,6 +159,7 @@ class Cloud extends EventEmitter {
     const running = this.runner.isRunning(a.id);
     const runInfo = running ? this.runner.runningInfo(a.id) : null;
     const updateAvailable = !!(inst && a.release && this.installer.needsUpdate(inst, a));
+    const shortcuts = this._shortcutState(a.id);
     return {
       id: a.id,
       name: a.name,
@@ -175,7 +177,8 @@ class Cloud extends EventEmitter {
       updateAvailable,
       task: this.tasks.get(a.id) || null,
       autoLaunch: acc ? acc.autoLaunch[a.id] ?? a.autoLaunchDefault : false,
-      desktopShortcut: this._shortcutRec(a.id).desktop,
+      desktopShortcut: shortcuts.desktop,
+      startMenuShortcut: shortcuts.startMenu,
       sync: this.syncInfo[a.id] || null,
     };
   }
@@ -474,6 +477,7 @@ class Cloud extends EventEmitter {
     this.apps = r.apps;
     this.installed = await this.installer.listInstalled();
     this._watchAll();
+    this._refreshShortcutState();
     this._ensureShortcuts();
     await this._loadIcons();
     await this._saveCachedCatalog();
@@ -1036,10 +1040,7 @@ class Cloud extends EventEmitter {
         sameUser();
       }
     }
-    if (this.runner.isRunning(id)) {
-      this._toast(`${this._name(id)}은(는) 이미 켜져 있어요`, 'info');
-      return { already: true };
-    }
+    if (this.runner.isRunning(id)) return this._focusRunning(id);
     if (!this.installed[id]) await this.install(id);
     else if (this.installer.needsUpdate(this.installed[id], this._app(id))) {
       await this.install(id, { quiet: true }).catch((err) => this._toast(`업데이트하지 못해 지금 버전으로 켤게요: ${err.message}`, 'warning'));
@@ -1051,7 +1052,8 @@ class Cloud extends EventEmitter {
     }
     return this._lock(id, async () => {
       // 바로 가기와 자동 실행이 거의 같이 부르면 먼저 켠 쪽만
-      if (this.runner.isRunning(id)) return { already: true };
+      sameUser();
+      if (this.runner.isRunning(id)) return this._focusRunning(id);
       this._setTask(id, { kind: 'launch', phase: 'sync', progress: null, text: '데이터를 맞추는 중' });
       try {
         sameUser();
@@ -1133,6 +1135,12 @@ class Cloud extends EventEmitter {
     return !!(inst && app && isDesktop(app) && !this.installer.needsUpdate(inst, app));
   }
 
+  async _focusRunning(id) {
+    const result = await this.runner.focus({ appId: id });
+    if (!result?.focused) throw new Error(`${this._name(id)}은(는) 켜져 있지만 창을 앞으로 가져오지 못했어요. 작업 표시줄이나 트레이에서 열어 주세요. 종료하려면 메뉴의 ‘끄기’를 눌러 주세요.`);
+    return { already: true, focused: true };
+  }
+
   _onAppExit(id, info) {
     this.emitState();
     if (info.restart && this.user && info.userId === this.user.id) {
@@ -1193,6 +1201,7 @@ class Cloud extends EventEmitter {
     every(APPS_EVERY, () => this.refreshApps().then(() => this._autoUpdate()).catch(() => {}));
     every(NOTICES_EVERY, () => this.refreshNotices().catch(() => {}));
     every(WATCH_EVERY, () => this._watchAdopted());
+    every(SHORTCUTS_EVERY, () => this._refreshShortcutState());
   }
 
   _stopTimers() {
@@ -1219,9 +1228,29 @@ class Cloud extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- 바로 가기 (바탕 화면·시작 메뉴)
-  // 이 컴퓨터 설정(config.shortcuts)에 { desktop, name(지난번 파일 이름) } 을 둔다. 바탕 화면은 기본으로 켬.
+  // 이 컴퓨터 설정(config.shortcuts)에 { desktop, startMenu, name(지난번 파일 이름) } 을 둔다. 처음에는 둘 다 켬.
   _shortcutRec(id) {
-    return { desktop: true, ...(this.store.config.shortcuts?.[id] || {}) };
+    return { desktop: true, startMenu: true, ...(this.store.config.shortcuts?.[id] || {}) };
+  }
+
+  _shortcutState(id) {
+    const rec = this.store.config.shortcuts?.[id];
+    if (!this.shortcuts || !rec?.name) return { desktop: false, startMenu: false };
+    const files = this.shortcuts.exists(rec.name);
+    if (rec.desktop !== files.desktop || rec.startMenu !== files.startMenu) this._saveShortcutRec(id, { ...rec, ...files });
+    return files;
+  }
+
+  _refreshShortcutState() {
+    if (!this.shortcuts) return false;
+    let changed = false;
+    for (const id of Object.keys(this.store.config.shortcuts || {})) {
+      const rec = this.store.config.shortcuts?.[id];
+      this._shortcutState(id);
+      if (rec !== this.store.config.shortcuts?.[id]) changed = true;
+    }
+    if (changed) this.emitState();
+    return changed;
   }
 
   _saveShortcutRec(id, rec) {
@@ -1231,24 +1260,29 @@ class Cloud extends EventEmitter {
     this.store.setConfig({ shortcuts: all });
   }
 
-  _writeShortcuts(id) {
+  _writeShortcuts(id, { restore = false, desktop } = {}) {
     if (!this.shortcuts) return;
     const inst = this.installed[id];
     const app = this.apps.find((a) => a.id === id);
     if (!inst || !isDesktop(app)) return;
-    const rec = this._shortcutRec(id);
     try {
+      this._shortcutState(id); // 업데이트 직전에 지웠거나 이름이 바뀌어도 삭제 의도를 먼저 기억
+      const rec = this._shortcutRec(id);
+      if (restore) rec.desktop = rec.startMenu = true;
+      if (desktop !== undefined) rec.desktop = desktop;
       const name = this.shortcuts.write({
         id,
         name: app?.name || inst.name || id,
         description: app?.description || '',
         icon: path.join(inst.dir, ...inst.manifest.exe.split('/')),
         desktop: rec.desktop,
+        startMenu: rec.startMenu,
         previous: rec.name,
       });
       this._saveShortcutRec(id, { ...rec, name });
     } catch (err) {
       this.log.warn?.(`[바로 가기] ${id}`, err.message);
+      if (restore || desktop !== undefined) throw err;
     }
   }
 
@@ -1276,8 +1310,7 @@ class Cloud extends EventEmitter {
   setDesktopShortcut(id, on) {
     if (!this.shortcuts) throw new Error('설치한 통합 클라우드에서만 바로 가기를 만들 수 있어요.');
     if (!this.installed[id]) throw new Error('프로그램을 먼저 설치해 주세요.');
-    this._saveShortcutRec(id, { ...this._shortcutRec(id), desktop: !!on });
-    this._writeShortcuts(id);
+    this._writeShortcuts(id, { restore: !!on, desktop: !!on });
     this.emitState();
     return !!on;
   }

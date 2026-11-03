@@ -88,6 +88,8 @@ function createWindow({ show }) {
   win.once('ready-to-show', () => {
     if (show) win.show();
   });
+  win.on('show', () => cloud.emitState());
+  win.on('focus', () => cloud.emitState());
   win.on('close', (e) => {
     if (quitting || !cloud.store.config.closeToTray || cloud.phase !== 'ready' || isTest) return;
     e.preventDefault();
@@ -123,6 +125,7 @@ function buildTrayMenu(state) {
           label: `${a.name}${a.running ? ' (켜져 있음)' : ''}`,
           click: () => doLaunch(a.id),
         });
+        if (a.running) items.push({ label: `${a.name} 끄기`, click: () => cloud.stop(a.id) });
       }
     }
     items.push({ type: 'separator' }, { label: '지금 동기화', click: () => cloud.syncAll() });
@@ -141,7 +144,7 @@ function createTray() {
   tray.setContextMenu(buildTrayMenu(cloud.snapshot()));
 }
 
-/** fromLink: 바로 가기·웹에서 부름 → 창은 꼭 필요할 때만 (설치·업데이트 진행, 예전 데이터 묻기, 오류, 이미 켜져 있음) */
+/** fromLink: 바로 가기·웹에서 부름 → 창은 꼭 필요할 때만 (설치·업데이트 진행, 예전 데이터 묻기, 오류) */
 async function doLaunch(id, { fromLink = false } = {}) {
   try {
     if (fromLink && !cloud.canLaunchNow(id)) showWindow();
@@ -149,8 +152,6 @@ async function doLaunch(id, { fromLink = false } = {}) {
     if (r?.needsLegacy) {
       showWindow();
       send('navigate', { view: 'home', legacyFor: id, legacy: r.needsLegacy });
-    } else if (r?.already && fromLink) {
-      showWindow();
     }
   } catch (err) {
     if (fromLink) showWindow();
