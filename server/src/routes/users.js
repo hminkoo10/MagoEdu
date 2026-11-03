@@ -154,7 +154,7 @@ function register(router, deps) {
       args.push(validateName(body.name));
       changes.name = true;
     }
-    if (body.username !== undefined) {
+    if (body.username !== undefined && normalizeUsername(body.username) !== target.username) {
       const username = normalizeUsername(body.username);
       if (db.get('SELECT 1 FROM users WHERE username = ? AND id != ?', username, target.id)) {
         throw bad('이미 있는 아이디예요.', 'username_taken');
@@ -237,10 +237,8 @@ function register(router, deps) {
       throw bad('마지막 운영자 계정은 중지할 수 없어요.');
     }
     const reason = str(body.reason, 200) || null;
-    db.tx(() => {
-      db.run("UPDATE users SET status = 'suspended', suspended_reason = ?, updated_at = ? WHERE id = ?", reason, Date.now(), target.id);
-      svc.revokeSessions(target.id);
-    });
+    // 로그인해 둔 기기는 다음에 서버에 물을 때 '사용이 중지된 계정'이라는 답을 받고 로그아웃된다 (services.authenticate)
+    db.run("UPDATE users SET status = 'suspended', suspended_reason = ?, updated_at = ? WHERE id = ?", reason, Date.now(), target.id);
     svc.audit(ctx, 'user.suspend', label(target), reason ? { reason } : null, target.academy_id);
     return { user: svc.publicUser(svc.userByUid(target.uid), { withUsage: true }) };
   });
@@ -249,7 +247,10 @@ function register(router, deps) {
     const actor = svc.requireRole(ctx, 'admin', 'director');
     const target = svc.userByUid(ctx.params.id);
     svc.assertManage(actor, target);
-    db.run("UPDATE users SET status = 'active', suspended_reason = NULL, updated_at = ? WHERE id = ?", Date.now(), target.id);
+    db.tx(() => {
+      db.run("UPDATE users SET status = 'active', suspended_reason = NULL, updated_at = ? WHERE id = ?", Date.now(), target.id);
+      svc.revokeSessions(target.id); // 사용 중지 전 로그인은 되살리지 않음 (다시 로그인)
+    });
     svc.audit(ctx, 'user.activate', label(target), null, target.academy_id);
     return { user: svc.publicUser(svc.userByUid(target.uid), { withUsage: true }) };
   });
@@ -302,6 +303,9 @@ function register(router, deps) {
         createdAt: a.created_at,
         directors: db.get("SELECT COUNT(*) AS n FROM users WHERE academy_id = ? AND role = 'director'", a.id).n,
         teachers: db.get("SELECT COUNT(*) AS n FROM users WHERE academy_id = ? AND role = 'teacher'", a.id).n,
+        quotaMb: a.quota_mb ?? null, // null = 기본 학원 용량
+        usageBytes: svc.academyUsageBytes(a.id),
+        quotaBytes: svc.academyQuotaBytes(a.id),
       })),
     };
   });
@@ -323,11 +327,22 @@ function register(router, deps) {
     const a = db.get('SELECT * FROM academies WHERE id = ?', id);
     if (!a) throw notFound('학원을 찾을 수 없어요.');
     const body = await readJson(ctx.req);
-    const name = str(body.name, 60);
-    if (!name) throw bad('학원 이름을 입력해 주세요.');
-    db.run('UPDATE academies SET name = ? WHERE id = ?', name, id);
-    svc.audit(ctx, 'academy.update', `${a.name} → ${name}`, null, id);
-    return { academy: { id, name } };
+    let name = a.name;
+    if (body.name !== undefined) {
+      name = str(body.name, 60);
+      if (!name) throw bad('학원 이름을 입력해 주세요.');
+      if (name !== a.name) {
+        db.run('UPDATE academies SET name = ? WHERE id = ?', name, id);
+        svc.audit(ctx, 'academy.update', `${a.name} → ${name}`, null, id);
+      }
+    }
+    if (body.quotaMb !== undefined) {
+      if (actor.role !== 'admin') throw forbidden('학원 용량은 운영자만 바꿀 수 있어요.');
+      const q = body.quotaMb === null ? null : intOr(body.quotaMb, null, 0, 1024 * 1024);
+      db.run('UPDATE academies SET quota_mb = ? WHERE id = ?', q, id);
+      svc.audit(ctx, 'academy.quota', name, { quotaMb: q }, id);
+    }
+    return { academy: { id, name, quotaMb: db.get('SELECT quota_mb FROM academies WHERE id = ?', id).quota_mb ?? null } };
   });
 
   router.delete('/api/academies/:id', (ctx) => {

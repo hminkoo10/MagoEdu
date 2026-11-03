@@ -102,6 +102,22 @@ function register(router, deps) {
        FROM files WHERE user_id = ? GROUP BY app_id`,
       user.id,
     );
+    // 학원 공간 (같은 학원 사람들이 함께 쓰는 파일, 예: 오답노트 교재) — 계정 용량과 따로 센다
+    let academy = null;
+    if (user.academy_id) {
+      const shared = db.all(
+        `SELECT app_id, COUNT(*) AS files, COALESCE(SUM(size), 0) AS bytes, MAX(updated_at) AS last_change
+         FROM shared_files WHERE academy_id = ? AND deleted = 0 GROUP BY app_id`,
+        user.academy_id,
+      );
+      academy = {
+        id: user.academy_id,
+        name: svc.academyName(user.academy_id),
+        usageBytes: svc.academyUsageBytes(user.academy_id),
+        quotaBytes: svc.academyQuotaBytes(user.academy_id),
+        apps: shared.map((r) => ({ appId: r.app_id, files: r.files, bytes: r.bytes, lastChange: r.last_change })),
+      };
+    }
     return {
       usageBytes: svc.usageBytes(user.id),
       quotaBytes: svc.quotaBytes(user),
@@ -112,6 +128,7 @@ function register(router, deps) {
         evictedGroups: r.evicted_groups,
         lastChange: r.last_change,
       })),
+      academy,
     };
   });
 

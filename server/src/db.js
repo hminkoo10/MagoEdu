@@ -207,6 +207,11 @@ const MIGRATIONS = [
     PRIMARY KEY (academy_id, app_id, item)
   );
   `,
+
+  // 5: 학원 공간 용량 (NULL = 서버 설정의 기본 학원 용량, 0 = 제한 없음)
+  `
+  ALTER TABLE academies ADD COLUMN quota_mb INTEGER;
+  `,
 ];
 
 function openDb(file) {

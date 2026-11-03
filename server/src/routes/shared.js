@@ -8,7 +8,8 @@
 //
 // 개인 동기화(routes/sync.js)와 같은 방식이다: 파일마다 rev, 올릴 때 baseRev 가 다르면 409.
 // 누가 보고 쓰는지는 sharing.js 의 경로 규칙. 권한이 없으면 403.
-// 학원 공간은 용량 한도와 오래 안 쓴 데이터 정리(콜드 스토리지)가 없다.
+// 학원 공간은 계정 용량과 따로 학원마다 용량 한도가 있다 (academies.quota_mb, 없으면 서버 설정의 기본 학원 용량).
+// 오래 안 쓴 데이터 정리(콜드 스토리지)는 없다.
 
 const { HttpError, bad, forbidden, notFound, intOr } = require('../util');
 const { SHA_RE } = require('../storage');
@@ -50,6 +51,18 @@ function register(router, deps) {
 
   function conflict(entry) {
     return new HttpError(409, '다른 컴퓨터에서 먼저 바뀌었어요.', 'conflict', { entry: sharedEntry(entry) });
+  }
+
+  function checkQuota(aca, cur, newSize) {
+    const quota = svc.academyQuotaBytes(aca);
+    if (!quota) return;
+    const used = svc.academyUsageBytes(aca) - (cur && !cur.deleted ? cur.size : 0);
+    if (used + newSize > quota) {
+      throw new HttpError(507, '학원 공간이 꽉 찼어요. 쓰지 않는 자료를 지우거나 운영자에게 학원 용량을 늘려 달라고 해 주세요.', 'academy_quota_exceeded', {
+        usageBytes: used,
+        quotaBytes: quota,
+      });
+    }
   }
 
   // ---------------- 목록 ----------------
@@ -115,7 +128,10 @@ function register(router, deps) {
       if (!same || !blobs.has(wantSha)) throw notFound('서버에 같은 내용이 없어요.', 'no_blob');
       sha = wantSha;
       size = same.size;
+      checkQuota(aca, cur, size);
     } else {
+      const declared = Number(ctx.req.headers['content-length'] ?? ctx.req.headers['x-content-size']);
+      if (Number.isFinite(declared)) checkQuota(aca, cur, declared);
       const got = await blobs.receive(ctx.req, config.maxFileBytes);
       tmp = got.file;
       sha = got.sha256;
@@ -123,6 +139,12 @@ function register(router, deps) {
       if (wantSha && wantSha !== sha) {
         await blobs.discard(tmp);
         throw bad('받은 파일이 보낸 파일과 달라요. 다시 보내 주세요.', 'checksum_mismatch');
+      }
+      try {
+        checkQuota(aca, cur, size);
+      } catch (err) {
+        await blobs.discard(tmp);
+        throw err;
       }
     }
 

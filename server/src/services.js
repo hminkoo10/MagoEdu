@@ -6,6 +6,7 @@ const { DAY, HttpError, forbidden, notFound, randomToken, sha256Hex, jsonParse, 
 
 const DEFAULT_SETTINGS = {
   defaultQuotaMb: 2048, // 계정마다 서버에 둘 수 있는 기본 용량
+  defaultAcademyQuotaMb: 10240, // 학원마다 학원 공간에 둘 수 있는 기본 용량 (같은 학원 사람들이 함께 씀)
   ticketDays: 7, // 인터넷이 끊겨도 프로그램을 켤 수 있는 기간
   sessionDays: 60, // 이 기간 동안 쓰지 않으면 자동 로그아웃
   auditKeepDays: 365,
@@ -27,6 +28,7 @@ function createServices({ db, config, log }) {
     const cur = getSettings();
     const next = { ...cur };
     if ('defaultQuotaMb' in patch) next.defaultQuotaMb = intOr(patch.defaultQuotaMb, cur.defaultQuotaMb, 0, 1024 * 1024);
+    if ('defaultAcademyQuotaMb' in patch) next.defaultAcademyQuotaMb = intOr(patch.defaultAcademyQuotaMb, cur.defaultAcademyQuotaMb, 0, 1024 * 1024);
     if ('ticketDays' in patch) next.ticketDays = intOr(patch.ticketDays, cur.ticketDays, 1, 90);
     if ('sessionDays' in patch) next.sessionDays = intOr(patch.sessionDays, cur.sessionDays, 1, 365);
     if ('auditKeepDays' in patch) next.auditKeepDays = intOr(patch.auditKeepDays, cur.auditKeepDays, 30, 3650);
@@ -78,6 +80,17 @@ function createServices({ db, config, log }) {
     return mb > 0 ? mb * 1024 * 1024 : 0; // 0 = 제한 없음
   }
 
+  // 학원 공간: 같은 학원 사람들이 함께 쓰는 파일 (routes/shared.js). 계정 용량과 따로 센다
+  function academyUsageBytes(academyId) {
+    return db.get('SELECT COALESCE(SUM(size), 0) AS n FROM shared_files WHERE academy_id = ? AND deleted = 0', academyId).n;
+  }
+
+  function academyQuotaBytes(academyId) {
+    const a = db.get('SELECT quota_mb FROM academies WHERE id = ?', academyId);
+    const mb = a?.quota_mb ?? getSettings().defaultAcademyQuotaMb;
+    return mb > 0 ? mb * 1024 * 1024 : 0; // 0 = 제한 없음
+  }
+
   function allowedApps(user) {
     return jsonParse(user.allowed_apps, null); // null = 모든 프로그램
   }
@@ -106,6 +119,10 @@ function createServices({ db, config, log }) {
     if (withUsage) {
       out.usageBytes = usageBytes(u.id);
       out.quotaBytes = quotaBytes(u);
+      if (u.academy_id) {
+        out.academyUsageBytes = academyUsageBytes(u.academy_id);
+        out.academyQuotaBytes = academyQuotaBytes(u.academy_id);
+      }
     }
     return out;
   }
@@ -175,6 +192,8 @@ function createServices({ db, config, log }) {
     const user = db.get('SELECT * FROM users WHERE id = ?', session.user_id);
     if (!user) throw new HttpError(401, '계정이 삭제되었어요.', 'session_invalid');
     if (user.status !== 'active') {
+      // 세션은 이때 지운다 (사용 중지할 때 바로 지우면 그 기기는 왜 로그아웃됐는지 알 수 없음)
+      db.run('DELETE FROM sessions WHERE id = ?', session.id);
       throw new HttpError(401, '사용이 중지된 계정이에요. 원장님이나 운영자에게 문의해 주세요.', 'account_suspended');
     }
     // 마지막 사용 시각은 1분에 한 번만 기록 (쓸 때마다 만료 기간도 늘어남)
@@ -222,6 +241,8 @@ function createServices({ db, config, log }) {
     academyName,
     usageBytes,
     quotaBytes,
+    academyUsageBytes,
+    academyQuotaBytes,
     allowedApps,
     canUseApp,
     publicUser,

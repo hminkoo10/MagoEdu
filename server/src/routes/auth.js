@@ -139,6 +139,15 @@ function register(router, deps) {
     };
   });
 
+  // 프로그램이 설정 파일에 서명하는 키 (매니페스트 dataSigning, docs/INTEGRATION.md) — 손으로 고친 설정 파일을 거부하려고.
+  // 서버마다 하나라서 같은 서버의 다른 계정 백업도 불러올 수 있다. 웹 화면에는 주지 않는다 (브라우저에서 바로 보이지 않게)
+  router.get('/api/me/data-key', (ctx) => {
+    const { session } = svc.authenticate(ctx);
+    if (!session.platform || session.platform === 'web') throw new HttpError(403, '이 기기에서는 받을 수 없어요.', 'web_session');
+    db.run('INSERT OR IGNORE INTO meta(key, value) VALUES (?, ?)', 'data_key', crypto.randomBytes(32).toString('base64url'));
+    return { dataKey: svc.meta('data_key') };
+  });
+
   function checkCurrentPassword(user, password) {
     if (!verifyPassword(String(password || ''), user.password_hash)) {
       throw bad('지금 비밀번호가 맞지 않아요.', 'invalid_password');
@@ -150,7 +159,7 @@ function register(router, deps) {
     const body = await readJson(ctx.req);
     checkCurrentPassword(user, body.password);
     const username = normalizeUsername(body.username);
-    if (username === user.username) return { user: svc.publicUser(user, { withUsage: true }) };
+    if (username === user.username) throw bad('지금 쓰는 아이디예요. 다른 아이디를 넣어 주세요.', 'same_username');
     if (db.get('SELECT 1 FROM users WHERE username = ? AND id != ?', username, user.id)) {
       throw bad('이미 있는 아이디예요.', 'username_taken');
     }

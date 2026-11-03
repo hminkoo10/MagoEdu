@@ -5,6 +5,9 @@
 const { readJson } = require('../http');
 const { bad, forbidden, notFound, intOr, str, jsonParse, DAY } = require('../util');
 
+// 공지 한도 (launcher/src/renderer/js/views/notices.js 와 같게)
+const NOTICE = { title: 100, body: 2000, lines: 50 };
+
 function register(router, deps) {
   const { db, svc } = deps;
 
@@ -46,10 +49,14 @@ function register(router, deps) {
   });
 
   function noticeFields(user, body, existing) {
-    const title = str(body.title ?? existing?.title, 100);
-    const text = str(body.body ?? existing?.body, 5000);
+    // 넘치면 몰래 자르지 않고 알려 준다 (화면의 글자 수 표시와 같은 한도)
+    const title = str(body.title ?? existing?.title, Infinity);
+    const text = str(body.body ?? existing?.body, Infinity).replace(/\r\n?/g, '\n');
     if (!title) throw bad('제목을 입력해 주세요.');
     if (!text) throw bad('내용을 입력해 주세요.');
+    if (title.length > NOTICE.title) throw bad(`제목은 ${NOTICE.title}자까지 쓸 수 있어요.`, 'too_long');
+    if (text.length > NOTICE.body) throw bad(`내용은 ${NOTICE.body.toLocaleString('ko-KR')}자까지 쓸 수 있어요.`, 'too_long');
+    if (text.split('\n').length > NOTICE.lines) throw bad(`내용은 ${NOTICE.lines}줄까지 쓸 수 있어요.`, 'too_long');
     let academyId = existing ? existing.academy_id : null;
     if (user.role === 'director') {
       academyId = user.academy_id;
@@ -190,6 +197,7 @@ function register(router, deps) {
         bytes: count('SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE deleted = 0 AND evicted = 0'),
         files: count('SELECT COUNT(*) AS n FROM files WHERE deleted = 0 AND evicted = 0'),
         evictedFiles: count('SELECT COUNT(*) AS n FROM files WHERE deleted = 0 AND evicted = 1'),
+        sharedBytes: count('SELECT COALESCE(SUM(size), 0) AS n FROM shared_files WHERE deleted = 0'),
         diskBytes: deps.blobs.diskUsage(),
       },
       server: { version: deps.version, build: deps.build, startedAt: deps.startedAt },

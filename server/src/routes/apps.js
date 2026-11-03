@@ -100,7 +100,7 @@ function register(router, deps) {
     }
     const want = str(ctx.query.get('version'), 30);
     if (!app.release) throw notFound('아직 배포된 버전이 없어요.', 'no_release');
-    if (want && want !== app.release.version) throw notFound('그 버전은 받을 수 없어요.', 'no_release');
+    if (want && want !== app.release.version) throw notFound(`그 버전은 받을 수 없어요. 지금 받을 수 있는 버전은 ${app.release.version} 이에요.`, 'no_release');
     await catalog.sendAsset(ctx.res, catalog.releaseAsset(app), ctx.req.method);
     return undefined;
   });
