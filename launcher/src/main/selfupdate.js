@@ -6,7 +6,7 @@
 
 const CHECK_EVERY = 6 * 60 * 60 * 1000;
 
-function setupSelfUpdate({ app, cloud, log, isWindowVisible }) {
+function setupSelfUpdate({ app, cloud, log, isWindowVisible, updater: suppliedUpdater }) {
   const set = (u) => {
     cloud.update = { current: app.getVersion(), ...u };
     cloud.emitState();
@@ -19,7 +19,7 @@ function setupSelfUpdate({ app, cloud, log, isWindowVisible }) {
 
   let updater;
   try {
-    ({ autoUpdater: updater } = require('electron-updater'));
+    updater = suppliedUpdater || require('electron-updater').autoUpdater;
   } catch (err) {
     log.error('electron-updater 를 불러오지 못했어요', err);
     set({ status: 'disabled', message: '자동 업데이트를 쓸 수 없어요.' });
@@ -33,6 +33,7 @@ function setupSelfUpdate({ app, cloud, log, isWindowVisible }) {
 
   let pending = null;
   let idleTimer = null;
+  let installing = false;
   const feed = () => {
     const url = cloud.store.config.serverUrl;
     if (!url) return false;
@@ -51,17 +52,24 @@ function setupSelfUpdate({ app, cloud, log, isWindowVisible }) {
     set({ ...pending, version: info.version, status: 'ready' });
     scheduleIdleInstall();
   });
-  updater.on('error', (err) => set({ ...pending, status: 'error', message: String(err?.message || err).slice(0, 300) }));
+  updater.on('error', (err) => {
+    installing = false;
+    set({ ...pending, status: 'error', message: String(err?.message || err).slice(0, 300) });
+  });
 
-  function scheduleIdleInstall() {
+  function scheduleIdleInstall({ immediate = false } = {}) {
     if (idleTimer) clearInterval(idleTimer);
-    idleTimer = setInterval(() => {
+    const attempt = () => {
       if (cloud.update.status !== 'ready') return;
-      if (cloud.anyRunning() || isWindowVisible()) return;
-      clearInterval(idleTimer);
-      install();
-    }, 60 * 1000);
+      if (cloud.anyAppInstallTask() || cloud.anyRunning() || isWindowVisible()) return;
+      if (install()) {
+        clearInterval(idleTimer);
+        idleTimer = null;
+      }
+    };
+    idleTimer = setInterval(attempt, 60 * 1000);
     idleTimer.unref?.();
+    if (immediate) attempt();
   }
 
   async function check() {
@@ -76,9 +84,26 @@ function setupSelfUpdate({ app, cloud, log, isWindowVisible }) {
   }
 
   function install() {
-    if (cloud.update.status !== 'ready') return false;
-    app.emit('before-update-install');
-    setImmediate(() => updater.quitAndInstall(true, true));
+    if (cloud.update.status !== 'ready' || installing) return false;
+    if (cloud.anyAppInstallTask()) {
+      scheduleIdleInstall();
+      return false;
+    }
+    installing = true;
+    setImmediate(() => {
+      if (cloud.update.status !== 'ready') {
+        installing = false;
+        return;
+      }
+      // 예약한 뒤 앱 작업이 들어올 수 있어서, 실제로 종료하기 직전에 다시 확인
+      if (cloud.anyAppInstallTask()) {
+        installing = false;
+        scheduleIdleInstall();
+        return;
+      }
+      app.emit('before-update-install');
+      updater.quitAndInstall(true, true);
+    });
     return true;
   }
 
@@ -88,6 +113,9 @@ function setupSelfUpdate({ app, cloud, log, isWindowVisible }) {
   const t = setInterval(check, CHECK_EVERY);
   t.unref?.();
   cloud.on('server-changed', () => check());
+  cloud.on('app-task-settled', () => {
+    if (cloud.update.status === 'ready' && !installing) scheduleIdleInstall({ immediate: true });
+  });
   return { check, install };
 }
 

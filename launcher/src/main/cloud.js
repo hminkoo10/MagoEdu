@@ -122,6 +122,8 @@ class Cloud extends EventEmitter {
     this.icons = {}; // id → data URL
     this.update = { status: 'idle' };
     this.locks = new Map();
+    this.installTasks = new Map(); // 실행 중·잠금 대기 중인 설치 수 (화면용 tasks 와 별개)
+    this.restarting = new Set(); // 종료 코드에 따라 다시 켜는 동안에도 자체 업데이트는 기다림
     this.timers = [];
     this.adopted = new Map(); // 통합 클라우드를 다시 켜기 전에 실행한 프로그램 id → 그때 기록 (버전·계정)
     this.settled = false; // 로그인한 뒤 세션 확인·목록 새로 고침이 끝났는지
@@ -247,6 +249,7 @@ class Cloud extends EventEmitter {
 
   // ---------------------------------------------------------------- 시작
   async init() {
+    await this.installer.recover();
     this.installed = await this.installer.listInstalled();
     for (const id of Object.keys(this.installed)) if (this.runner.isRunning(id)) this.adopted.set(id, this.runner.runningInfo(id) || {});
     const session = this.store.loadSession();
@@ -353,8 +356,9 @@ class Cloud extends EventEmitter {
     if (this.phase !== 'ready') return;
     this.settled = true; // 바로 가기(magoedu://launch)로 부른 프로그램은 이때 켬
     this.emit('ready');
-    await this.syncAll({ quiet: true }).catch(() => {});
+    // 데이터 동기화가 오래 걸려도 중단된 프로그램 업데이트는 바로 다시 받는다
     this._autoUpdate();
+    await this.syncAll({ quiet: true }).catch(() => {});
     if (this.autoLaunchPending) {
       this.autoLaunchPending = false;
       this._autoLaunch();
@@ -556,7 +560,8 @@ class Cloud extends EventEmitter {
   }
 
   install(id, { quiet = false } = {}) {
-    return this._lock(id, async () => {
+    this.installTasks.set(id, (this.installTasks.get(id) || 0) + 1);
+    const job = this._lock(id, async () => {
       let app = this._app(id);
       if (!isDesktop(app)) throw new Error(notDesktop(app));
       const before = this.installed[id];
@@ -604,6 +609,14 @@ class Cloud extends EventEmitter {
         throw err;
       }
     });
+    const settled = () => {
+      const count = this.installTasks.get(id) || 0;
+      if (count <= 1) this.installTasks.delete(id);
+      else this.installTasks.set(id, count - 1);
+      this.emit('app-task-settled');
+    };
+    job.then(settled, settled);
+    return job;
   }
 
   uninstall(id, { removeData = false } = {}) {
@@ -1162,7 +1175,10 @@ class Cloud extends EventEmitter {
   _onAppExit(id, info) {
     this.emitState();
     if (info.restart && this.user && info.userId === this.user.id) {
-      setTimeout(() => this.launch(id, { skipLegacyCheck: true }).catch((err) => this._toast(err.message, 'error')), 600);
+      this.restarting.add(id);
+      setTimeout(() => this.launch(id, { skipLegacyCheck: true })
+        .catch((err) => this._toast(err.message, 'error'))
+        .finally(() => this.restarting.delete(id)), 600);
       return;
     }
     if (this.user && info.userId === this.user.id) this.syncApp(id, { quiet: true });
@@ -1195,14 +1211,18 @@ class Cloud extends EventEmitter {
     if (!this.store.config.autoUpdateApps) return;
     for (const a of this.apps) {
       const inst = this.installed[a.id];
-      if (inst && this.installer.needsUpdate(inst, a) && !this.tasks.has(a.id)) {
+      if (inst && this.installer.needsUpdate(inst, a) && !this.installTasks.has(a.id) && this.tasks.get(a.id)?.kind !== 'uninstall') {
         this.install(a.id, { quiet: true }).catch((err) => this.log.warn('[자동 업데이트]', a.id, err.message));
       }
     }
   }
 
   anyRunning() {
-    return Object.keys(this.installed).some((id) => this.runner.isRunning(id));
+    return this.restarting.size > 0 || Object.keys(this.installed).some((id) => this.runner.isRunning(id));
+  }
+
+  anyAppInstallTask() {
+    return this.installTasks.size > 0;
   }
 
   // ---------------------------------------------------------------- 주기 작업

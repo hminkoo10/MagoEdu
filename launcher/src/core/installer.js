@@ -14,6 +14,8 @@ const { extractZip } = require('./zip');
 const { readManifest, normalizeManifest } = require('./manifest');
 const { compareVersions } = require('./version');
 
+const DOWNLOAD_RE = /^[A-Za-z0-9._-]+-[A-Za-z0-9._-]+\.zip(?:\.part)?$/;
+
 const VERSION_RE = /^[0-9A-Za-z._-]{1,80}$/;
 
 function safeVersion(value) {
@@ -85,6 +87,48 @@ class Installer {
       }
     }
     return out;
+  }
+
+  /** 시작할 때만: 중단된 다운로드·압축 해제를 정리한다 (설치된 버전과 실행 기록은 그대로). */
+  async recover() {
+    let downloads = [];
+    try {
+      downloads = await fsp.readdir(this.paths.downloadsDir, { withFileTypes: true });
+    } catch {
+      downloads = [];
+    }
+    const remove = async (file, recursive = false) => {
+      await fsp.rm(file, { recursive, force: true }).catch((err) => this.log.warn?.('[설치 복구]', file, err.message));
+    };
+    for (const entry of downloads) {
+      if (!entry.isFile() || !DOWNLOAD_RE.test(entry.name)) continue;
+      await remove(path.join(this.paths.downloadsDir, entry.name));
+    }
+
+    let appIds = [];
+    try {
+      appIds = await fsp.readdir(this.paths.appsDir, { withFileTypes: true });
+    } catch {
+      appIds = [];
+    }
+    for (const entry of appIds) {
+      if (!entry.isDirectory()) continue;
+      let ap;
+      let names;
+      try {
+        ap = this.paths.app(entry.name);
+        names = await fsp.readdir(ap.root, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      const installed = await readJson(ap.installed, null);
+      const running = await readJson(ap.running, null);
+      for (const dir of names) {
+        if (!dir.isDirectory() || !/^[0-9A-Za-z._-]+\.partial$/.test(dir.name)) continue;
+        if (dir.name === installed?.version || dir.name === running?.version) continue;
+        await remove(path.join(ap.root, dir.name), true);
+      }
+    }
   }
 
   /**
