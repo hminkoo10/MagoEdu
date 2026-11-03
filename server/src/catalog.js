@@ -23,6 +23,27 @@ const LAUNCHER_SETUP_RE = /^MagoEduCloud-Setup-(\d+\.\d+\.\d+)\.exe$/;
 const PLATFORMS = ['windows', 'android', 'web'];
 const APK_TYPE = 'application/vnd.android.package-archive';
 
+// 디스크 캐시는 깨졌거나 다른 모양이면 쓰지 않는다. 로컬 파일 경로는 저장하지 않는다.
+const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+const isUrl = (v) => typeof v === 'string' && /^https?:\/\/[^\s]+$/.test(v);
+const isTime = (v) => Number.isSafeInteger(v) && v >= 0 && v <= 8640000000000000;
+const isAsset = (a) => isObject(a) && typeof a.name === 'string' && !!a.name &&
+  Number.isSafeInteger(a.size) && a.size >= 0 && isUrl(a.url) && isUrl(a.apiUrl) && !('localFile' in a) &&
+  (a.digest == null || typeof a.digest === 'string');
+const isReleases = (list) => Array.isArray(list) && list.every((r) => isObject(r) &&
+  ['draft', 'prerelease'].every((k) => r[k] === undefined || typeof r[k] === 'boolean') &&
+  ['tag_name', 'body', 'html_url', 'published_at'].every((k) => r[k] == null || typeof r[k] === 'string') &&
+  Array.isArray(r.assets) && r.assets.every((a) => isObject(a) && isAsset(Catalog._asset(a))));
+const isRelease = (r) => r === null || (isObject(r) && isAsset({ ...r, name: r.fileName }) &&
+  typeof r.version === 'string' && /^\d+\.\d+\.\d+$/.test(r.version) && typeof r.sha256 === 'string' && SHA_RE.test(r.sha256) &&
+  typeof r.notes === 'string' && (r.publishedAt === null || isTime(r.publishedAt)));
+const isLauncher = (l) => l === null || (isObject(l) && typeof l.version === 'string' &&
+  typeof l.ymlText === 'string' && !!l.ymlText && l.setupName === `MagoEduCloud-Setup-${l.version}.exe` &&
+  LAUNCHER_SETUP_RE.test(l.setupName) && typeof l.notes === 'string' &&
+  (l.publishedAt === null || isTime(l.publishedAt)) && isObject(l.assets) &&
+  Object.entries(l.assets).every(([name, a]) => isAsset(a) && a.name === name) &&
+  Object.hasOwn(l.assets, l.setupName) && Object.hasOwn(l.assets, 'latest.yml'));
+
 /** 내려받을 때 파일 이름 (한글 이름도 깨지지 않게) */
 function contentDisposition(name) {
   const ascii = String(name).replace(/[^\x20-\x7e]|["\\]/g, '_');
@@ -75,11 +96,19 @@ class Catalog {
     this.launcherError = null;
     this._launcherCheckedAt = 0;
     this._launcherFresh = null;
-    this._releases = new Map(); // repo → { etag, list }: 바뀐 게 없으면 GitHub 이 304 (사용 한도에 안 셈)
+    this._cacheFile = path.join(config.dataDir, 'github-cache.json');
+    this._githubCache = { version: 1, githubApi: config.githubApi, launcher: null, apps: {}, responses: {}, limitedUntil: 0 };
     this._timer = null;
     this._running = null;
     fs.mkdirSync(this.packagesDir, { recursive: true });
     fs.mkdirSync(this.iconsDir, { recursive: true });
+    this._loadGithubCache();
+    try {
+      this.launcher = this._localLauncher() || this.launcher;
+    } catch (err) {
+      this.log.warn('[통합 클라우드 업데이트] 로컬 파일을 읽지 못했어요', err.message);
+    }
+    if (this.launcher) this._launcherCheckedAt = Date.now(); // 시작 직후에는 저장된 버전을 바로 보냄
   }
 
   // ---------------- 처음 목록 ----------------
@@ -130,6 +159,7 @@ class Catalog {
         v.cold_days, v.auto_launch_default, v.platform, now, now,
       );
     }
+    this._restoreApp(a.id);
     return this.get(a.id);
   }
 
@@ -148,36 +178,97 @@ class Catalog {
   }
 
   // ---------------- GitHub ----------------
+  _loadGithubCache() {
+    try {
+      const c = JSON.parse(fs.readFileSync(this._cacheFile, 'utf8'));
+      if (!isObject(c) || c.version !== 1 || c.githubApi !== this.config.githubApi || !isTime(c.limitedUntil) ||
+          !isObject(c.apps) || !isObject(c.responses) ||
+          !(c.launcher === null || (isObject(c.launcher) && typeof c.launcher.repo === 'string' && isLauncher(c.launcher.release))) ||
+          !Object.values(c.apps).every((a) => isObject(a) && typeof a.source === 'string' &&
+            jsonParse(a.source, null)?.type === 'github' && isTime(a.checkedAt) && isRelease(a.release)) ||
+          !Object.entries(c.responses).every(([url, r]) => isUrl(url) && isObject(r) &&
+            (r.etag === null || (typeof r.etag === 'string' && /^[\x20-\x7e]+$/.test(r.etag))) &&
+            (typeof r.body === 'string' || isReleases(r.body)))) return;
+      this._githubCache = c;
+      if (c.launcher?.repo === this.config.launcherRepo) this.launcher = c.launcher.release;
+      for (const id of Object.keys(c.apps)) this._restoreApp(id);
+    } catch {
+      /* 처음 실행했거나 깨진 캐시: 정상 응답을 받으면 다시 저장 */
+    }
+  }
+
+  _restoreApp(id) {
+    const cached = Object.hasOwn(this._githubCache.apps, id) && this._githubCache.apps[id];
+    const app = cached && this.get(id);
+    if (!app || cached.source !== JSON.stringify(app.source) || cached.checkedAt < (app.releaseCheckedAt || 0)) return;
+    this.db.run('UPDATE apps SET release = ?, release_checked_at = ? WHERE id = ?',
+      cached.release ? JSON.stringify(cached.release) : null, cached.checkedAt, id);
+  }
+
+  _saveGithubCache() {
+    const tmp = `${this._cacheFile}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(this._githubCache), { mode: 0o600 });
+      fs.renameSync(tmp, this._cacheFile); // 같은 폴더에서 교체: 중간에 꺼져도 이전 JSON 은 온전함
+    } catch (err) {
+      this.log.warn('[프로그램 목록] GitHub 캐시를 저장하지 못했어요', err.message);
+      try { fs.unlinkSync(tmp); } catch { /* 임시 파일 없음 */ }
+    }
+  }
+
+  _checkGithubLimit() {
+    if (Date.now() < this._githubCache.limitedUntil) {
+      throw Object.assign(new Error('GitHub 호출 한도가 초기화될 때까지 기다려요.'), { code: 'GITHUB_RATE_LIMIT' });
+    }
+  }
+
+  _checkGithubResponse(res) {
+    const retry = res.headers.get('retry-after');
+    if ([403, 429].includes(res.status) && (res.headers.get('x-ratelimit-remaining') === '0' || retry !== null)) {
+      const now = Date.now();
+      const reset = Number(res.headers.get('x-ratelimit-reset')) * 1000;
+      const retryAt = retry === null ? 0 : /^\d+$/.test(retry) ? now + Number(retry) * 1000 : Date.parse(retry);
+      const until = Math.max(isTime(reset) ? reset : 0, isTime(retryAt) ? retryAt : 0);
+      const alreadyLimited = this._githubCache.limitedUntil > now;
+      this._githubCache.limitedUntil = Math.max(this._githubCache.limitedUntil, until > now ? until : now + 60000);
+      if (!alreadyLimited) this.log.warn(`[프로그램 목록] GitHub 호출 한도: ${new Date(this._githubCache.limitedUntil).toISOString()} 까지 확인을 쉬어요.`);
+      this._saveGithubCache();
+      this._checkGithubLimit();
+    }
+    if (!res.ok) throw new Error(`GitHub 응답 ${res.status}`);
+  }
+
   _headers(accept = 'application/vnd.github+json') {
     const h = { 'user-agent': 'MagoEduCloudServer', accept, 'x-github-api-version': '2022-11-28' };
     if (this.config.githubToken) h.authorization = `Bearer ${this.config.githubToken}`;
     return h;
   }
 
-  async _githubReleases(repo) {
-    const cached = this._releases.get(repo);
-    const headers = this._headers();
-    if (cached) headers['if-none-match'] = cached.etag;
-    const res = await fetch(`${this.config.githubApi}/repos/${repo}/releases?per_page=40`, {
+  async _githubRequest(url, max = 0) {
+    this._checkGithubLimit();
+    const entry = this._githubCache.responses[url];
+    const cached = entry && (max ? typeof entry.body === 'string' && !!entry.body : isReleases(entry.body)) ? entry : null;
+    const headers = this._headers(max ? 'application/octet-stream' : 'application/vnd.github+json');
+    if (cached?.etag) headers['if-none-match'] = cached.etag;
+    const res = await fetch(url, {
       headers,
       signal: AbortSignal.timeout(20000),
     });
-    if (res.status === 304 && cached) return cached.list;
-    if (!res.ok) throw new Error(`GitHub 응답 ${res.status}`);
-    const data = await res.json();
-    const list = Array.isArray(data) ? data : [];
-    const etag = res.headers.get('etag');
-    if (etag) this._releases.set(repo, { etag, list });
-    return list;
+    if (res.status === 304 && cached) return cached.body;
+    this._checkGithubResponse(res);
+    const body = max ? (await res.text()).slice(0, max) : await res.json();
+    if (max ? !body : !isReleases(body)) throw new Error('GitHub 응답 형식이 올바르지 않아요.');
+    this._githubCache.responses[url] = { etag: res.headers.get('etag'), body };
+    this._saveGithubCache();
+    return body;
+  }
+
+  async _githubReleases(repo) {
+    return this._githubRequest(`${this.config.githubApi}/repos/${repo}/releases?per_page=40`);
   }
 
   async _assetText(asset, max = 1024 * 1024) {
-    const res = this.config.githubToken
-      ? await fetch(asset.apiUrl, { headers: this._headers('application/octet-stream'), signal: AbortSignal.timeout(20000) })
-      : await fetch(asset.url, { headers: { 'user-agent': 'MagoEduCloudServer' }, signal: AbortSignal.timeout(20000) });
-    if (!res.ok) throw new Error(`파일 응답 ${res.status}`);
-    const text = await res.text();
-    return text.slice(0, max);
+    return this._githubRequest(this.config.githubToken ? asset.apiUrl : asset.url, max);
   }
 
   static _asset(a) {
@@ -287,18 +378,23 @@ class Catalog {
       release = app.source.type === 'github' ? await this._githubRelease(app.source) : await this._localRelease(app.id, app.source);
     } catch (err) {
       error = String(err.message || err);
-      this.log.warn(`[프로그램 목록] ${app.name}: ${error}`);
+      if (err.code !== 'GITHUB_RATE_LIMIT') this.log.warn(`[프로그램 목록] ${app.name}: ${error}`);
     }
     // 확인에 실패하면 예전에 찾은 버전은 그대로 둔다
     if (error) {
       this.db.run('UPDATE apps SET release_checked_at = ?, release_error = ? WHERE id = ?', Date.now(), error, id);
     } else {
+      const checkedAt = Date.now();
       this.db.run(
         'UPDATE apps SET release = ?, release_checked_at = ?, release_error = NULL WHERE id = ?',
         release ? JSON.stringify(release) : null,
-        Date.now(),
+        checkedAt,
         id,
       );
+      if (app.source.type === 'github') {
+        this._githubCache.apps = { ...this._githubCache.apps, [id]: { source: JSON.stringify(app.source), release, checkedAt } };
+        this._saveGithubCache();
+      }
     }
     return this.get(id);
   }
@@ -307,11 +403,17 @@ class Catalog {
     this._launcherCheckedAt = Date.now();
     try {
       const local = await this._localLauncher();
-      this.launcher = local || (this.config.launcherRepo ? await this._githubLauncher(this.config.launcherRepo) : null);
+      if (local) this.launcher = local;
+      else if (this.config.launcherRepo) {
+        const release = await this._githubLauncher(this.config.launcherRepo);
+        this.launcher = release;
+        this._githubCache.launcher = { repo: this.config.launcherRepo, release };
+        this._saveGithubCache();
+      } else this.launcher = null;
       this.launcherError = null;
     } catch (err) {
       this.launcherError = String(err.message || err);
-      this.log.warn(`[통합 클라우드 업데이트] ${this.launcherError}`);
+      if (err.code !== 'GITHUB_RATE_LIMIT') this.log.warn(`[통합 클라우드 업데이트] ${this.launcherError}`);
     }
     return this.launcher;
   }
@@ -350,7 +452,7 @@ class Catalog {
     };
   }
 
-  async _localLauncher() {
+  _localLauncher() {
     const dir = path.join(this.packagesDir, 'launcher');
     let names;
     try {
@@ -424,7 +526,20 @@ class Catalog {
       res.writeHead(302, { location: asset.url, 'cache-control': 'no-store' });
       return res.end();
     }
-    const up = await fetch(asset.apiUrl, { headers: this._headers('application/octet-stream') });
+    // 토큰으로 파일을 대신 받을 때도 같은 API 한도를 따른다.
+    let up;
+    try {
+      this._checkGithubLimit();
+      up = await fetch(asset.apiUrl, { headers: this._headers('application/octet-stream') });
+      this._checkGithubResponse(up);
+    } catch (err) {
+      if (err.code === 'GITHUB_RATE_LIMIT') {
+        res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8',
+          'retry-after': String(Math.ceil((this._githubCache.limitedUntil - Date.now()) / 1000)) });
+        return res.end('GitHub 호출 한도가 초기화될 때까지 기다려 주세요.');
+      }
+      if (!up) throw err;
+    }
     if (!up.ok || !up.body) {
       res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
       return res.end('파일을 가져오지 못했어요.');
