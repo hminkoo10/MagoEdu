@@ -5,6 +5,7 @@ export class AccountView {
   constructor({ cloud, store }) {
     this.cloud = cloud;
     this.store = store;
+    this._devicesRevision = store.state.devicesRevision;
     this.student = store.state.user.role === 'student';
     this.required = this.student && store.state.user.mustChangePassword;
     this.profile = h('div', { class: 'card' });
@@ -26,6 +27,10 @@ export class AccountView {
   update(s) {
     const key = `${s.user.name}|${s.user.username}`;
     if (key !== this._key) this.renderProfile(s.user);
+    if (!this.student && s.devicesRevision !== this._devicesRevision) {
+      this._devicesRevision = s.devicesRevision;
+      this.loadDevices();
+    }
   }
 
   renderProfile(u) {
@@ -171,8 +176,10 @@ export class AccountView {
   }
 
   async loadDevices() {
+    const request = this._devicesRequest = (this._devicesRequest || 0) + 1;
     try {
       const r = await this.cloud.api('GET', '/api/me/devices');
+      if (request !== this._devicesRequest) return;
       const rows = r.devices.map((d) => {
         const out = d.current ? pill('지금 이 기기', 'green') : btn('로그아웃', { size: 'sm' });
         if (!d.current) {
@@ -205,6 +212,7 @@ export class AccountView {
       );
       reveal(this.devices);
     } catch (e) {
+      if (request !== this._devicesRequest) return;
       put(this.devices, h('h2', { class: 'card-title' }, '로그인한 기기'), h('div', { class: 'muted' }, e.message));
     }
   }

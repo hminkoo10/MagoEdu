@@ -205,6 +205,19 @@ function register(router, deps) {
     return { devices: rows.map((s) => svc.publicSession(s, session.id)) };
   });
 
+  router.patch('/api/me/devices/:id', async (ctx) => {
+    const { user, session } = svc.authenticate(ctx);
+    // 기기 ID는 요청 본문이 아니라 인증된 세션으로 결정한다. 다른 내 기기도 바꿀 수 없다.
+    if (ctx.params.id !== 'current' && ctx.params.id !== String(session.id)) throw notFound('기기를 찾을 수 없어요.');
+    const body = await readJson(ctx.req);
+    if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 80 || /[\u0000-\u001f\u007f-\u009f]/.test(body.name)) {
+      throw bad('기기 이름은 제어문자 없이 1~80자로 입력해 주세요.', 'invalid_device_name');
+    }
+    const name = body.name.trim();
+    db.run('UPDATE sessions SET device_name = ? WHERE id = ? AND user_id = ?', name, session.id, user.id);
+    return { device: svc.publicSession({ ...session, device_name: name }, session.id) };
+  });
+
   router.delete('/api/me/devices/:id', (ctx) => {
     const { user } = svc.authenticate(ctx);
     const s = db.get('SELECT * FROM sessions WHERE id = ? AND user_id = ?', Number(ctx.params.id), user.id);

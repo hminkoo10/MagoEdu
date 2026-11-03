@@ -20,11 +20,12 @@ export class SettingsView {
     const set = (patch, msg) =>
       cloud
         .setConfig(patch)
-        .then(() => msg && toast(msg, 'success'))
+        .then((config) => msg && toast(typeof msg === 'function' ? msg(config) : msg, 'success'))
         .catch((e) => toast(e.message, 'error'));
 
-    const devName = input({ value: c.deviceName, style: 'width: 220px' });
-    devName.addEventListener('change', () => set({ deviceName: devName.value.trim() || c.deviceName }, '컴퓨터 이름을 바꿨어요. 다음 로그인부터 보여요.'));
+    const devName = input({ value: c.deviceName, maxlength: 80, style: 'width: 220px' });
+    devName.addEventListener('change', () => set({ deviceName: devName.value.trim() || this.store.state.config.deviceName }, (config) =>
+      config.deviceNamePending ? '컴퓨터 이름을 저장했어요. 연결되면 기기 목록에도 반영돼요.' : '컴퓨터 이름을 바꿨어요. 로그인한 기기 목록에도 반영했어요.'));
     const webUrl = /^https?:\/\//i.test(c.serverUrl || '') ? c.serverUrl : null;
 
     this.updRow = h('div');

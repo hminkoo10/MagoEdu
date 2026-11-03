@@ -122,6 +122,9 @@ class Cloud extends EventEmitter {
     this.syncInfo = {}; // id → { status, at, ... }
     this.notices = [];
     this.storage = null;
+    this.devicesRevision = 0;
+    this._deviceNameSynced = null;
+    this._deviceNameSync = null;
     this.icons = {}; // id → data URL
     this.update = { status: 'idle' };
     this.locks = new Map();
@@ -181,6 +184,7 @@ class Cloud extends EventEmitter {
       },
       user: this.user,
       storage: this.storage,
+      devicesRevision: this.devicesRevision,
       notices: this.notices,
       unreadNotices: acc ? this.notices.filter((n) => n.id > (acc.noticesSeen || 0)).length : 0,
       update: this.update,
@@ -500,6 +504,29 @@ class Cloud extends EventEmitter {
     return this.refreshMe();
   }
 
+  async _syncDeviceName() {
+    const api = this.api;
+    if (!this.user || !api.token) return false;
+    // 연속 변경도 순서대로 전송해 오래된 요청이 새 이름을 덮지 않게 한다.
+    while (this._deviceNameSync) await this._deviceNameSync;
+    if (api !== this.api) return false;
+    const name = this.store.config.deviceName.trim().slice(0, 80);
+    if (this._deviceNameSynced?.api === api && this._deviceNameSynced.name === name) return true;
+    const job = this._call(() => api.patch('/api/me/devices/current', { name })).then(() => {
+      if (api !== this.api) return false;
+      this._deviceNameSynced = { api, name };
+      this.devicesRevision += 1;
+      this.emitState();
+      return true;
+    }, () => false); // 로컬 이름은 유지. 다음 동기화·세션 복원 때 다시 전송한다.
+    this._deviceNameSync = job;
+    try {
+      return await job;
+    } finally {
+      this._deviceNameSync = null;
+    }
+  }
+
   /** 관리 화면에서 쓰는 서버 요청 (로그인 정보를 붙여서) */
   async apiCall(method, p, body) {
     if (!/^\/api\//.test(p)) throw new Error('잘못된 요청');
@@ -733,6 +760,7 @@ class Cloud extends EventEmitter {
     this.emitState();
     const job = (async () => {
       try {
+        await this._syncDeviceName();
         const onProgress = (p) => {
           if (p.phase === 'transfer') {
             this.syncInfo[id] = { ...this.syncInfo[id], progress: p.total ? p.done / p.total : null, text: `${p.done}/${p.total}` };
@@ -790,6 +818,7 @@ class Cloud extends EventEmitter {
   }
 
   async syncAll({ quiet = false } = {}) {
+    await this._syncDeviceName(); // 설치한 프로그램이 없어도 기기 이름은 맞춘다.
     for (const id of this._syncIds()) await this.syncApp(id, { quiet });
   }
 
@@ -1417,12 +1446,22 @@ class Cloud extends EventEmitter {
     return !!on;
   }
 
-  setConfig(patch) {
+  async setConfig(patch) {
     const allowed = ['deviceName', 'autoStart', 'closeToTray', 'autoUpdateApps'];
     const clean = Object.fromEntries(Object.entries(patch || {}).filter(([k]) => allowed.includes(k)));
+    const rename = Object.hasOwn(clean, 'deviceName');
+    if (rename) {
+      const name = clean.deviceName;
+      if (typeof name !== 'string' || !name.trim() || name.trim().length > 80 || /[\u0000-\u001f\u007f-\u009f]/.test(name)) {
+        throw new Error('기기 이름은 제어문자 없이 1~80자로 입력해 주세요.');
+      }
+      clean.deviceName = name.trim();
+    }
     this.store.setConfig(clean);
+    if (rename) this.api.device.name = this.store.config.deviceName;
     this.emitState();
     this.emit('config', this.store.config);
+    if (rename) return { ...this.store.config, deviceNamePending: !(await this._syncDeviceName()) };
     return this.store.config;
   }
 
