@@ -210,16 +210,16 @@ class Shell {
 
 async function logoutFlow() {
   const running = store.state.apps.filter((a) => a.running);
-  const ok = await dialog({
+  await dialog({
     title: '로그아웃할까요?',
     sub: store.state.web
       ? '이 브라우저에서만 로그아웃해요. 다른 기기는 그대로예요.'
       : running.length
-        ? `켜져 있는 프로그램(${running.map((a) => a.name).join(', ')})은 계속 돌아가지만, 다시 로그인할 때까지 동기화하지 않아요.`
+        ? `켜져 있는 프로그램(${running.map((a) => a.name).join(', ')})을 끄고, 데이터를 서버에 올린 뒤 로그아웃해요.`
         : '이 컴퓨터에 받아 둔 데이터는 그대로 남아요.',
     ok: '로그아웃',
+    onOk: () => cloud.logout(),
   });
-  if (ok) await cloud.logout();
 }
 
 // ---------------------------------------------------------------- 로그인 전 화면

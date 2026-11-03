@@ -1,6 +1,10 @@
 // 공지사항: 모두 보기, 운영자는 전체·학원 공지, 원장은 자기 학원 공지를 올림
 import { h, ic, btn, toast, dialog, field, input, select, checkbox, pill, ago, date, confirmDialog, reveal, put } from '../ui.js';
 
+// 공지 한도 (server/src/routes/admin.js 와 같게)
+const LIMIT = { title: 100, body: 2000, lines: 50 };
+const lineCount = (t) => t.split(/\r\n?|\n/).length;
+
 export class NoticesView {
   constructor({ cloud, store }) {
     this.cloud = cloud;
@@ -57,7 +61,7 @@ export class NoticesView {
           'div',
           { class: 'notice' },
           h('div', { class: 'notice-title' }, n.pinned ? pill('고정') : null, h('span', {}, n.title), acts),
-          h('div', { class: 'notice-body' }, n.body),
+          this.body(n.body),
           h(
             'div',
             { class: 'notice-meta' },
@@ -72,11 +76,36 @@ export class NoticesView {
     reveal(this.list);
   }
 
+  /** 긴 공지는 몇 줄만 보여 주고 '더 보기'로 펼친다 */
+  body(text) {
+    const el = h('div', { class: 'notice-body clamp' }, text);
+    const more = btn('더 보기', { variant: 'subtle', size: 'sm', cls: 'notice-more' });
+    more.style.display = 'none'; // .btn 의 display 때문에 hidden 속성은 듣지 않음
+    more.addEventListener('click', () => {
+      const open = el.classList.toggle('clamp');
+      more.textContent = open ? '더 보기' : '접기';
+    });
+    // 화면에 붙은 뒤에야 넘치는지 알 수 있다
+    requestAnimationFrame(() => {
+      if (el.scrollHeight > el.clientHeight + 1) more.style.display = '';
+      else el.classList.remove('clamp');
+    });
+    return h('div', {}, el, more);
+  }
+
   async edit(n) {
     const u = this.store.state.user;
-    const title = input({ value: n?.title || '', placeholder: '제목' });
-    const body = h('textarea', { class: 'input', placeholder: '내용' });
+    const title = input({ value: n?.title || '', placeholder: '제목', maxlength: LIMIT.title });
+    const body = h('textarea', { class: 'input', placeholder: '내용', maxlength: LIMIT.body });
     body.value = n?.body || '';
+    const count = h('div', { class: 'notice-count' });
+    const recount = () => {
+      const lines = lineCount(body.value);
+      count.replaceChildren(`${body.value.length.toLocaleString('ko-KR')} / ${LIMIT.body.toLocaleString('ko-KR')}자 · ${lines} / ${LIMIT.lines}줄`);
+      count.classList.toggle('over', lines > LIMIT.lines);
+    };
+    body.addEventListener('input', recount);
+    recount();
     let pinned = !!n?.pinned;
     const days = select(
       [
@@ -101,10 +130,12 @@ export class NoticesView {
         target ? field('보낼 곳', target) : field('보낼 곳', input({ value: u.academy?.name || '', disabled: true })),
         field('제목', title),
         field('내용', body),
+        count,
         h('div', { class: 'form-row', style: { marginTop: '14px', alignItems: 'center' } }, field('보여 줄 기간', days), h('div', { style: { paddingTop: '22px' } }, checkbox('맨 위에 고정', pinned, (v) => (pinned = v)))),
       ),
       ok: n ? '저장' : '올리기',
       onOk: async () => {
+        if (lineCount(body.value) > LIMIT.lines) throw new Error(`내용은 ${LIMIT.lines}줄까지 쓸 수 있어요.`);
         const payload = { title: title.value, body: body.value, pinned };
         if (!n || days.value !== '0') payload.expiresInDays = Number(days.value);
         if (target) payload.academyId = target.value ? Number(target.value) : null;

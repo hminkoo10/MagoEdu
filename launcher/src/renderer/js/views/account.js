@@ -120,8 +120,13 @@ export class AccountView {
       const r = await this.cloud.refreshStorage();
       const s = this.store.state;
       const names = Object.fromEntries(s.apps.map((a) => [a.id, a.name]));
-      const quota = r.quotaBytes;
-      const pct = quota ? Math.min(100, (r.usageBytes / quota) * 100) : 0;
+      const usage = (used, quota) =>
+        h(
+          'div',
+          { class: 'usage' },
+          h('div', { class: 'nums' }, h('span', {}, h('b', {}, bytes(used)), ' 사용'), h('span', {}, quota ? `${bytes(quota)} 중` : '제한 없음')),
+          quota ? h('div', { class: 'progress' }, h('i', { style: { width: `${Math.min(100, (used / quota) * 100)}%` } })) : null,
+        );
       const rows = r.apps.map((a) =>
         h(
           'div',
@@ -131,20 +136,30 @@ export class AccountView {
           h('div', { style: { fontWeight: 600 } }, bytes(a.bytes)),
         ),
       );
+      // 학원 공간: 같은 학원 사람들이 함께 쓰는 파일 (예: 오답노트 교재). 내 저장 공간과 따로 센다
+      const aca = r.academy;
+      const acaRows = (aca?.apps || []).map((a) =>
+        h(
+          'div',
+          { class: 'row' },
+          h('div', { class: 'grow' }, h('div', { class: 'row-title' }, names[a.appId] || a.appId), h('div', { class: 'row-desc' }, `파일 ${a.files}개${a.lastChange ? ` · ${ago(a.lastChange)} 바뀜` : ''}`)),
+          h('div', { style: { fontWeight: 600 } }, bytes(a.bytes)),
+        ),
+      );
       put(this.storage, 
         h('h2', { class: 'card-title' }, ic('cloud', 18), '서버 저장 공간'),
         h('p', { class: 'card-desc' }, '같은 아이디로 로그인한 컴퓨터끼리 이 데이터를 함께 써요.'),
-        h(
-          'div',
-          { class: 'usage' },
-          h('div', { class: 'nums' }, h('span', {}, h('b', {}, bytes(r.usageBytes)), ' 사용'), h('span', {}, quota ? `${bytes(quota)} 중` : '제한 없음')),
-          quota ? h('div', { class: 'progress' }, h('i', { style: { width: `${pct}%` } })) : null,
-        ),
+        usage(r.usageBytes, r.quotaBytes),
         h('div', { style: { height: '8px' } }),
         ...rows,
         r.apps.some((a) => a.evictedGroups)
           ? h('div', { class: 'note', style: { marginTop: '12px' } }, ic('info', 18), h('span', {}, '오래 쓰지 않은 큰 데이터(예: 오답노트 문제집)는 서버에서만 지우고 그 데이터를 쓰던 컴퓨터에는 남겨 둬요. 그 컴퓨터에서 다시 열면 서버에 다시 올라가요.'))
           : null,
+        aca ? h('h3', { class: 'storage-sub' }, ic('building', 16), `학원 공간 · ${aca.name || '우리 학원'}`) : null,
+        aca ? h('p', { class: 'card-desc' }, '같은 학원 사람들이 함께 쓰는 자료(예: 오답노트 교재)예요. 내 저장 공간과 따로 세요.') : null,
+        aca ? usage(aca.usageBytes, aca.quotaBytes) : null,
+        aca ? h('div', { style: { height: '8px' } }) : null,
+        ...acaRows,
       );
     } catch (e) {
       put(this.storage, h('h2', { class: 'card-title' }, '서버 저장 공간'), h('div', { class: 'muted' }, e.message));

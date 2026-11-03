@@ -444,7 +444,7 @@ class WebCloud {
   async refreshStorage() {
     const r = await this.request('GET', '/api/sync');
     if (this.phase !== 'ready') return r;
-    this.storage = { usageBytes: r.usageBytes, quotaBytes: r.quotaBytes, apps: r.apps };
+    this.storage = { usageBytes: r.usageBytes, quotaBytes: r.quotaBytes, apps: r.apps, academy: r.academy || null };
     this.emitState();
     return r;
   }

@@ -300,7 +300,10 @@ export class PeopleView {
       sub: '아이디를 바꿔도 데이터는 그대로예요.',
       body: h('div', {}, field('이름', name), field('아이디', username)),
       ok: '저장',
-      onOk: () => this.cloud.api('PATCH', `/api/users/${u.id}`, { name: name.value, username: username.value }),
+      onOk: () => {
+        if (name.value.trim() === u.name && username.value.trim().toLowerCase() === u.username) throw new Error('바뀐 내용이 없어요.');
+        return this.cloud.api('PATCH', `/api/users/${u.id}`, { name: name.value, username: username.value });
+      },
     });
     if (ok) {
       toast('바꿨어요', 'success');
@@ -426,6 +429,21 @@ export class PeopleView {
               draw();
             }
           });
+          const quota = btn('', { variant: 'subtle', size: 'sm', iconName: 'cloud', title: '학원 공간 용량' });
+          quota.addEventListener('click', async () => {
+            const q = input({ type: 'number', min: '0', value: a.quotaMb ?? '', placeholder: '비우면 기본값' });
+            const ok = await dialog({
+              title: `${a.name} 학원 공간 용량`,
+              sub: `같은 학원 사람들이 함께 쓰는 공간(예: 오답노트 교재)이에요. 지금 ${bytes(a.usageBytes)} 쓰고 있어요.`,
+              body: field('한도 (MB)', q, '0 이면 제한 없음, 비우면 서버 기본값'),
+              ok: '저장',
+              onOk: () => this.cloud.api('PATCH', `/api/academies/${a.id}`, { quotaMb: q.value === '' ? null : Number(q.value) }),
+            });
+            if (ok) {
+              await this.loadAcademies();
+              draw();
+            }
+          });
           const del = btn('', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '지우기', disabled: a.directors + a.teachers > 0 });
           del.addEventListener('click', async () => {
             try {
@@ -436,7 +454,7 @@ export class PeopleView {
               toast(e.message, 'error');
             }
           });
-          return h('div', { class: 'row' }, ic('building', 20), h('div', { class: 'grow' }, h('div', { class: 'row-title' }, a.name), h('div', { class: 'row-desc' }, `원장 ${a.directors}명 · 선생님 ${a.teachers}명`)), edit, del);
+          return h('div', { class: 'row' }, ic('building', 20), h('div', { class: 'grow' }, h('div', { class: 'row-title' }, a.name), h('div', { class: 'row-desc' }, `원장 ${a.directors}명 · 선생님 ${a.teachers}명 · 학원 공간 ${bytes(a.usageBytes)}${a.quotaBytes ? ` / ${bytes(a.quotaBytes)}` : ' (제한 없음)'}`)), edit, quota, del);
         }),
       );
       if (!this.academies.length) put(list, h('div', { class: 'empty' }, '학원이 없어요'));

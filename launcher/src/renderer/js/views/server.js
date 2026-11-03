@@ -49,6 +49,7 @@ export class ServerView {
         stat('사용 중지', `${s.users.suspended}명`),
         stat('로그인한 기기', `${s.devices}대`),
         stat('동기화 데이터', bytes(s.storage.bytes)),
+        stat('학원 공간 데이터', bytes(s.storage.sharedBytes || 0)),
         stat('실제 디스크', bytes(s.storage.diskBytes)),
       ),
       h('div', { class: 'row', style: { marginTop: '10px', borderBottom: 0 } }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '서버에서 정리한 파일'), h('div', { class: 'row-desc' }, `보관 기간이 지나 컴퓨터에만 남은 파일 ${s.storage.evictedFiles}개`)), run),
@@ -58,6 +59,7 @@ export class ServerView {
 
   renderForm(set) {
     const quota = input({ type: 'number', min: '0', value: set.defaultQuotaMb });
+    const academyQuota = input({ type: 'number', min: '0', value: set.defaultAcademyQuotaMb });
     const ticket = input({ type: 'number', min: '1', max: '90', value: set.ticketDays });
     const session = input({ type: 'number', min: '1', max: '365', value: set.sessionDays });
     const audit = input({ type: 'number', min: '30', value: set.auditKeepDays });
@@ -67,6 +69,7 @@ export class ServerView {
         try {
           await this.cloud.api('PATCH', '/api/admin/settings', {
             defaultQuotaMb: Number(quota.value),
+            defaultAcademyQuotaMb: Number(academyQuota.value),
             ticketDays: Number(ticket.value),
             sessionDays: Number(session.value),
             auditKeepDays: Number(audit.value),
@@ -84,6 +87,7 @@ export class ServerView {
         'div',
         { class: 'grid2', style: { gap: '4px 16px' } },
         field('계정마다 서버 저장 공간 (MB)', quota, '계정별로 따로 정하지 않았을 때. 0 이면 제한 없음'),
+        field('학원마다 학원 공간 (MB)', academyQuota, '같은 학원 사람들이 함께 쓰는 공간. 학원별로 따로 정하지 않았을 때. 0 이면 제한 없음'),
         field('인터넷 없이 쓸 수 있는 기간 (일)', ticket, '서버에 연결하지 못해도 이 기간 동안은 프로그램을 켤 수 있어요.'),
         field('자동 로그아웃 (일)', session, '이 기간 동안 쓰지 않은 컴퓨터는 로그아웃돼요.'),
         field('활동 기록 보관 (일)', audit),
