@@ -199,6 +199,7 @@ class WebCloud {
       description: a.description,
       color: a.color,
       platform: a.platform || 'windows',
+      url: a.url || null, // 웹 프로그램 주소
       icon: a.iconUrl || null,
       release: a.release,
       coldStorage: a.coldStorage,

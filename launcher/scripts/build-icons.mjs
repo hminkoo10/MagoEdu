@@ -60,6 +60,10 @@ const MAP = {
   menu: 'menu',
   globe: 'globe',
   phone: 'smartphone',
+  graduationCap: 'graduation-cap',
+  bot: 'bot',
+  external: 'external-link',
+  undo: 'undo-2',
 };
 
 const out = {};

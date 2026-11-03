@@ -2,6 +2,7 @@
 
 // 서버 실시간 알림(/api/sync/events) 받기
 //   - 다른 기기에서 파일이 바뀌면 'change' { appId, seq, deviceId }, 연결(다시 연결)되면 'hello'
+//   - 학원 학생 명단·학원 AI 가 바뀌면 'academy' { kind: 'students' | 'ai' }
 //   - 끊기면 1초에서 시작해 두 배씩, 많아야 30초 간격으로 다시 붙는다 (연결됐다가 끊기면 다시 1초부터)
 //   - 서버는 25초마다 ping 을 보내니, 70초 동안 아무것도 오지 않으면 끊긴 것으로 보고 다시 붙는다
 //   - 로그인이 끝났으면(401) 멈춘다 (ApiClient.onAuthLost 가 로그아웃 처리)
@@ -109,6 +110,8 @@ class EventStream extends EventEmitter {
             this.emit('hello', msg.data);
           } else if (msg.event === 'change' && msg.data && typeof msg.data === 'object') {
             this.emit('change', msg.data);
+          } else if (msg.event === 'academy' && msg.data && typeof msg.data === 'object') {
+            this.emit('academy', msg.data);
           }
         }
       }

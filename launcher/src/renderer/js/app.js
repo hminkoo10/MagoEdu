@@ -9,6 +9,8 @@ import { AppsAdminView } from './views/apps-admin.js';
 import { AuditView } from './views/audit.js';
 import { ServerView } from './views/server.js';
 import { SettingsView } from './views/settings.js';
+import { StudentsView } from './views/students.js';
+import { AcademyAiView } from './views/academy-ai.js';
 
 // 앱은 preload 의 window.cloud, 웹은 같은 서버 API 로 바로
 const cloud = window.cloud || (await import('./web-cloud.js')).createWebCloud();
@@ -30,11 +32,15 @@ function navFor(user) {
     { id: 'notices', icon: 'megaphone', label: '공지사항' },
     { id: 'account', icon: 'user', label: '내 계정' },
   ];
+  if (user.academy && user.role !== 'admin') items.push({ id: 'students', icon: 'graduationCap', label: '학생 명단' });
   if (user.role === 'director') items.push({ id: 'teachers', icon: 'users', label: '선생님 관리' });
+  if (user.role === 'director' && user.academy) items.push({ id: 'academy-ai', icon: 'bot', label: '학원 AI' });
   if (user.role === 'admin') {
     items.push(
       { section: '운영' },
       { id: 'people', icon: 'users', label: '계정 관리' },
+      { id: 'students', icon: 'graduationCap', label: '학생 명단' },
+      { id: 'academy-ai', icon: 'bot', label: '학원 AI' },
       { id: 'codes', icon: 'ticket', label: '원장 가입 코드' },
       { id: 'apps-admin', icon: 'box', label: '프로그램 관리' },
       { id: 'audit', icon: 'activity', label: '활동 기록' },
@@ -51,6 +57,8 @@ const VIEWS = {
   account: AccountView,
   teachers: PeopleView,
   people: PeopleView,
+  students: StudentsView,
+  'academy-ai': AcademyAiView,
   codes: CodesView,
   'apps-admin': AppsAdminView,
   audit: AuditView,
@@ -305,6 +313,7 @@ function loginView() {
   const view = authFrame(
     authHead('마고에듀 통합 클라우드', '학원 계정으로 로그인해 주세요.'),
     s.authMessage ? h('div', { class: 'note warn', style: { marginBottom: '16px' } }, ic('warning', 18), h('span', {}, s.authMessage)) : null,
+    sso ? h('div', { class: 'note', style: { marginBottom: '16px' } }, ic('info', 18), h('span', {}, '로그인하면 웹 프로그램으로 바로 돌아가요.')) : null,
     field(null, user),
     h('div', { style: { height: '10px' } }),
     field(null, pw),
@@ -415,12 +424,85 @@ async function forcePasswordChange() {
   else await cloud.logout();
 }
 
+// ---------------------------------------------------------------- 웹 프로그램 로그인 (웹: #/sso)
+// 웹 프로그램(예: 마고 과목내비)이 #/sso?app=<ID>&state=<값> 으로 보내면, 로그인한 계정으로 일회용 코드를 받아 돌려보낸다.
+// 로그인 화면을 거쳐 왔으면 다시 묻지 않고 바로 돌려보낸다.
+let sso = null; // { app, state, auto }
+let ssoPage = null;
+
+function readSso() {
+  const m = /^#\/sso(?:\?(.*))?$/.exec(location.hash);
+  if (!m) return null;
+  const q = new URLSearchParams(m[1] || '');
+  return { app: q.get('app') || '', state: q.get('state') || '', auto: false };
+}
+
+/** 로그인 요청을 그만두고 통합 클라우드 화면으로 (#/sso 는 방문 기록에 남기지 않음) */
+function leaveSso() {
+  sso = null;
+  history.replaceState(null, '', '#/home');
+  render(true);
+}
+
+function ssoView() {
+  const u = store.state.user;
+  const appName = () => store.state.apps.find((a) => a.id === sso.app)?.name || sso.app; // 목록을 받기 전이면 ID
+  const names = [h('span', {}, appName()), h('span', {}, appName())];
+  const err = h('div', { class: 'error-text', style: { display: 'none', textAlign: 'center', margin: '0 0 14px' } });
+  const go = btn('계속', { variant: 'primary', size: 'lg', cls: 'block' });
+  const showErr = (m) => {
+    err.textContent = m;
+    err.style.display = '';
+  };
+  const submit = () =>
+    busy(go, async () => {
+      err.style.display = 'none';
+      try {
+        const r = await cloud.api('POST', '/api/sso/authorize', { appId: sso.app, state: sso.state });
+        location.replace(r.redirect);
+        await new Promise(() => {}); // 웹 프로그램으로 넘어갈 때까지 돌아가는 표시 그대로
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  go.addEventListener('click', submit);
+  const other = h('button', { class: 'link' }, '다른 계정으로');
+  other.addEventListener('click', async () => {
+    sso.auto = true; // 다시 로그인하면 바로 이어서
+    await cloud.logout();
+  });
+  const home = h('button', { class: 'link' }, '통합 클라우드로 가기');
+  home.addEventListener('click', leaveSso);
+  const el = authFrame(
+    authHead(names[0], [names[1], `에 ${u.name}(${u.username}) 계정으로 로그인할까요?`]),
+    err,
+    go,
+    h('div', { class: 'auth-links' }, other, home),
+  );
+  el.classList.add('sso');
+  if (!sso.app) {
+    go.style.display = 'none';
+    showErr('로그인 주소가 잘못됐어요. 웹 프로그램에서 다시 로그인해 주세요.');
+  } else if (sso.auto && !u.mustChangePassword) {
+    setTimeout(submit, 0); // 처음 받은 비밀번호면 먼저 바꾸게 하고 ‘계속’을 누르게
+  }
+  sso.auto = false;
+  return {
+    el,
+    update() {
+      const n = appName();
+      for (const x of names) if (x.textContent !== n) x.textContent = n;
+    },
+  };
+}
+
 // ---------------------------------------------------------------- 그리기
 let lastPhase = null;
 let lastUserKey = null;
 
 function mount(el) {
   shell = null;
+  ssoPage = null;
   put(root, el);
 }
 
@@ -429,13 +511,23 @@ function render(force = false) {
   const userKey = s.user ? `${s.user.id}|${s.user.role}` : null;
   if (!force && s.phase === lastPhase && userKey === lastUserKey) {
     if (shell) shell.update(s);
+    else ssoPage?.update(s);
     return;
   }
   lastPhase = s.phase;
   lastUserKey = userKey;
   if (s.phase === 'boot') return;
   if (s.phase === 'setup') return mount(serverView());
-  if (s.phase === 'login') return mount(loginView());
+  if (s.phase === 'login') {
+    if (sso) sso.auto = true; // 로그인하면 묻지 않고 바로 웹 프로그램으로
+    return mount(loginView());
+  }
+  if (sso) {
+    const page = ssoView();
+    mount(page.el);
+    ssoPage = page;
+    return;
+  }
   const prev = shell?.current || (s.web && hashView(s.user)) || 'home';
   shell = new Shell();
   put(root, shell.el);
@@ -451,6 +543,7 @@ function hashView(user) {
 
 async function start() {
   store.state = await cloud.getState();
+  if (store.state.web) sso = readSso(); // 앱에서는 #/sso 를 쓰지 않음
   render(true);
   cloud.onState((s) => {
     store.state = s;
@@ -466,6 +559,13 @@ async function start() {
   });
   if (store.state.web) {
     window.addEventListener('popstate', () => {
+      // 주소창에서 #/sso 로 바꾸거나, 거기서 뒤로 가면
+      const next = readSso();
+      if (next || sso) {
+        sso = next;
+        render(true);
+        return;
+      }
       if (shell && store.state.phase === 'ready') shell.go(hashView(store.state.user) || 'home', { fromHistory: true });
     });
   }

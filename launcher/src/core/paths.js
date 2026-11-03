@@ -62,6 +62,7 @@ function makePaths({ userData, localData }) {
             academyConflicts: path.join(a, 'conflicts', 'academy'),
             academyState: path.join(a, '.academy-sync-state.json'),
             requests: path.join(a, 'requests'),
+            academyInfo: path.join(a, 'academy-info.json'),
           };
         },
       };

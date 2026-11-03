@@ -15,6 +15,7 @@
 //   - 열 때만 받는 파일(rules.lazy): 프로그램이 달라고 한 것(want)만 받는다. 한 번 받은 뒤로는 보통 파일처럼 맞춘다.
 //     받지 않은 파일은 폴더에서 지울 수 없으니, 지워 달라고 한 것(drop)은 받지 않은 채로 서버에서 지운다.
 //   - 고칠 권한이 없는 파일(403 not_owner): 내 것은 conflicts 폴더에 보관하고 서버 것으로 되돌린다 (서버에 없으면 지움).
+//   - 아직 명단에 없는 학생의 파일(403 student_pending): 되돌리지 않고 다음에 다시 올린다 (학생을 막 추가한 경우).
 
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -107,7 +108,7 @@ class SyncEngine {
    * drop: 이 컴퓨터에 받지 않은 채로 서버에서 지울 것 (Set)
    */
   async run({ onProgress, signal, want, drop } = {}) {
-    const summary = { uploaded: 0, downloaded: 0, deletedLocal: 0, deletedRemote: 0, conflicts: [], reverted: [], errors: [], quotaExceeded: false };
+    const summary = { uploaded: 0, downloaded: 0, deletedLocal: 0, deletedRemote: 0, conflicts: [], reverted: [], pending: [], errors: [], quotaExceeded: false };
     const state = await this._loadState();
     let quota = null;
     for (let pass = 0; pass < 3; pass += 1) {
@@ -328,6 +329,10 @@ class SyncEngine {
         if (err.code === 'checksum_mismatch') return true; // 올리는 사이 파일이 바뀜
         if (err.status === 403 && err.code === 'not_owner' && (op.type === 'upload' || op.type === 'deleteRemote')) {
           await this._revert(p, L, R, state, summary, signal); // 학원 공간: 만든 사람·원장만 고침
+          return false;
+        }
+        if (err.status === 403 && err.code === 'student_pending') {
+          summary.pending.push(p); // 그대로 두면 다음 동기화에서 다시 올림
           return false;
         }
       }

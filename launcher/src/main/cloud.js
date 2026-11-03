@@ -27,11 +27,15 @@ const QUEUE_MAX_WAIT = 5000; // 계속 바뀌어도 이보다 오래 미루지�
 const REQUEST_DELAY = 100; // 프로그램이 학원 공간 파일을 달라고 함 → 바로 받기
 const STOP_WAIT = 15 * 1000; // 로그아웃·계정 바꿈: 켜 둔 프로그램이 꺼지길 이만큼까지 기다림 (runner 는 10초 뒤 강제로 끔)
 const REQUEST_RE = /^[A-Za-z0-9_-]{1,64}\.json$/; // requests/<rid>.json (답은 <rid>.done.json)
+const ACADEMY_INFO_DELAY = 300; // 학원 명단·AI 가 바뀌었다는 알림 → 잠깐 모았다가 academy-info.json 다시 쓰기
 
 // 동기화 폴더를 지켜볼 때 건너뛰는 것: 통합 클라우드·프로그램의 임시 파일
 const IGNORE_LOCAL = [/(^|\/)\.sync-state\.json$/, /^conflicts(\/|$)/, /\.tmp$/i, /\.magoedu-dl(\.part)?$/i, /(^|\/)\.magoedu/];
 
-/** 프로그램이 '이 파일 받아 줘'(paths)·'받지 않은 채로 지워 줘'(remove)라고 적은 요청들: requests/<rid>.json */
+/**
+ * 프로그램이 적은 요청들: requests/<rid>.json
+ *   '이 파일 받아 줘'(paths)·'받지 않은 채로 지워 줘'(remove), 또는 할 일(op: students.save 등, 내용은 body)
+ */
 async function readRequests(dir) {
   const names = await fsp.readdir(dir).catch(() => []);
   const out = [];
@@ -40,7 +44,7 @@ async function readRequests(dir) {
     try {
       const body = JSON.parse(await fsp.readFile(path.join(dir, n), 'utf8'));
       const list = (v) => (Array.isArray(v) ? v : []).filter((p) => typeof p === 'string');
-      out.push({ rid: n.slice(0, -5), paths: list(body?.paths), remove: list(body?.remove) });
+      out.push({ rid: n.slice(0, -5), op: typeof body?.op === 'string' ? body.op : null, body, paths: list(body?.paths), remove: list(body?.remove) });
     } catch {
       /* 쓰는 중 → 다음에 */
     }
@@ -59,8 +63,10 @@ async function answerRequests(dir, reqs, missing, error = null) {
   }
 }
 
-/** PC(Windows)에서 설치·실행하는 프로그램인지 (안드로이드 항목은 내려받기 안내만) */
+/** PC(Windows)에서 설치·실행하는 프로그램인지 (안드로이드 항목은 내려받기 안내만, 웹 프로그램은 브라우저로) */
 const isDesktop = (a) => (a?.platform || 'windows') === 'windows';
+const notDesktop = (a) =>
+  a.platform === 'web' ? `${a.name}은(는) 웹 프로그램이라 설치 없이 브라우저에서 열어요.` : `${a.name}은(는) 휴대폰에서 내려받아 설치해요.`;
 
 class Cloud extends EventEmitter {
   constructor({ paths, store, version, log, platform = process.platform, shortcuts = null, startedAtLogin = false }) {
@@ -94,6 +100,9 @@ class Cloud extends EventEmitter {
     this.events = null; // 서버 실시간 알림
     this.watchers = new Map(); // id → [동기화 폴더·학원 공간·요청 폴더 지켜보기]
     this.syncQueue = new Map(); // id → 곧 할 동기화
+    this.ops = new Map(); // id → 프로그램이 부탁한 일(학생 명단·로그인 코드)을 차례로
+    this.academyStamp = 0; // 학원 명단·AI 가 바뀔 때마다 하나씩 (화면이 다시 불러옴)
+    this._academyInfoTimer = null;
     this._syncing = {};
     this._syncAgain = {};
     this.installer = new Installer({ paths, log });
@@ -139,6 +148,7 @@ class Cloud extends EventEmitter {
       unreadNotices: acc ? this.notices.filter((n) => n.id > (acc.noticesSeen || 0)).length : 0,
       update: this.update,
       shortcuts: !!this.shortcuts,
+      academyStamp: this.academyStamp,
       apps: this.apps.map((a) => this._appView(a, acc)),
     };
   }
@@ -154,6 +164,7 @@ class Cloud extends EventEmitter {
       description: a.description,
       color: a.color,
       platform: a.platform || 'windows',
+      url: a.url || null, // 웹 프로그램 주소
       icon: this.icons[a.id] || null,
       release: a.release,
       coldStorage: a.coldStorage,
@@ -521,7 +532,7 @@ class Cloud extends EventEmitter {
   install(id, { quiet = false } = {}) {
     return this._lock(id, async () => {
       let app = this._app(id);
-      if (!isDesktop(app)) throw new Error(`${app.name}은(는) 휴대폰에서 내려받아 설치해요.`);
+      if (!isDesktop(app)) throw new Error(notDesktop(app));
       const before = this.installed[id];
       const kind = before ? 'update' : 'install';
       this._setTask(id, { kind, phase: 'download', progress: 0, text: '받는 중' });
@@ -623,12 +634,22 @@ class Cloud extends EventEmitter {
     });
   }
 
-  /** 학원 공간을 맞춘다. 프로그램이 달라고 한(requests) 열 때만 받는 파일도 이때 받고 답을 쓴다 */
+  /** 프로그램이 requests/ 로 부탁할 수 있는지: 학원 공간·학생 명단·웹 로그인 코드 중 하나라도 쓰면 */
+  _usesRequests(id) {
+    const m = this.installed[id]?.manifest;
+    return !!m && (this._usesAcademy(id) || !!(m.academyInfo && this.user?.academy) || !!m.sso);
+  }
+
+  /**
+   * 학원 공간을 맞춘다. 프로그램이 달라고 한(requests) 열 때만 받는 파일도 이때 받고 답을 쓴다.
+   * 할 일(op)은 먼저 끝낸다 (막 추가한 학생의 파일이 '명단에 없는 학생'으로 밀리지 않게).
+   */
   async _syncAcademy(id, onProgress) {
+    if (this._usesRequests(id)) await this._runOps(id);
     const engine = this._academyEngine(id);
     if (!engine) return null;
     const dir = this.paths.account(this.user.id).app(id).requests;
-    const reqs = await readRequests(dir);
+    const reqs = (await readRequests(dir)).filter((r) => !r.op);
     try {
       const r = await engine.run({ onProgress, want: new Set(reqs.flatMap((q) => q.paths)), drop: new Set(reqs.flatMap((q) => q.remove)) });
       await answerRequests(dir, reqs, r.missing);
@@ -694,6 +715,9 @@ class Cloud extends EventEmitter {
         if (a?.reverted.length) {
           this._toast(`${this._name(id)}: 고칠 권한이 없는 학원 공용 파일 ${a.reverted.length}개는 원래대로 되돌렸어요 (내 것은 따로 보관)`, 'warning');
         }
+        if (a?.conflicts.length) {
+          this._toast(`${this._name(id)}: 다른 사람과 동시에 고친 학원 공용 파일 ${a.conflicts.length}개는 서버 것으로 맞추고 내 것은 따로 보관했어요`, 'warning');
+        }
         return r;
       } catch (err) {
         const offline = err instanceof ApiError && err.offline;
@@ -727,8 +751,14 @@ class Cloud extends EventEmitter {
     stream.on('hello', () => {
       this._online(true);
       for (const id of this._syncIds()) this._queueSync(id, REMOTE_DELAY); // 끊긴 동안 바뀐 것
+      this._queueAcademyInfo();
     });
     stream.on('change', (e) => this._onRemoteChange(e));
+    stream.on('academy', () => {
+      this.academyStamp += 1;
+      this.emitState();
+      this._queueAcademyInfo();
+    });
     this.events = stream;
     stream.start();
     this._watchAll();
@@ -737,6 +767,8 @@ class Cloud extends EventEmitter {
   _stopRealtime() {
     this.events?.stop();
     this.events = null;
+    clearTimeout(this._academyInfoTimer);
+    this._academyInfoTimer = null;
     for (const id of [...this.watchers.keys()]) this._unwatch(id);
     for (const q of this.syncQueue.values()) clearTimeout(q.timer);
     this.syncQueue.clear();
@@ -794,11 +826,14 @@ class Cloud extends EventEmitter {
       this._queueSync(id, LOCAL_DELAY);
     };
     watch(dirs.sync, true, changed);
-    if (this._usesAcademy(id)) {
-      watch(dirs.academy, true, changed);
+    if (this._usesAcademy(id)) watch(dirs.academy, true, changed);
+    if (this._usesRequests(id)) {
       watch(dirs.requests, false, (n) => {
         // 새 요청만 (답 <rid>.done.json 을 쓰거나 요청을 지운 것은 건너뜀)
-        if (REQUEST_RE.test(n) && fs.existsSync(path.join(dirs.requests, n))) this._queueSync(id, REQUEST_DELAY);
+        if (!REQUEST_RE.test(n) || !fs.existsSync(path.join(dirs.requests, n))) return;
+        this._runOps(id).then(() => {
+          if (this._usesAcademy(id)) this._queueSync(id, REQUEST_DELAY); // 파일 받기·지우기 요청
+        });
       });
     }
     if (list.length) this.watchers.set(id, list);
@@ -857,6 +892,115 @@ class Cloud extends EventEmitter {
     this.store.setAccountSettings(this.user.id, { legacyDismissed: { ...s.legacyDismissed, [id]: [...list] } });
   }
 
+  // ---------------------------------------------------------------- 프로그램이 부탁한 일·학원 명단
+  /** requests/ 의 할 일(op)을 차례로 처리한다 (지켜보기와 동기화가 같이 불러도 한 번씩) */
+  _runOps(id) {
+    const job = (this.ops.get(id) || Promise.resolve()).then(() => this._doOps(id)).catch((err) => this.log.warn?.(`[요청] ${id}`, err.message));
+    this.ops.set(id, job);
+    job.then(() => {
+      if (this.ops.get(id) === job) this.ops.delete(id);
+    });
+    return job;
+  }
+
+  async _doOps(id) {
+    if (!this.user || !this._usesRequests(id)) return;
+    const dir = this.paths.account(this.user.id).app(id).requests;
+    const reqs = (await readRequests(dir)).filter((r) => r.op);
+    let students = false;
+    for (const r of reqs) {
+      let answer;
+      try {
+        answer = { ok: true, missing: [], ...(await this._op(id, r.op, r.body)) };
+        if (r.op.startsWith('students.')) students = true;
+      } catch (err) {
+        const code = err instanceof ApiError && err.offline ? 'offline' : err.code || null;
+        answer = { ok: false, missing: [], error: err.message, errorCode: code, ...(err.extra?.student ? { student: err.extra.student } : {}) };
+      }
+      await writeJson(path.join(dir, `${r.rid}.done.json`), answer);
+      await fsp.rm(path.join(dir, `${r.rid}.json`), { force: true });
+    }
+    if (students) {
+      // 서버 알림을 기다리지 않고 바로 새 명단으로 (프로그램이 방금 고친 학생을 곧바로 보게)
+      await this._writeAcademyInfoAll([id]);
+      if (this._usesAcademy(id)) this._queueSync(id, REQUEST_DELAY); // 명단에 없어 미뤄 둔 학생 파일
+    }
+  }
+
+  /** 할 일 하나 → 답에 더할 내용 ({ student } | { ssoCode, expiresAt }). 실패는 던진다 */
+  async _op(id, op, body) {
+    const manifest = this.installed[id].manifest;
+    if (op === 'sso.code') {
+      if (!manifest.sso) throw new Error('이 프로그램은 웹 로그인을 쓰지 않아요.');
+      return this._ssoCode(manifest.sso);
+    }
+    if (!['students.save', 'students.delete', 'students.restore'].includes(op)) throw new Error(`모르는 요청이에요: ${op}`);
+    if (!manifest.academyInfo) throw new Error('이 프로그램은 학생 명단을 쓰지 않아요.');
+    if (!this.user.academy) throw new Error('학원에 속한 계정만 학생 명단을 쓸 수 있어요.');
+    const s = body?.student || {};
+    const sid = encodeURIComponent(String(body?.id || s.id || ''));
+    if (op === 'students.delete') return this._call(() => this.api.del(`/api/students/${sid}`));
+    if (op === 'students.restore') return this._call(() => this.api.post(`/api/students/${sid}/restore`, {}));
+    const fields = {};
+    for (const k of ['name', 'school', 'grade', 'memo', 'teacherId']) if (s[k] !== undefined) fields[k] = s[k];
+    if (fields.teacherId === undefined && s.teacher !== undefined) fields.teacherId = s.teacher ? s.teacher.id : null;
+    // rev 가 있으면 고치기(그사이 다른 사람이 고쳤으면 409 conflict + 지금 것), 없으면 추가(그 ID 로)
+    const r = Number.isInteger(s.rev)
+      ? await this._call(() => this.api.patch(`/api/students/${sid}`, { ...fields, baseRev: s.rev }))
+      : await this._call(() => this.api.post('/api/students', { ...fields, ...(s.id ? { id: s.id } : {}) }));
+    return { student: r.student };
+  }
+
+  /** 웹 프로그램(카탈로그 ID)에 이 계정으로 로그인할 일회용 코드 (60초) */
+  async _ssoCode(appId) {
+    const r = await this._call(() => this.api.post('/api/sso/authorize', { appId }));
+    return { ssoCode: r.code, expiresAt: r.expiresAt };
+  }
+
+  /** 학원 학생 명단·학원 AI 를 academy-info.json 으로 (매니페스트 academyInfo, 학원에 속한 계정). 실패하면 지난번 파일 그대로 */
+  async _writeAcademyInfo(id) {
+    const user = this.user;
+    if (!user?.academy || !this.installed[id]?.manifest.academyInfo) return;
+    const [list, members, ai] = await Promise.all([
+      this._call(() => this.api.get('/api/students')),
+      this._call(() => this.api.get('/api/academy/members')),
+      // 그 프로그램 것 → 학원 기본 (없거나 볼 수 없으면 null)
+      this._call(() => this.api.get(`/api/academy/ai?app=${encodeURIComponent(id)}`)).catch((err) => {
+        if (err instanceof ApiError && err.offline) throw err;
+        return { ai: null };
+      }),
+    ]);
+    if (this.user?.id !== user.id) return; // 그사이 로그아웃
+    await writeJson(this.paths.account(user.id).app(id).academyInfo, {
+      format: 1,
+      academy: user.academy,
+      me: { id: user.id, name: user.name, role: user.role },
+      members: members.members,
+      students: list.students, // 지운 학생 포함 (deletedAt)
+      purged: list.purged, // 완전히 지운 학생 ID
+      purgeDays: list.purgeDays,
+      ai: ai.ai,
+      updatedAt: Date.now(),
+    });
+  }
+
+  /** 켜져 있는 학생 명단 프로그램들의 academy-info.json 을 새로 쓴다 (also: 켜져 있지 않아도 쓸 프로그램) */
+  async _writeAcademyInfoAll(also = []) {
+    const ids = Object.keys(this.installed).filter((id) => this.installed[id].manifest.academyInfo && (also.includes(id) || this.runner.isRunning(id)));
+    for (const id of ids) {
+      await this._writeAcademyInfo(id).catch((err) => this.log.warn?.(`[학원 명단] ${id}`, err.message));
+    }
+  }
+
+  _queueAcademyInfo() {
+    clearTimeout(this._academyInfoTimer);
+    this._academyInfoTimer = setTimeout(() => {
+      this._academyInfoTimer = null;
+      if (this.phase === 'ready') this._writeAcademyInfoAll();
+    }, ACADEMY_INFO_DELAY);
+    this._academyInfoTimer.unref?.();
+  }
+
   // ---------------------------------------------------------------- 실행
   async _ticket(id, uid) {
     const store = new TicketStore(this.paths.account(uid).tickets);
@@ -884,7 +1028,7 @@ class Cloud extends EventEmitter {
       if (this.user?.id !== uid) throw new Error(this.authMessage || '로그인한 계정이 바뀌어서 켜지 않았어요.');
     };
     const known = this.apps.find((a) => a.id === id);
-    if (known && !isDesktop(known)) throw new Error(`${known.name}은(는) 휴대폰에서 쓰는 프로그램이에요.`);
+    if (known && !isDesktop(known)) throw new Error(known.platform === 'web' ? notDesktop(known) : `${known.name}은(는) 휴대폰에서 쓰는 프로그램이에요.`);
     if (this.runner.isRunning(id)) {
       const info = this.runner.runningInfo(id);
       if (info?.userId && info.userId !== uid) {
@@ -920,14 +1064,22 @@ class Cloud extends EventEmitter {
         await fsp.mkdir(dirs.sync, { recursive: true });
         await fsp.mkdir(dirs.local, { recursive: true });
         const academy = this._usesAcademy(id);
-        if (academy) {
-          await fsp.mkdir(dirs.academy, { recursive: true });
+        const requests = this._usesRequests(id);
+        const manifest = this.installed[id].manifest;
+        if (academy) await fsp.mkdir(dirs.academy, { recursive: true });
+        if (requests) {
           await fsp.mkdir(dirs.requests, { recursive: true });
           // 지난번에 남은 요청·답 (폴더는 지켜보는 중이라 안의 파일만 지움)
           for (const n of await fsp.readdir(dirs.requests)) await fsp.rm(path.join(dirs.requests, n), { recursive: true, force: true });
         }
-        const signing = !!this.installed[id].manifest?.dataSigning;
+        const signing = !!manifest?.dataSigning;
         if (signing && !this.dataKey) await this._refreshDataKey();
+        const academyInfo = !!(manifest.academyInfo && this.user.academy);
+        if (academyInfo) {
+          await this._writeAcademyInfo(id).catch((err) => this.log.warn?.(`[학원 명단] ${id}: 지난번 명단으로 켜요`, err.message));
+        }
+        // 일회용 로그인 코드는 60초짜리라 켜기 바로 전에 (인터넷이 없으면 빈 값 → 프로그램이 안내)
+        const ssoCode = manifest.sso ? await this._ssoCode(manifest.sso).then((r) => r.ssoCode).catch(() => '') : '';
         sameUser();
         const env = buildEnv({
           ticket,
@@ -935,6 +1087,9 @@ class Cloud extends EventEmitter {
           user: this.user,
           appDirs: dirs,
           academy,
+          requests,
+          academyInfo,
+          ssoCode,
           dataKey: signing ? this.dataKey : '',
           serverUrl: this.store.config.serverUrl,
           launcherVersion: this.version,
@@ -958,7 +1113,7 @@ class Cloud extends EventEmitter {
   async installFromLink(id) {
     if (!this.user) throw new Error('로그인이 필요해요.');
     const app = this._app(id);
-    if (!isDesktop(app)) throw new Error(`${app.name}은(는) 휴대폰에서 내려받아 설치해요.`);
+    if (!isDesktop(app)) throw new Error(notDesktop(app));
     const task = this.tasks.get(id);
     if (task && (task.kind === 'install' || task.kind === 'update')) return { busy: true }; // 이미 받는 중
     const inst = this.installed[id];

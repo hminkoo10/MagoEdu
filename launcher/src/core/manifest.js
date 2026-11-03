@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const MANIFEST = 'magoedu-app.json';
 const RESTART_EXIT_CODE = 75; // 프로그램이 이 값으로 끝나면 바로 다시 켠다 (새 버전 적용 등)
+const APP_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
 
 function cleanList(v) {
   return Array.isArray(v) ? v.map(String).filter(Boolean).slice(0, 100) : [];
@@ -51,6 +52,10 @@ function normalizeManifest(raw, fallback = {}) {
       })),
     // 설정 파일 서명 키(MAGOEDU_DATA_KEY)를 받음 — 손으로 고친 설정 파일을 프로그램이 거부할 수 있게
     dataSigning: m.dataSigning === true,
+    // 학원 학생 명단·학원 AI 를 파일(academy-info.json)로 받는지
+    academyInfo: m.academyInfo === true,
+    // 켤 때 이 웹 프로그램(카탈로그 ID)에 로그인할 일회용 코드를 받는지 (예: 마고 과목내비 PC → "mago-navi")
+    sso: typeof m.sso === 'string' && APP_ID_RE.test(m.sso) ? m.sso : null,
     restartExitCode: Number.isInteger(m.restartExitCode) ? m.restartExitCode : RESTART_EXIT_CODE,
     singleInstance: m.singleInstance !== false,
   };

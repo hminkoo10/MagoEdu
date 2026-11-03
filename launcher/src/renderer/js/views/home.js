@@ -215,6 +215,7 @@ export class HomeView {
     c.name.textContent = a.name;
     c.desc.textContent = a.description || '';
     if (a.platform === 'android') return this.fillPhoneCard(c, a);
+    if (a.platform === 'web') return this.fillLinkCard(c, a);
     if (this.web) return this.fillWebCard(c, a);
 
     const ver = [];
@@ -345,6 +346,33 @@ export class HomeView {
     c.more.style.display = a.release ? '' : 'none'; // ⋯ 에는 언제나 ‘이 기기에서 받기’
   }
 
+  // 웹 프로그램: 설치·동기화 없이 브라우저에서 열기만 (로그인은 통합 클라우드 계정으로)
+  fillLinkCard(c, a) {
+    const host = (() => {
+      try {
+        return new URL(a.url).host;
+      } catch {
+        return '';
+      }
+    })();
+    put(c.ver, h('span', {}, host ? `웹 프로그램 · ${host}` : '웹 프로그램'));
+    c.task.style.display = 'none';
+    c.sync.className = 'sync';
+    c.sync.style.display = '';
+    c.sync.title = '';
+    put(c.sync, ic('globe', 15), '설치 없이 브라우저에서 써요');
+    const key = `link|${!!a.url}`;
+    if (c._primary !== key) {
+      c._primary = key;
+      c.primary.className = 'btn primary';
+      c.primary.style.display = '';
+      c.primary.disabled = !a.url;
+      put(c.primary, ...(a.url ? [ic('external', 18)] : []), document.createTextNode(a.url ? '열기' : '준비 중'));
+      c.second.style.display = 'none';
+    }
+    c.more.style.display = 'none'; // 설치·업데이트·동기화·자동 실행·바로 가기·데이터가 없음
+  }
+
   /** 이 기기에서 APK 를 받는다 (10분짜리 주소). 앱에서는 기본 브라우저가 받음. */
   async downloadHere(a) {
     const r = await this.cloud.api('POST', `/api/apps/${encodeURIComponent(a.id)}/download-link`, {});
@@ -404,6 +432,15 @@ export class HomeView {
     try {
       if (a.platform === 'android') {
         if (a.release) await this.getPhoneApp(a);
+        return;
+      }
+      if (a.platform === 'web') {
+        if (!a.url) return;
+        if (this.web) window.open(a.url, '_blank', 'noopener');
+        else {
+          await this.cloud.openExternal(a.url);
+          toast(`브라우저에서 ${a.name}을(를) 열어요`, 'success', 1800);
+        }
         return;
       }
       if (this.web) {
