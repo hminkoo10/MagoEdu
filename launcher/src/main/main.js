@@ -3,7 +3,7 @@
 // 마고에듀 통합 클라우드 - 구현민 개발
 // Electron 메인 프로세스: 창, 트레이, 자동 실행, 화면과 주고받는 기능(IPC)
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage, clipboard, safeStorage, powerMonitor } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage, clipboard, safeStorage, powerMonitor, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const log = require('electron-log/main');
@@ -22,6 +22,8 @@ const { setupSelfUpdate } = require('./selfupdate');
 const { uninstallCleanup } = require('./uninstall');
 const { sanitizeDefaults, sanitizeResume } = require('./startup');
 const { readJsonSync, writeJsonSync } = require('../core/fsutil');
+const { trayMenuItems } = require('./tray-menu-model');
+const { createTrayPopup } = require('./tray-popup');
 
 const TITLE = '마고에듀 통합 클라우드';
 const DEVELOPER = '구현민';
@@ -44,6 +46,7 @@ function loadDefaults() {
 
 let win = null;
 let tray = null;
+let trayPopup = null;
 let cloud = null;
 let updater = null;
 let quitting = false;
@@ -91,6 +94,8 @@ function createWindow({ show }) {
     if (show) win.show();
   });
   win.on('show', () => cloud.emitState());
+  win.on('hide', () => cloud.emitState());
+  win.on('closed', () => trayPopup?.destroy());
   win.on('focus', () => cloud.emitState());
   win.on('close', (e) => {
     if (quitting || !cloud.store.config.closeToTray || cloud.phase !== 'ready' || isTest) return;
@@ -105,6 +110,7 @@ function createWindow({ show }) {
 }
 
 function showWindow() {
+  trayPopup?.close();
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
@@ -118,6 +124,7 @@ function send(channel, payload) {
 // ---------------------------------------------------------------- 트레이
 function buildTrayMenu(state) {
   const items = [{ label: '열기', click: showWindow }];
+  if (win?.isVisible()) items.push({ label: '숨기기', click: () => win.hide() });
   if (state.phase === 'ready') {
     const apps = state.apps.filter((a) => a.installed);
     if (apps.length) {
@@ -143,7 +150,26 @@ function createTray() {
   tray = new Tray(img);
   tray.setToolTip(TITLE);
   tray.on('click', showWindow);
-  tray.setContextMenu(buildTrayMenu(cloud.snapshot()));
+  const fallback = () => tray.popUpContextMenu(buildTrayMenu(cloud.snapshot()));
+  try {
+    trayPopup = createTrayPopup({
+      BrowserWindow, ipcMain, screen, log,
+      getItems: () => trayMenuItems(cloud.snapshot(), !!win?.isVisible()),
+      getTrayBounds: () => tray.getBounds(),
+      fallback,
+      activate: (item) => {
+        if (item.action === 'launch') return doLaunch(item.appId);
+        if (item.action === 'stop') return cloud.stop(item.appId);
+        if (item.id === 'open') return showWindow();
+        if (item.id === 'hide') return win.hide();
+        if (item.id === 'sync') return cloud.syncAll();
+        if (item.id === 'quit') return quitApp();
+      },
+    });
+  } catch (error) {
+    log.warn('[트레이] 팝업 준비 실패', error.message);
+  }
+  tray.on('right-click', () => trayPopup ? trayPopup.toggle() : fallback());
 }
 
 /** fromLink: 바로 가기·웹에서 부름 → 창은 꼭 필요할 때만 (설치·업데이트 진행, 예전 데이터 묻기, 오류) */
@@ -365,14 +391,9 @@ if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) 
     const resume = takeResume();
     const hidden = startHidden || !!resume?.hidden;
     cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts: appShortcuts(), startedAtLogin: resume ? !!resume.autoLaunch : startHidden });
-    let trayKey = '';
     cloud.on('state', (s) => {
       send('state', s);
-      const key = JSON.stringify([s.phase, s.apps.filter((a) => a.installed).map((a) => [a.id, a.name, a.running])]);
-      if (tray && key !== trayKey) {
-        trayKey = key;
-        tray.setContextMenu(buildTrayMenu(s));
-      }
+      trayPopup?.refresh();
       if (pendingLink && s.phase !== 'ready' && s.phase !== 'boot') showWindow(); // 로그인이 필요해짐
     });
     cloud.on('ready', () => runPending());
@@ -399,6 +420,7 @@ if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) 
   });
   app.on('before-quit', () => {
     quitting = true;
+    trayPopup?.destroy();
     cloud?.shutdown();
   });
   app.on('window-all-closed', () => {

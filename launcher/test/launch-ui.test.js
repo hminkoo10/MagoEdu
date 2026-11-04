@@ -37,13 +37,16 @@ function mainFixture() {
   class Window extends EventEmitter {
     constructor() {
       super();
+      this.visible = false;
       this.webContents = { on() {}, setWindowOpenHandler() {}, send: (...args) => calls.push(['send', ...args]) };
     }
     removeMenu() {}
     loadFile() {}
     isMinimized() { return false; }
     isDestroyed() { return false; }
-    show() { calls.push(['show']); this.emit('show'); }
+    isVisible() { return this.visible; }
+    show() { this.visible = true; calls.push(['show']); this.emit('show'); }
+    hide() { this.visible = false; calls.push(['hide']); this.emit('hide'); }
     focus() { this.emit('focus'); }
   }
   const electron = {
@@ -94,4 +97,15 @@ test('런처 창을 다시 열거나 포커스하면 실제 바로가기 상태�
   assert.equal(calls[0][0], 'show');
   assert.equal(calls.at(-1)[1], 'toast');
   assert.match(calls.at(-1)[2].text, /창을 앞으로/);
+});
+
+test('네이티브 트레이 폴백도 창이 보일 때만 숨기기를 제공하고 상태를 갱신', () => {
+  const { api, calls } = mainFixture();
+  const state = { phase: 'login', apps: [] };
+  assert.ok(!api.buildTrayMenu(state).some((item) => item.label === '숨기기'));
+  api.showWindow();
+  calls.length = 0;
+  api.buildTrayMenu(state).find((item) => item.label === '숨기기').click();
+  assert.deepEqual(calls, [['hide'], ['state']]);
+  assert.ok(!api.buildTrayMenu(state).some((item) => item.label === '숨기기'));
 });

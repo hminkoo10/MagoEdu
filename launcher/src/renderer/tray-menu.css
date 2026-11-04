@@ -1,0 +1,19 @@
+/* 타종 Menu처럼 OS 그림자 없이 투명한 바탕에 둥근 카드만 그린다. */
+html, body { height: auto; background: transparent; }
+#menu {
+  width: max-content; padding: 6px;
+  border: 1px solid var(--grey200); border-radius: 14px;
+  background: #fff; overflow: auto; outline: none;
+}
+.tray-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  border: 0; border-radius: 8px; padding: 9px 12px;
+  background: transparent; color: var(--grey800); cursor: pointer;
+  font-size: 14px; line-height: 20px; text-align: left; outline: none;
+}
+.tray-item:hover, .tray-item:focus { background: var(--grey100); color: var(--grey900); }
+.tray-item .ic { color: var(--grey900); }
+.tray-item.danger .ic { color: var(--danger); }
+.tray-item img { width: 20px; height: 20px; object-fit: contain; flex: none; }
+.tray-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-separator { height: 1px; background: var(--grey100); margin: 5px 8px; }
