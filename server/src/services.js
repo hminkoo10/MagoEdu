@@ -122,10 +122,11 @@ function createServices({ db, config, log }) {
       lastLoginAt: u.last_login_at || null,
     };
     if (u.role === 'student') {
-      const s = db.get(`SELECT s.id, s.name, s.teacher_uid, t.name AS teacher_name FROM students s
+      const s = db.get(`SELECT s.id, s.name, s.school, s.school_office, s.school_code, s.teacher_uid, t.name AS teacher_name FROM students s
                         LEFT JOIN users t ON t.uid = s.teacher_uid AND t.academy_id = s.academy_id
                         WHERE s.id = ? AND s.academy_id = ?`, u.student_id, u.academy_id);
-      out.student = s ? { id: s.id, name: s.name, teacherUid: s.teacher_uid, teacherName: s.teacher_name || null } : null;
+      out.student = s ? { id: s.id, name: s.name, school: s.school, schoolOffice: s.school_office, schoolCode: s.school_code,
+        teacherUid: s.teacher_uid, teacherName: s.teacher_name || null } : null;
       out.aiMode = u.ai_mode;
       if (s) out.name = s.name;
     }

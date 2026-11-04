@@ -2,6 +2,7 @@
 //   원장: 우리 학원 선생님 계정 만들기·지우기·비밀번호 초기화·사용 중지·프로그램 권한
 //   운영자: 모든 계정 (원장·선생님·운영자), 학원
 import { editAcademyCode } from '../student-accounts.js';
+import { appLabel } from '../ui.js';
 import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, checkbox, toggle, segmented, pill, menu, bytes, ago, initial, ROLE, confirmDialog, secretDialog, reveal, put } from '../ui.js';
 
 export class PeopleView {
@@ -109,7 +110,7 @@ export class PeopleView {
   }
 
   render(users) {
-    const appNames = Object.fromEntries(this.apps().map((a) => [a.id, a.name]));
+    const appNames = Object.fromEntries(this.apps().map((a) => [a.id, appLabel(a)]));
     if (!users.length) {
       put(this.table, h('div', { class: 'empty' }, ic('users', 40, 1.6), this.isAdmin ? '계정이 없어요' : '아직 선생님 계정이 없어요. ‘선생님 추가’를 눌러 만들어 주세요.'));
       return;
@@ -170,7 +171,7 @@ export class PeopleView {
     const drawList = () => {
       put(box, 
         ...apps.map((a) =>
-          checkbox(a.name, set.has(a.id), (on) => {
+          checkbox(appLabel(a), set.has(a.id), (on) => {
             if (on) set.add(a.id);
             else set.delete(a.id);
           }),

@@ -2,7 +2,7 @@
 
 // 학원 학생 명단과 학원 공용 AI (students.js)
 //   GET    /api/students                  명단 (지운 학생 포함) + 완전히 지운 학생 ID
-//   POST   /api/students                  추가 {name, school, grade, teacherId, memo, id?}
+//   POST   /api/students                  추가 {name, school, schoolOffice, schoolCode, grade, teacherId, memo, id?}
 //   PATCH  /api/students/:id              고치기 {..., baseRev?}  (baseRev 가 다르면 409)
 //   DELETE /api/students/:id              지우기 (숨김, 정한 날짜 뒤 완전히 지움)
 //   POST   /api/students/:id/restore      되살리기
@@ -45,6 +45,7 @@ function register(router, deps) {
     if (user.role === 'student') {
       const s = db.get('SELECT * FROM students WHERE id = ? AND academy_id = ?', user.student_id, aca);
       return { academyId: aca, students: [{ id: s.id, name: s.name, school: s.school, grade: s.grade,
+        schoolOffice: s.school_office, schoolCode: s.school_code,
         teacher: s.teacher_uid ? { id: s.teacher_uid, name: svc.publicUser(user).student.teacherName } : null }], purged: [] };
     }
     const out = students.list(aca);

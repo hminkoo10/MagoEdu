@@ -1,4 +1,5 @@
 // 내 계정: 아이디·비밀번호·이름 바꾸기, 저장 공간, 로그인한 기기
+import { appLabel } from '../ui.js';
 import { h, ic, btn, busy, toast, field, input, passwordInput, checkbox, pill, bytes, ago, initial, ROLE, confirmDialog, reveal, put } from '../ui.js';
 
 export class AccountView {
@@ -128,7 +129,7 @@ export class AccountView {
     try {
       const r = await this.cloud.refreshStorage();
       const s = this.store.state;
-      const names = Object.fromEntries(s.apps.map((a) => [a.id, a.name]));
+      const names = Object.fromEntries(s.apps.map((a) => [a.id, appLabel(a)]));
       const usage = (used, quota) =>
         h(
           'div',

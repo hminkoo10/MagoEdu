@@ -47,6 +47,7 @@ function loadConfig(env = process.env, overrides = {}) {
     maxFileBytes: intOr(env.MAX_FILE_MB, 2048, 1) * 1024 * 1024,
     catalogFile: env.CATALOG_FILE || path.join(__dirname, '..', 'catalog.default.json'),
     studentPurgeDays: intOr(env.STUDENT_PURGE_DAYS, 30, 1, 3650), // 지운 학생을 완전히 지우기까지
+    neisApiKey: env.NEIS_API_KEY || '', // 없어도 학교 검색 가능 (나이스가 최대 5건만 반환)
     aiRelayPerTenMinutes: intOr(env.AI_RELAY_PER_10_MIN, 600, 1, 100000), // 학원 AI 중계: 사람·프로그램마다 10분에
     aiRelayAllowPrivate: env.AI_RELAY_ALLOW_PRIVATE === '1', // 시험용: 서버 안쪽 주소로도 중계
     // 없으면 내려받기 안내 페이지(public)만
@@ -142,6 +143,7 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/sync').register(router, deps);
   require('./routes/shared').register(router, deps);
   require('./routes/students').register(router, deps);
+  require('./routes/schools').register(router, deps);
   require('./routes/student-accounts').register(router, deps);
   require('./routes/student-notes').register(router, deps);
   require('./routes/sso').register(router, deps);

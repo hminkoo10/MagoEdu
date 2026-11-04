@@ -3,6 +3,7 @@
 //   운영자: 학원을 골라서 본다
 import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, segmented, checkbox, toggle, pill, ago, date, secretDialog, reveal, put } from '../ui.js';
 import { editAcademyCode, showCredentials } from '../student-accounts.js';
+import { schoolSearch } from '../school-search.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const LEVEL = ['초', '중', '고'];
@@ -413,13 +414,13 @@ export class StudentsView {
   async edit(s) {
     let base = s; // 고치기 시작한 때의 서버 내용 (다른 사람이 먼저 고치면 바뀜)
     const name = input({ placeholder: '예: 김민준' });
-    const school = input({ placeholder: '예: 마고중학교' });
+    const school = schoolSearch(this.cloud);
     const grade = input({ placeholder: '예: 중2', list: 'student-grades' });
     const teacher = select([], '');
     const memo = h('textarea', { class: 'input', placeholder: '예: 화·목 수업, 서술형이 약함', style: { minHeight: '84px' } });
     const fill = (st) => {
       name.value = st?.name || '';
-      school.value = st?.school || '';
+      school.fill(st);
       grade.value = st?.grade || '';
       memo.value = st?.memo || '';
       const opts = [['', '없음'], ...this.members.map((m) => [m.id, `${m.name} (${m.roleLabel})`])];
@@ -429,7 +430,7 @@ export class StudentsView {
       teacher.value = st ? st.teacher?.id || '' : this.defaultTeacher();
     };
     fill(s);
-    const values = () => ({ name: name.value.trim(), school: school.value.trim(), grade: grade.value.trim(), teacherId: teacher.value || null, memo: memo.value.trim() });
+    const values = () => ({ name: name.value.trim(), ...school.value(), grade: grade.value.trim(), teacherId: teacher.value || null, memo: memo.value.trim() });
     let saved = null;
     const ok = await dialog({
       title: s ? `${s.name} 고치기` : '학생 추가',
@@ -439,7 +440,7 @@ export class StudentsView {
         'div',
         {},
         h('div', { class: 'form-row' }, field('이름', name), field('학년', grade)),
-        field('학교', school),
+        field('학교', school.el),
         field('담당 선생님', teacher, '담당이 바뀌면 여기서 바꿔 주세요. 담당 선생님은 ‘내 담당’에서 바로 찾을 수 있어요.'),
         field('메모', memo),
         h('datalist', { id: 'student-grades' }, ...this.grades.map((g) => h('option', { value: g }))),
@@ -453,9 +454,13 @@ export class StudentsView {
           return;
         }
         // 바꾼 칸만 보낸다
-        const cur = { name: base.name, school: base.school || '', grade: base.grade || '', teacherId: base.teacher?.id || null, memo: base.memo || '' };
+        const cur = { name: base.name, school: base.school || '', schoolOffice: base.schoolOffice || '', schoolCode: base.schoolCode || '', grade: base.grade || '', teacherId: base.teacher?.id || null, memo: base.memo || '' };
         const patch = Object.fromEntries(Object.entries(v).filter(([k, x]) => x !== cur[k]));
         if (!Object.keys(patch).length) return;
+        // 같은 교육청 안에서 학교만 바뀌어도 두 코드를 함께 보낸다.
+        if (['school', 'schoolOffice', 'schoolCode'].some((k) => k in patch)) {
+          Object.assign(patch, school.value());
+        }
         try {
           saved = (await this.cloud.api('PATCH', `/api/students/${encodeURIComponent(base.id)}${this.qs()}`, { ...patch, baseRev: base.rev })).student;
         } catch (e) {
@@ -470,7 +475,7 @@ export class StudentsView {
           throw e;
         }
       },
-    });
+    }).finally(() => school.destroy());
     if (!ok) return;
     if (saved) toast(s ? '저장했어요' : `${saved.name} 학생을 추가했어요`, 'success');
     this.load();

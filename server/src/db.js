@@ -21,7 +21,7 @@ const MAGO_NAVI = {
 };
 const MAGO_NAVI_PC = {
   id: 'mago-navi-pc',
-  name: '마고 과목내비 (PC)',
+  name: '마고 과목내비',
   description: '마고 과목내비를 PC 프로그램 창으로 (통합 클라우드 계정으로 자동 로그인)',
   exe: 'MagoNavi.exe',
   source: { type: 'github', repo: 'hminkoo10/mago-navi', asset: '^MagoNavi-(\\d+\\.\\d+\\.\\d+)-win-x64\\.zip$' },
@@ -331,6 +331,14 @@ const MIGRATIONS = [
     used_at INTEGER
   );
   CREATE INDEX student_invites_student ON student_invites(student_id);
+  `,
+
+  // 8: 학생 학교의 나이스 코드 + PC 과목내비 기본 이름 (운영자가 정한 이름은 보존)
+  `
+  ALTER TABLE students ADD COLUMN school_office TEXT NOT NULL DEFAULT '';
+  ALTER TABLE students ADD COLUMN school_code TEXT NOT NULL DEFAULT '';
+  UPDATE apps SET name = '마고 과목내비'
+  WHERE id = 'mago-navi-pc' AND name = '마고 과목내비 (PC)';
   `,
 ];
 

@@ -108,6 +108,11 @@ export function field(label, control, hint) {
   return h('div', { class: 'field' }, label ? h('label', {}, label) : null, control, hint ? h('div', { class: 'hint' }, hint) : null);
 }
 
+// 이름이 같은 웹·PC 앱도 권한/용량 목록에서 구분한다. 실제 카탈로그 이름은 바꾸지 않음.
+export function appLabel(app) {
+  return `${app.name} · ${app.platform === 'web' ? '웹' : app.platform === 'android' ? '안드로이드' : 'PC'}`;
+}
+
 export function input(props = {}) {
   return h('input', { class: `input ${props.cls || ''}`.trim(), spellcheck: 'false', autocomplete: 'off', ...props, cls: undefined });
 }

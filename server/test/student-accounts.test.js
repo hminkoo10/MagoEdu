@@ -79,7 +79,7 @@ test('고침 7: 기존 열·세션·외래 키·인덱스·증가 번호 보존'
   const indexes = raw.prepare("SELECT name, sql FROM sqlite_schema WHERE tbl_name = 'users' AND type IN ('index', 'trigger') ORDER BY name").all();
   raw.close();
   db = openDb(file);
-  assert.equal(db.get('PRAGMA user_version').user_version, 7);
+  assert.equal(db.get('PRAGMA user_version').user_version, MIGRATIONS.length);
   assert.equal(db.get('PRAGMA foreign_keys').foreign_keys, 1);
   assert.deepEqual(db.all('PRAGMA foreign_key_check'), []);
   assert.deepEqual(db.all(`SELECT ${Object.keys(old[0]).join(', ')} FROM users ORDER BY id`), old);
@@ -143,7 +143,7 @@ test('학생 계정: 학원 코드·직접 발급·일괄 발급·관리', async
     error(await create(student.id, 'another-name'), 400, 'account_exists');
     error(await create(second.id, 'FIRST.STUDENT'), 400, 'username_taken');
     const user = ok(await login('FIRST.STUDENT')).user;
-    assert.deepEqual(user.student, { id: student.id, name: student.name, teacherUid: s.teacher.id, teacherName: s.teacher.name });
+    assert.deepEqual(user.student, { id: student.id, name: student.name, school: '', schoolOffice: '', schoolCode: '', teacherUid: s.teacher.id, teacherName: s.teacher.name });
     assert.equal(user.roleLabel, '학생');
     assert.equal(user.aiMode, 'academy');
     assert.equal(user.mustChangePassword, false);
@@ -313,7 +313,7 @@ test('학생 인증: 임시 비밀번호 강제·허용 목록·PC 거절·본�
   error(await rq('PATCH', '/api/me', { token, body: { username: 'a' } }), 400, 'invalid_username');
   ok(await rq('PATCH', `/api/students/${student.id}`, { token: teach, body: { name: '바뀐 학생', teacherId: s.da.id } }));
   const me = ok(await rq('GET', '/api/me', { token })).user;
-  assert.deepEqual(me.student, { id: student.id, name: '바뀐 학생', teacherUid: s.da.id, teacherName: s.da.name });
+  assert.deepEqual(me.student, { id: student.id, name: '바뀐 학생', school: '', schoolOffice: '', schoolCode: '', teacherUid: s.da.id, teacherName: s.da.name });
   assert.equal(me.name, '바뀐 학생');
   ok(await rq('POST', '/api/auth/logout', { token }));
   error(await rq('GET', '/api/me', { token }), 401, 'session_invalid');

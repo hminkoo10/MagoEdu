@@ -1039,7 +1039,7 @@ class Cloud extends EventEmitter {
     if (op === 'students.delete') return this._call(() => this.api.del(`/api/students/${sid}`));
     if (op === 'students.restore') return this._call(() => this.api.post(`/api/students/${sid}/restore`, {}));
     const fields = {};
-    for (const k of ['name', 'school', 'grade', 'memo', 'teacherId']) if (s[k] !== undefined) fields[k] = s[k];
+    for (const k of ['name', 'school', 'schoolOffice', 'schoolCode', 'grade', 'memo', 'teacherId']) if (s[k] !== undefined) fields[k] = s[k];
     if (fields.teacherId === undefined && s.teacher !== undefined) fields.teacherId = s.teacher ? s.teacher.id : null;
     // rev 가 있으면 고치기(그사이 다른 사람이 고쳤으면 409 conflict + 지금 것), 없으면 추가(그 ID 로)
     const r = Number.isInteger(s.rev)
@@ -1414,6 +1414,8 @@ class Cloud extends EventEmitter {
     const inst = this.installed[id];
     const app = this.apps.find((a) => a.id === id);
     if (!inst || !isDesktop(app)) return;
+    // 웹 앱은 바로가기를 만들지 않으므로 같은 이름이어도 충돌하지 않는다.
+    // 이름 변경(과목내비의 옛 '(PC)' 등)은 previous로 바탕 화면·시작 메뉴 모두 교체한다.
     try {
       this._shortcutState(id); // 업데이트 직전에 지웠거나 이름이 바뀌어도 삭제 의도를 먼저 기억
       const rec = this._shortcutRec(id);

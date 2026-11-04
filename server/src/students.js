@@ -30,6 +30,25 @@ const LEGACY_SETTINGS = 'academy.json'; // 예전 오답노트(0.3)의 학원 �
 const LEGACY_NOTE_RE = /^members\/([A-Za-z0-9-]{1,64})\/notes\/([A-Za-z0-9-]{8,64})\.json$/;
 const LEGACY_MAX_BYTES = 4 * 1024 * 1024; // 예전 학생·노트 파일을 읽을 때 (서버 메모리 보호)
 
+function schoolFields(body, cur = null) {
+  const out = {};
+  if (body.school !== undefined) out.school = str(body.school, 60);
+  if (body.schoolOffice !== undefined || body.schoolCode !== undefined) {
+    const office = body.schoolOffice, code = body.schoolCode;
+    if (typeof office !== 'string' || typeof code !== 'string'
+      || !((office === '' && code === '') || (office.length === 3 && code.length === 7 && /^[A-Z][0-9]{2}$/.test(office) && /^[0-9]{7}$/.test(code)))) {
+      throw bad('학교 교육청 코드와 학교 코드를 함께 올바르게 입력해 주세요.', 'invalid_school');
+    }
+    out.school_office = office;
+    out.school_code = code;
+  } else if (out.school !== undefined && out.school !== cur?.school) {
+    // 이름만 직접 고친 옛 클라이언트도 다른 학교의 코드를 남기지 않는다.
+    out.school_office = out.school_code = '';
+  }
+  if (Object.keys(out).length && !(out.school ?? cur?.school ?? '')) out.school_office = out.school_code = '';
+  return out;
+}
+
 function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, purgeDays = 30 }) {
   // ---------------- 명단 ----------------
   function stateOf(row) {
@@ -61,6 +80,8 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
       id: r.id,
       name: r.name,
       school: r.school,
+      schoolOffice: r.school_office,
+      schoolCode: r.school_code,
       grade: r.grade,
       teacher: who(map, r.teacher_uid),
       memo: r.memo,
@@ -105,7 +126,7 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
       out.name = str(body.name, 40);
       if (!out.name) throw bad('학생 이름을 입력해 주세요.', 'invalid_name');
     }
-    if (body.school !== undefined) out.school = str(body.school, 60);
+    Object.assign(out, schoolFields(body, cur));
     if (body.grade !== undefined) out.grade = str(body.grade, 20);
     if (body.memo !== undefined) out.memo = str(body.memo, 500);
     const t = body.teacherId !== undefined ? body.teacherId : body.teacher?.id;
@@ -131,12 +152,14 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
     const now = Date.now();
     const id = want || crypto.randomUUID();
     db.run(
-      `INSERT INTO students(id, academy_id, name, school, grade, teacher_uid, memo, rev, created_by, updated_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+      `INSERT INTO students(id, academy_id, name, school, school_office, school_code, grade, teacher_uid, memo, rev, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
       id,
       aca,
       f.name,
       f.school ?? '',
+      f.school_office ?? '',
+      f.school_code ?? '',
       f.grade ?? '',
       f.teacher_uid ?? null,
       f.memo ?? '',
@@ -258,13 +281,17 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
     if (!name) return false;
     const by = typeof s.createdBy?.id === 'string' && db.get('SELECT uid FROM users WHERE uid = ? AND academy_id = ?', s.createdBy.id, aca) ? s.createdBy.id : null;
     const at = Number.isFinite(s.createdAt) ? s.createdAt : Date.now();
+    let school;
+    try { school = schoolFields(s); } catch { return false; }
     db.run(
-      `INSERT INTO students(id, academy_id, name, school, grade, teacher_uid, memo, rev, created_by, updated_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+      `INSERT INTO students(id, academy_id, name, school, school_office, school_code, grade, teacher_uid, memo, rev, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
       m[1],
       aca,
       name,
-      str(s.school, 60),
+      school.school ?? '',
+      school.school_office ?? '',
+      school.school_code ?? '',
       str(s.grade, 20),
       by,
       str(s.memo, 500),

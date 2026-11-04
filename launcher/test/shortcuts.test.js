@@ -120,3 +120,37 @@ test('바탕 화면 끄기·이름 변경은 남아 있는 시작 메뉴 바로 
   assert.equal(fs.existsSync(desktop), false);
   assert.equal(fs.existsSync(startMenu), false);
 });
+
+test('과목내비 이름 변경: PC의 옛 바로가기 교체, 같은 이름의 웹 앱은 바로가기 생성 안 함', (t) => {
+  const { cloud, shortcuts, store } = setup(t);
+  cloud.apps = [
+    { id: 'mago-navi', name: '마고 과목내비', platform: 'web' },
+    { id: 'mago-navi-pc', name: '마고 과목내비 (PC)', platform: 'windows' },
+  ];
+  cloud.installed['mago-navi-pc'] = cloud.installed.notes;
+  cloud._writeShortcuts('mago-navi-pc');
+  assert.deepEqual(shortcuts.exists('마고 과목내비 (PC).lnk'), { desktop: true, startMenu: true });
+  cloud.apps[1].name = '마고 과목내비';
+  cloud._ensureShortcuts();
+  assert.deepEqual(shortcuts.exists('마고 과목내비 (PC).lnk'), { desktop: false, startMenu: false });
+  assert.deepEqual(shortcuts.exists('마고 과목내비.lnk'), { desktop: true, startMenu: true });
+  for (const file of shortcuts._files('마고 과목내비.lnk')) {
+    assert.equal(JSON.parse(fs.readFileSync(file)).args, 'magoedu://launch/mago-navi-pc');
+  }
+  assert.equal(store.config.shortcuts['mago-navi'], undefined);
+  assert.equal(store.config.shortcuts['mago-navi-pc'].name, '마고 과목내비.lnk');
+  cloud._ensureShortcuts();
+  assert.deepEqual(shortcuts.exists('마고 과목내비.lnk'), { desktop: true, startMenu: true });
+});
+
+test('과목내비 이름 변경: 사용자가 지운 바탕 화면 바로가기는 복원하지 않음', (t) => {
+  const { cloud, shortcuts } = setup(t);
+  cloud.apps = [{ id: 'mago-navi-pc', name: '마고 과목내비 (PC)', platform: 'windows' }];
+  cloud.installed['mago-navi-pc'] = cloud.installed.notes;
+  cloud._writeShortcuts('mago-navi-pc');
+  fs.rmSync(shortcuts._files('마고 과목내비 (PC).lnk')[0]);
+  cloud.apps[0].name = '마고 과목내비';
+  cloud._ensureShortcuts();
+  assert.deepEqual(shortcuts.exists('마고 과목내비 (PC).lnk'), { desktop: false, startMenu: false });
+  assert.deepEqual(shortcuts.exists('마고 과목내비.lnk'), { desktop: false, startMenu: true });
+});

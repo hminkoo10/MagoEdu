@@ -524,3 +524,8 @@ select.input {
   .toasts { bottom: calc(16px + env(safe-area-inset-bottom)); padding: 0 12px; }
   .toast { max-width: 100%; }
 }
+
+/* 학생 등록·수정: 나이스 학교 검색 (웹·PC 공통) */
+.school-results { max-height: 220px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--grey200); border-radius: 10px; }
+.school-results button { display: block; width: 100%; padding: 10px 12px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.school-results button:hover, .school-results button.active { background: var(--accent-soft); }

@@ -60,7 +60,7 @@
   },
   {
     "id": "mago-navi-pc",
-    "name": "마고 과목내비 (PC)",
+    "name": "마고 과목내비",
     "description": "마고 과목내비를 PC 프로그램 창으로 (통합 클라우드 계정으로 자동 로그인)",
     "enabled": false,
     "color": "#0F9D8A",

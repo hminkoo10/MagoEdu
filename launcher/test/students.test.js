@@ -133,15 +133,21 @@ test('통합 클라우드: 학원 학생 명단을 프로그램에 넘기고, �
   });
 
   await t.test('SDK saveStudent·deleteStudent·restoreStudent → 서버 명단, 바로 새 파일', async () => {
-    const r = await sdk.saveStudent(session, { id: 'stu-from-app-1', name: '홍길동', teacher: { id: cloud.user.id } }, { timeoutMs: 8000 });
+    const school = { school: '마고중학교', schoolOffice: 'B10', schoolCode: '7010001' };
+    const r = await sdk.saveStudent(session, { id: 'stu-from-app-1', name: '홍길동', ...school, teacher: { id: cloud.user.id } }, { timeoutMs: 8000 });
     assert.equal(r.ok, true, JSON.stringify(r));
     sid = r.student.id;
     assert.equal(sid, 'stu-from-app-1', '프로그램이 정한 ID 로');
     assert.deepEqual(r.student.teacher, { id: cloud.user.id, name: '김선생' });
     assert.ok(info().students.some((x) => x.id === sid), '답하기 전에 academy-info.json 도 새로');
+    for (const st of [r.student, info().students.find((x) => x.id === sid)]) {
+      assert.deepEqual([st.school, st.schoolOffice, st.schoolCode], Object.values(school));
+    }
 
-    const up = await sdk.saveStudent(session, { ...r.student, grade: '고2' }, { timeoutMs: 8000 });
+    const up = await sdk.saveStudent(session, { ...r.student, schoolCode: '7010002', grade: '고2' }, { timeoutMs: 8000 });
     assert.deepEqual([up.ok, up.student.rev, up.student.grade], [true, 2, '고2']);
+    assert.deepEqual([up.student.schoolOffice, up.student.schoolCode], ['B10', '7010002']);
+    assert.equal(info().students.find((x) => x.id === sid).schoolCode, '7010002');
     const stale = await sdk.saveStudent(session, { ...r.student, memo: '늦게' }, { timeoutMs: 8000 });
     assert.deepEqual([stale.ok, stale.errorCode, stale.student.rev], [false, 'conflict', 2], '먼저 고친 것을 돌려줌');
 
@@ -150,6 +156,10 @@ test('통합 클라우드: 학원 학생 명단을 프로그램에 넘기고, �
     const del = await sdk.saveStudent(session, { ...gone, memo: 'x' }, { timeoutMs: 8000 });
     assert.equal(del.errorCode, 'student_deleted');
     assert.equal((await sdk.restoreStudent(session, sid, { timeoutMs: 8000 })).student.deletedAt, null);
+    const restored = info().students.find((x) => x.id === sid);
+    assert.equal(restored.schoolCode, '7010002');
+    const cleared = await sdk.saveStudent(session, { ...restored, school: '', schoolOffice: '', schoolCode: '' }, { timeoutMs: 8000 });
+    assert.deepEqual([cleared.student.school, cleared.student.schoolOffice, cleared.student.schoolCode], ['', '', '']);
     const bad = await sdk.saveStudent(session, { name: '' }, { timeoutMs: 8000 });
     assert.deepEqual([bad.ok, bad.errorCode], [false, 'invalid_name']);
     assert.deepEqual(fs.readdirSync(dirs.requests), [], '요청·답 모두 정리');

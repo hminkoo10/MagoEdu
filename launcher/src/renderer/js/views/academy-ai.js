@@ -2,6 +2,7 @@
 //   키는 서버에만 있고 화면에는 끝 4자리만 보여 준다. 운영자는 학원을 골라서 본다.
 import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, segmented, pill, ago, put } from '../ui.js';
 import { academyPicker } from './students.js';
+import { appLabel } from '../ui.js';
 
 const PROVIDERS = [
   ['gemini', 'Gemini'],
@@ -203,7 +204,7 @@ export class AcademyAiView {
       h(
         'div',
         { class: 'grow' },
-        h('div', { class: 'row-title', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, p.name, p.platform === 'web' ? pill('웹 프로그램', 'grey') : null),
+        h('div', { class: 'row-title', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, appLabel(p)),
         h('div', { class: 'row-desc' }, own ? `따로 정함 · ${summary(own)}` : '기본 AI 를 써요'),
       ),
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flex: 'none' } }, edit, choice),
@@ -223,7 +224,7 @@ export class AcademyAiView {
     const own = this.data.apps?.[p.id] || null;
     const form = aiForm(own);
     const ok = await dialog({
-      title: `${p.name} AI`,
+      title: `${appLabel(p)} AI`,
       sub: '이 프로그램만 여기서 정한 AI 를 써요. 학원 사람 모두에게 똑같이 적용돼요.',
       wide: true,
       body: form.el,
@@ -237,7 +238,7 @@ export class AcademyAiView {
   /** p 가 없으면 기본 AI 지우기, 있으면 그 프로그램을 기본 AI 로 되돌리기 */
   async clear(p) {
     const ok = await dialog({
-      title: p ? `${p.name}도 기본 AI 를 쓰게 할까요?` : '기본 AI 를 지울까요?',
+      title: p ? `${appLabel(p)}도 기본 AI 를 쓰게 할까요?` : '기본 AI 를 지울까요?',
       sub: p ? '이 프로그램에 따로 정한 AI 와 키를 지워요.' : '지우면 따로 정하지 않은 프로그램에서는 학원 AI 를 쓸 수 없고, 각자 자기 키를 넣어서 써야 해요.',
       ok: p ? '기본 AI 사용' : '지우기',
       danger: !p,

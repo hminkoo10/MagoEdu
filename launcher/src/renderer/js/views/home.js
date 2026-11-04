@@ -218,7 +218,7 @@ export class HomeView {
     if (a.platform === 'web') return this.fillLinkCard(c, a);
     if (this.web) return this.fillWebCard(c, a);
 
-    const ver = [];
+    const ver = [h('span', {}, 'PC 프로그램'), h('span', {}, '·')];
     if (a.running) ver.push(h('span', { class: 'dot pulse' }), h('span', { style: { color: 'var(--success)', fontWeight: 600 } }, '실행 중'), h('span', {}, '·'));
     if (a.installed) {
       ver.push(h('span', {}, `버전 ${a.running && a.runningVersion ? a.runningVersion : a.installed.version}`));
@@ -301,7 +301,7 @@ export class HomeView {
 
   // 웹: 이 PC 에 무엇이 설치돼 있는지는 모르니, Windows PC 면 통합 클라우드 앱에 ‘PC에 설치’·‘PC에서 실행’을 부탁한다
   fillWebCard(c, a) {
-    put(c.ver, h('span', {}, a.release ? `최신 ${a.release.version}` : '아직 배포 전'));
+    put(c.ver, h('span', {}, a.release ? `PC 프로그램 · 최신 ${a.release.version}` : 'PC 프로그램 · 아직 배포 전'));
     c.task.style.display = 'none';
     const canOpen = !!this.store.state.client?.canOpenApp;
     c.sync.className = 'sync';
