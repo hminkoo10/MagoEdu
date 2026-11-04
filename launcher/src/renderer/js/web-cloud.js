@@ -263,7 +263,7 @@ class WebCloud {
       /* 본문 없음 */
     }
     const e = data?.error || {};
-    const err = cloudError(e.message || `서버 응답 오류 (${res.status})`, e.code || `http_${res.status}`, res.status, e);
+    const err = cloudError(e.message || `서버와 연결이 잠시 원활하지 않아요. 잠시 뒤 다시 해 주세요. (오류 ${res.status})`, e.code || `http_${res.status}`, res.status, e);
     // 지난 세션의 늦은 응답이 새 세션을 끊지 않게 같은 토큰일 때만
     if (res.status === 401 && token && token === this.token && AUTH_LOST.includes(err.code)) this._authLost(err);
     if (res.status === 403 && token && token === this.token) {

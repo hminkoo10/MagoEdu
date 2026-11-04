@@ -30,6 +30,7 @@ const MAP = {
   check: 'check',
   circleCheck: 'circle-check',
   info: 'info',
+  help: 'circle-help',
   warning: 'triangle-alert',
   alert: 'circle-alert',
   logout: 'log-out',

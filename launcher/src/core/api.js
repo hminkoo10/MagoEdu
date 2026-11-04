@@ -91,7 +91,7 @@ class ApiClient {
       /* 본문 없음 */
     }
     const e = data?.error || {};
-    const err = new ApiError(res.status, e.code || `http_${res.status}`, e.message || `서버 응답 오류 (${res.status})`, e);
+    const err = new ApiError(res.status, e.code || `http_${res.status}`, e.message || `서버와 연결이 잠시 원활하지 않아요. 잠시 뒤 다시 해 주세요. (오류 ${res.status})`, e);
     if (res.status === 401 && this.token && ['session_invalid', 'account_suspended', 'auth_required'].includes(err.code)) {
       this.onAuthLost?.(err);
     }

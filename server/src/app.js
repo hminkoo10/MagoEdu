@@ -173,10 +173,26 @@ function createCloudServer(config = loadConfig()) {
       const m = router.match(req.method, url.pathname);
       if (!m) {
         if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) {
-          const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
+          const rel = decodeURIComponent(url.pathname.slice(1)) + (url.pathname.endsWith('/') ? 'index.html' : '');
           // 웹 화면 먼저, 그다음 public
           if (config.webDir && serveStatic(req, res, config.webDir, rel)) return;
           if (serveStatic(req, res, PUBLIC_DIR, rel)) return;
+          if (!url.pathname.endsWith('/')) {
+            for (const dir of [config.webDir, PUBLIC_DIR].filter(Boolean)) {
+              const index = path.resolve(dir, rel, 'index.html');
+              if (!index.startsWith(path.resolve(dir) + path.sep)) continue;
+              let stat;
+              try {
+                stat = fs.statSync(index);
+              } catch {
+                continue;
+              }
+              if (!stat.isFile()) continue;
+              res.writeHead(302, { location: `${url.pathname}/${url.search}` });
+              res.end();
+              return;
+            }
+          }
         }
         throw new HttpError(404, '찾을 수 없어요.', 'not_found');
       }

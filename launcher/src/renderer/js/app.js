@@ -27,11 +27,18 @@ export const store = {
   },
 };
 
+function serverUrl() {
+  const config = store.state.config;
+  return (config.serverUrl || config.defaultServerUrl || 'https://mago.milky.kr').replace(/\/+$/, '');
+}
+
 function navFor(user) {
+  const help = { id: 'help', icon: 'help', label: '도움말', title: '사용 설명서를 브라우저에서 열어요' };
   if (user.role === 'student') return [
     { id: 'my-notes', icon: 'list', label: '내 오답노트' },
     { id: 'student-navi', icon: 'graduationCap', label: '마고 과목내비' },
     { id: 'account', icon: 'user', label: '내 계정' },
+    help,
   ];
   const items = [
     { id: 'home', icon: 'apps', label: '프로그램' },
@@ -53,7 +60,7 @@ function navFor(user) {
       { id: 'server', icon: 'server', label: '서버 설정' },
     );
   }
-  items.push({ section: '' }, { id: 'settings', icon: 'sliders', label: '설정' });
+  items.push({ section: '' }, help, { id: 'settings', icon: 'sliders', label: '설정' });
   return items;
 }
 
@@ -163,10 +170,19 @@ class Shell {
         this.nav.append(it.section ? h('div', { class: 'nav-section' }, it.section) : h('div', { style: { height: '10px' } }));
         continue;
       }
-      const el = h('div', { class: 'nav-item', role: 'button', tabindex: '0', dataset: { id: it.id } }, ic(it.icon, 20), h('span', {}, it.label));
-      el.addEventListener('click', () => this.go(it.id));
+      const el = h('div', { class: 'nav-item', role: 'button', tabindex: '0', dataset: { id: it.id }, title: it.title }, ic(it.icon, 20), h('span', {}, it.label), it.id === 'help' ? ic('external', 14) : null);
+      const pick = () => {
+        if (it.id === 'help') {
+          const page = { director: 'director.html', teacher: 'teacher.html', student: 'student.html', admin: 'index.html' }[store.state.user.role] || 'index.html';
+          if (this.el.classList.contains('nav-open')) this.toggleNav(false);
+          cloud.openExternal(`${serverUrl()}/help/${page}`).catch((e) => toast(e.message, 'error'));
+          return;
+        }
+        this.go(it.id);
+      };
+      el.addEventListener('click', pick);
       el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.go(it.id); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
       });
       this.nav.append(el);
       this.navEls.set(it.id, el);
@@ -296,6 +312,10 @@ function authFrame(...children) {
     'div',
     { class: 'auth-card' },
     ...children,
+    h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, h('button', {
+      class: 'link',
+      onClick: () => cloud.openExternal(`${serverUrl()}/help/`).catch((e) => toast(e.message, 'error')),
+    }, '처음이세요? 사용 설명서 보기')),
     h('div', { class: 'auth-foot' }, `마고에듀 통합 클라우드 ${s.version} · 구현민 개발`),
   );
   const wrap = h('div', { class: 'auth' }, card);
@@ -346,7 +366,7 @@ function loginView() {
       try {
         await cloud.login(user.value, pw.input.value);
       } catch (e) {
-        err.textContent = e.code === 'student_web_only' || /student_web_only/.test(e.message) ? '학생 계정은 웹(mago.milky.kr)에서만 써요.' : e.message;
+        err.textContent = e.code === 'student_web_only' || /student_web_only/.test(e.message) ? `학생 계정은 인터넷 브라우저에서 ${serverUrl()} 에 들어가서 써요.` : e.message;
         err.style.display = '';
         pw.input.select();
       }
@@ -383,6 +403,19 @@ function loginView() {
     s.web ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, signup) : h('div', { class: 'auth-links' }, signup, server),
     studentJoin ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, studentJoin) : null,
     download,
+    h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, h('button', {
+      class: 'link',
+      onClick: () => dialog({
+        title: '비밀번호를 잊었어요',
+        body: h('div', { class: 'dialog-sub' },
+          h('div', {}, "선생님: 원장님께 '비밀번호 초기화'를 부탁해 주세요."),
+          h('div', {}, '원장님: 운영자에게 연락해 주세요.'),
+          h('div', {}, '학생: 담당 선생님께 말해 주세요. 선생님이 학생 명단에서 새 비밀번호를 만들어 드려요.'),
+        ),
+        ok: '확인',
+        cancel: null,
+      }),
+    }, '비밀번호를 잊었어요')),
   );
   setTimeout(() => (user.value ? pw.input : user).focus(), 50);
   return view;

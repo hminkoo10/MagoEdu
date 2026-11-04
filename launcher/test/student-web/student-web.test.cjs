@@ -48,12 +48,12 @@ if (!process.versions.electron) {
         results.push({ name, error: null });
       } catch (e) { results.push({ name, error: e.stack || e.message }); }
     };
-    await run('학생 메뉴 세 개·막힌 해시·임시 비밀번호 강제·변경 뒤 복귀', async () => {
+    await run('학생 메뉴 네 개·막힌 해시·임시 비밀번호 강제·변경 뒤 복귀', async () => {
       state.user.mustChangePassword = true;
       history.replaceState(null, '', '#/students');
       await import('./js/app.js');
       await until(() => document.querySelector('.nav'));
-      equal([...document.querySelectorAll('.nav-item span')].map((n) => n.textContent), ['내 오답노트', '마고 과목내비', '내 계정']);
+      equal([...document.querySelectorAll('.nav-item span')].map((n) => n.textContent), ['내 오답노트', '마고 과목내비', '내 계정', '도움말']);
       ok(document.querySelector('.page').textContent.includes('새 비밀번호를 정해 주세요'));
       ok(!calls.length, '비밀번호 변경 전에는 목록을 요청하지 않아요');
       document.querySelector('[data-id="my-notes"]').click();
@@ -105,7 +105,68 @@ if (!process.versions.electron) {
       await import('./js/app.js');
       await until(() => button('로그인'));
       button('로그인').click(); await tick();
-      ok(document.body.textContent.includes('학생 계정은 웹(mago.milky.kr)에서만 써요.'));
+      ok(document.body.textContent.includes('학생 계정은 인터넷 브라우저에서 https://local.test 에 들어가서 써요.'));
+    });
+    await run('도움말: 역할별 메뉴 위치·외부 주소·현재 화면 유지', async () => {
+      history.replaceState(null, '', '#/account');
+      await import('./js/app.js');
+      await until(() => document.querySelector('.nav'));
+      for (const web of [true, false]) {
+        state.web = web;
+        for (const [role, page] of [['student', 'student.html'], ['director', 'director.html'], ['teacher', 'teacher.html'], ['admin', 'index.html']]) {
+          state.user.role = role;
+          onState(state);
+          const help = document.querySelector('[data-id="help"]');
+          equal(help.title, '사용 설명서를 브라우저에서 열어요');
+          equal(help.querySelectorAll('svg').length, 2);
+          ok(help.querySelector('circle'));
+          if (role === 'student') equal(help.previousElementSibling.dataset.id, 'account');
+          else equal(help.nextElementSibling.dataset.id, 'settings');
+          const current = document.querySelector('.page').firstElementChild;
+          const hash = location.hash;
+          help.click();
+          equal(calls.at(-1), ['external', `https://local.test/help/${page}`]);
+          ok(document.querySelector('.page').firstElementChild === current);
+          equal(location.hash, hash);
+          ok(!help.classList.contains('active'));
+        }
+      }
+    });
+    await run('로그인 도움말: 앱·웹 주소 우선순위와 서버 설정 전 기본 주소', async () => {
+      state.phase = 'login'; state.user = null;
+      await import('./js/app.js');
+      await until(() => button('처음이세요? 사용 설명서 보기'));
+      for (const web of [true, false]) {
+        state.web = web;
+        for (const [config, base] of [
+          [{ serverUrl: 'https://school.test/', defaultServerUrl: 'https://default.test' }, 'https://school.test'],
+          [{ serverUrl: '', defaultServerUrl: 'https://default.test/' }, 'https://default.test'],
+          [{ serverUrl: '', defaultServerUrl: '' }, 'https://mago.milky.kr'],
+        ]) {
+          state.config = config;
+          button('처음이세요? 사용 설명서 보기').click();
+          equal(calls.at(-1), ['external', `${base}/help/`]);
+        }
+      }
+      state.phase = 'setup'; onState(state);
+      ok(document.body.textContent.includes('서버 연결'));
+      button('처음이세요? 사용 설명서 보기').click();
+      equal(calls.at(-1), ['external', 'https://mago.milky.kr/help/']);
+    });
+    await run('비밀번호 안내: 역할별 세 줄·확인으로 닫기', async () => {
+      state.phase = 'login'; state.user = null;
+      await import('./js/app.js');
+      await until(() => button('비밀번호를 잊었어요'));
+      button('비밀번호를 잊었어요').click();
+      equal(topDialog().querySelector('.dialog-title').textContent, '비밀번호를 잊었어요');
+      equal([...topDialog().querySelector('.dialog-sub').children].map((el) => el.textContent), [
+        "선생님: 원장님께 '비밀번호 초기화'를 부탁해 주세요.",
+        '원장님: 운영자에게 연락해 주세요.',
+        '학생: 담당 선생님께 말해 주세요. 선생님이 학생 명단에서 새 비밀번호를 만들어 드려요.',
+      ]);
+      ok(!button('취소', topDialog()));
+      button('확인', topDialog()).click();
+      await until(() => !topDialog());
     });
     await run('웹 API: 학생 로그인·금지 요청 없음·아이디 변경·인증된 PDF·403', async () => {
       localStorage.clear();

@@ -20,6 +20,28 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
     assert.equal(r.headers.get('cache-control'), 'private, no-cache');
   });
 
+  await t.test('도움말 폴더: GET·HEAD index와 쿼리를 보존하는 이동', async () => {
+    for (const method of ['GET', 'HEAD']) {
+      const page = await rq(method, '/help/');
+      assert.equal(page.status, 200);
+      assert.match(page.headers.get('content-type'), /^text\/html/);
+      if (method === 'HEAD') assert.equal(page.data.length, 0);
+      for (const query of ['', '?from=login&next=%2Faccount']) {
+        const redirect = await rq(method, `/help${query}`);
+        assert.equal(redirect.status, 302);
+        assert.equal(redirect.headers.get('location'), `/help/${query}`);
+      }
+    }
+    const css = await rq('GET', '/help/help.css');
+    assert.equal(css.status, 200);
+    assert.match(css.headers.get('content-type'), /^text\/css/);
+    for (const url of ['/없는폴더/', '/없는폴더']) {
+      const missing = await rq('GET', url);
+      assert.equal(missing.status, 404);
+      assert.equal(missing.headers.get('location'), null);
+    }
+  });
+
   await t.test('바뀌지 않았으면 304 (배포하면 바로 새 파일)', async () => {
     const first = await rq('GET', '/logo.png');
     assert.equal(first.headers.get('cache-control'), 'private, no-cache', 'Cloudflare 가 오래 보관하게 바꾸지 않게');
@@ -77,6 +99,10 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
       '/js/..%2F..%2F..%2F..%2Fserver%2Fpackage.json',
       '/..%5C..%5Cserver%5Cpackage.json',
       '/%2e%2e%2f%2e%2e%2fserver%2fpackage.json',
+      '/..%2F..%2Flauncher%2Fsrc%2Frenderer',
+      '/..%2F..%2Flauncher%2Fsrc%2Frenderer/',
+      '/..%5C..%5Clauncher%5Csrc%5Crenderer',
+      '/..%5C..%5Clauncher%5Csrc%5Crenderer/',
     ]) {
       const r = await rq('GET', p);
       assert.equal(r.status, 404, p);
@@ -98,6 +124,8 @@ test('웹 화면: 글꼴은 일주일 보관', async (t) => {
   fs.mkdirSync(path.join(webDir, 'vendor', 'fonts'), { recursive: true });
   fs.writeFileSync(path.join(webDir, 'index.html'), '<!doctype html><title>웹</title>');
   fs.writeFileSync(path.join(webDir, 'vendor', 'fonts', 'Font.woff2'), 'font');
+  fs.mkdirSync(path.join(webDir, 'guide'));
+  fs.writeFileSync(path.join(webDir, 'guide', 'index.html'), '<!doctype html><title>안내</title>');
   const s = await startServer({ webDir });
   t.after(async () => {
     await s.close();
@@ -109,6 +137,15 @@ test('웹 화면: 글꼴은 일주일 보관', async (t) => {
   assert.equal(font.headers.get('content-type'), 'font/woff2');
   assert.equal(font.headers.get('cache-control'), 'public, max-age=604800');
   assert.equal((await s.request('GET', '/')).data.toString('utf8'), '<!doctype html><title>웹</title>');
+  const guide = await s.request('GET', '/guide/');
+  assert.equal(guide.status, 200);
+  assert.equal(guide.data.toString('utf8'), '<!doctype html><title>안내</title>');
+  const redirect = await s.request('GET', '/guide?from=web');
+  assert.equal(redirect.status, 302);
+  assert.equal(redirect.headers.get('location'), '/guide/?from=web');
+  const noIndex = await s.request('GET', '/vendor/fonts');
+  assert.equal(noIndex.status, 404, '폴더가 있어도 index.html 없이는 이동하지 않음');
+  assert.equal(noIndex.headers.get('location'), null);
 });
 
 test('웹 화면이 없으면 지금처럼 내려받기 안내 페이지', async (t) => {
