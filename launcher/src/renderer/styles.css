@@ -308,6 +308,9 @@ select.input {
 .table .num { text-align: right; }
 .table .acts { width: 1%; white-space: nowrap; text-align: right; }
 .table-wrap { background: #fff; border-radius: 16px; overflow: hidden; overflow-x: auto; }
+/* 학생 명단 계정 열: 아이디·상태 옆에 계정 관리 버튼 */
+.account-cell { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+.account-cell .pills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
 .empty { padding: 48px 20px; text-align: center; color: var(--grey500); }
 .empty .ic { margin: 0 auto 10px; color: var(--grey300); }
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
@@ -396,13 +399,14 @@ select.input {
 .dialog-title { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
 .dialog-sub { font-size: 14px; color: var(--grey600); margin-top: 6px; white-space: pre-line; line-height: 1.55; }
 .dialog-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; align-items: center; }
-.dialog-foot .left { margin-right: auto; }
+.dialog-foot .left { margin-right: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .dialog-foot .btn { min-width: 96px; }
 .dialog-foot .btn.primary, .dialog-foot .btn.danger-solid { min-width: 120px; }
 .secret {
   display: flex; align-items: center; gap: 10px; background: var(--accent-softer); border-radius: 14px; padding: 14px 16px; margin-top: 4px;
 }
-.secret .mono { flex: 1; font-size: 20px; font-weight: 700; color: var(--accent-text); user-select: text; }
+.secret .mono { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 20px; font-weight: 700; color: var(--accent-text); user-select: text; }
+.secret > .btn { flex: none; } /* 값이 길어도 복사 버튼이 상자 밖으로 밀려나지 않게 */
 .secret.long .mono { min-width: 0; font-size: 14px; word-break: break-all; } /* 앱 비밀값처럼 긴 값 */
 
 /* ------------------------------------------------------------ 메뉴 */

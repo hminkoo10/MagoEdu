@@ -321,11 +321,15 @@ export class StudentsView {
       h('td', {}, schoolGrade(s) || h('span', { class: 'subtle' }, '-')),
       h('td', {}, s.teacher ? h('span', { class: mine ? 'hl' : '' }, s.teacher.name) : h('span', { class: 'subtle' }, '없음')),
       h('td', {},
-        s.account ? h('div', {}, h('div', { class: 'mono selectable' }, s.account.username),
-          s.account.status === 'disabled' ? pill('꺼짐', 'grey') : pill('켜짐', 'green'),
-          s.account.mustChangePassword ? pill('비밀번호 바꿔야 해요', 'yellow') : null,
-        ) : h('span', { class: 'subtle' }, '없음'),
-        btn(s.account ? '계정 관리' : '계정 만들기', { size: 'sm', variant: 'subtle', onClick: () => this.account(s) }),
+        h('div', { class: 'account-cell' },
+          s.account ? h('div', {}, h('div', { class: 'mono selectable' }, s.account.username),
+            h('div', { class: 'pills' },
+              s.account.status === 'disabled' ? pill('꺼짐', 'grey') : pill('켜짐', 'green'),
+              s.account.mustChangePassword ? pill('비밀번호 바꿔야 해요', 'yellow') : null,
+            ),
+          ) : h('span', { class: 'subtle' }, '없음'),
+          btn(s.account ? '계정 관리' : '계정 만들기', { size: 'sm', variant: 'soft', onClick: () => this.account(s) }),
+        ),
       ),
       h('td', { class: 'subtle' }, [s.updatedBy?.name, ago(s.updatedAt)].filter(Boolean).join(' · ')),
       h(
@@ -392,7 +396,7 @@ export class StudentsView {
       }));
       return b;
     };
-    await dialog({ title: '학생 초대 코드를 만들었어요', sub: `${date(r.expiresAt, true)}까지 한 번 쓸 수 있어요. 코드는 지금 한 번만 보여요.`,
+    await dialog({ title: '학생 초대 코드를 만들었어요', wide: true, sub:`${date(r.expiresAt, true)}까지 한 번 쓸 수 있어요. 코드는 지금 한 번만 보여요.`,
       body: h('div', {}, h('div', { class: 'secret' }, h('span', { class: 'mono selectable' }, r.code), copy('코드 복사', r.code, '코드를 복사했어요')), h('p', { class: 'selectable', style: { overflowWrap: 'anywhere' } }, url.href)),
       footLeft: copy('가입 주소 복사', url.href, '가입 주소를 복사했어요'), ok: '닫기', cancel: null });
   }

@@ -76,7 +76,7 @@ export async function showCredentials({ created = [], skipped = [] }) {
       created.length ? h('div', { class: 'table-wrap' }, credentialsTable(created)) : h('p', {}, '새로 만든 계정이 없어요.'),
       skipped.length ? h('div', {}, h('h3', {}, `건너뛴 학생 ${skipped.length}명`), ...skipped.map((r) => h('p', {}, `${r.name} · ${SKIP_REASON[r.reason] || '계정을 만들지 못했어요'} (${r.reason})`))) : null,
     ),
-    footLeft: created.length ? h('div', { class: 'right' }, print, csv) : null,
+    footLeft: created.length ? [print, csv] : null,
     ok: '닫기', cancel: null,
   });
 }
