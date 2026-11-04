@@ -95,26 +95,63 @@ class Shell {
     this.foot = h('div', { class: 'sidebar-foot' });
     this.sidebar = h(
       'aside',
-      { class: 'sidebar' },
+      { class: 'sidebar', id: 'main-menu', 'aria-label': '화면 메뉴' },
       h('div', { class: 'brand' }, h('img', { class: 'logo', src: 'logo.png', alt: '' }), h('div', {}, h('div', { class: 'brand-title' }, '마고에듀 클라우드'), h('div', { class: 'brand-sub' }, web ? '웹' : `버전 ${store.state.version}`))),
       this.nav,
       this.foot,
     );
+    this.sidebar.prepend(btn('메뉴 닫기', { variant: 'subtle', iconName: 'x', cls: 'nav-close', onClick: () => this.toggleNav(false) }));
     // 휴대폰·태블릿(960px 이하): 위 막대 + 왼쪽에서 나오는 메뉴
     this.menuBtn = btn('', { variant: 'subtle', iconName: 'menu', title: '메뉴', onClick: () => this.toggleNav() });
     this.menuBtn.setAttribute('aria-expanded', 'false');
+    this.menuBtn.setAttribute('aria-controls', 'main-menu');
+    this.menuBtn.setAttribute('aria-label', '메뉴 열기');
     this.topTitle = h('div', { class: 'topbar-title' });
     this.topNotice = btn('', { variant: 'subtle', iconName: 'megaphone', title: '새 공지', cls: 'topbar-notice', onClick: () => this.go('notices') });
     this.topNotice.style.display = 'none';
     this.topbar = h('header', { class: 'topbar' }, this.menuBtn, h('img', { class: 'logo sm', src: 'logo.png', alt: '' }), this.topTitle, this.topNotice);
     this.scrim = h('div', { class: 'scrim', onClick: () => this.toggleNav(false) });
-    this.el = h('div', { class: 'shell' }, this.sidebar, this.scrim, h('main', { class: 'main' }, this.topbar, this.offline, this.page));
+    this.main = h('main', { class: 'main' }, this.topbar, this.offline, this.page);
+    this.el = h('div', { class: 'shell' }, this.sidebar, this.scrim, this.main);
+    this.mobile = matchMedia('(max-width: 960px)');
+    this.onResize = () => { if (!this.mobile.matches) this.toggleNav(false); };
+    this.mobile.addEventListener('change', this.onResize);
+    // 공통 표도 휴대폰 카드에서 각 칸의 뜻을 알 수 있게 해요.
+    this.tables = new MutationObserver(() => {
+      for (const table of document.querySelectorAll('.table')) {
+        const labels = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+        for (const row of table.querySelectorAll('tbody tr')) {
+          [...row.children].forEach((cell, i) => {
+            cell.dataset.label = cell.colSpan > 1 ? '' : labels[i] || '';
+          });
+        }
+      }
+    });
+    this.tables.observe(document.body, { childList: true, subtree: true });
     this.buildNav();
   }
 
-  toggleNav(open = !this.el.classList.contains('nav-open')) {
+  toggleNav(open = !this.el.classList.contains('nav-open'), fromHistory = false) {
+    if (open && (!this.mobile.matches || this.navBackPending)) return;
+    const wasOpen = this.el.classList.contains('nav-open');
+    if (store.state.web && !fromHistory) {
+      if (open && !wasOpen) history.pushState({ mobileNav: true }, '', location.href);
+      else if (!open && history.state?.mobileNav && !this.navBackPending) {
+        this.navBackPending = true;
+        history.back();
+      }
+    }
     this.el.classList.toggle('nav-open', open);
     this.menuBtn.setAttribute('aria-expanded', String(open));
+    this.main.inert = open;
+    if (open) this.sidebar.querySelector('.nav-close').focus();
+    else if (wasOpen && this.mobile.matches) this.menuBtn.focus();
+  }
+
+  destroy() {
+    this.view?.destroy?.();
+    this.tables.disconnect();
+    this.mobile.removeEventListener('change', this.onResize);
   }
 
   buildNav() {
@@ -126,8 +163,11 @@ class Shell {
         this.nav.append(it.section ? h('div', { class: 'nav-section' }, it.section) : h('div', { style: { height: '10px' } }));
         continue;
       }
-      const el = h('div', { class: 'nav-item', dataset: { id: it.id } }, ic(it.icon, 20), h('span', {}, it.label));
+      const el = h('div', { class: 'nav-item', role: 'button', tabindex: '0', dataset: { id: it.id } }, ic(it.icon, 20), h('span', {}, it.label));
       el.addEventListener('click', () => this.go(it.id));
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.go(it.id); }
+      });
       this.nav.append(el);
       this.navEls.set(it.id, el);
     }
@@ -149,7 +189,7 @@ class Shell {
       items.push(card);
     }
     const out = btn('', { variant: 'subtle', size: 'sm', iconName: 'logout', title: '로그아웃' });
-    out.addEventListener('click', () => logoutFlow());
+    out.addEventListener('click', () => { this.toggleNav(false); logoutFlow(); });
     items.push(
       h(
         'div',
@@ -175,6 +215,12 @@ class Shell {
   }
 
   go(id, opts = {}) {
+    // 서랍 기록을 먼저 닫은 뒤 이동해야 뒤로 가기가 꼬이지 않아요.
+    if (store.state.web && !opts.fromHistory && (history.state?.mobileNav || this.navBackPending)) {
+      this.pendingNav = { id, opts };
+      this.toggleNav(false);
+      return;
+    }
     const user = store.state.user;
     if (user.role === 'student') {
       if (user.mustChangePassword) id = 'account';
@@ -525,7 +571,7 @@ let lastPhase = null;
 let lastUserKey = null;
 
 function mount(el) {
-  shell?.view?.destroy?.();
+  shell?.destroy();
   shell = null;
   ssoPage = null;
   put(root, el);
@@ -555,7 +601,7 @@ function render(force = false) {
     return;
   }
   const prev = shell?.current || (s.web && hashView(s.user)) || 'home';
-  shell?.view?.destroy?.();
+  shell?.destroy();
   shell = new Shell();
   put(root, shell.el);
   shell.go(prev, { force: true, replace: true });
@@ -586,6 +632,22 @@ async function start() {
   });
   if (store.state.web) {
     const navigate = () => {
+      if (shell?.navBackPending) {
+        const pending = shell.pendingNav;
+        shell.navBackPending = false;
+        shell.pendingNav = null;
+        shell.toggleNav(false, true);
+        if (pending) shell.go(pending.id, pending.opts);
+        return;
+      }
+      if (shell && history.state?.mobileNav && shell.mobile.matches) {
+        shell.toggleNav(true, true);
+        return;
+      }
+      if (shell?.el.classList.contains('nav-open')) {
+        shell.toggleNav(false, true);
+        if (location.hash === `#/${shell.current}`) return;
+      }
       if (store.state.phase === 'login' && /^#\/join(?:\?|$)/.test(location.hash)) {
         sso = null;
         render(true);
@@ -606,6 +668,14 @@ async function start() {
   }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && shell?.el.classList.contains('nav-open')) shell.toggleNav(false);
+    if (e.key === 'Tab' && shell?.el.classList.contains('nav-open')) {
+      const items = [...shell.sidebar.querySelectorAll('button:not(:disabled), [tabindex="0"]')].filter((el) => el.getClientRects().length);
+      const edge = e.shiftKey ? items[0] : items.at(-1);
+      if (document.activeElement === edge) {
+        e.preventDefault();
+        (e.shiftKey ? items.at(-1) : items[0]).focus();
+      }
+    }
   });
   if (store.state.phase === 'ready' && store.state.user?.mustChangePassword && store.state.user.role !== 'student') forcePasswordChange();
 }

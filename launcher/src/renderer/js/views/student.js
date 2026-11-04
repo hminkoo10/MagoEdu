@@ -22,14 +22,14 @@ export class StudentNotesView {
       const notes = await this.cloud.api('GET', '/api/me/notes');
       if (seq !== this.seq) return;
       if (!notes.length) return put(this.list, h('div', { class: 'empty' }, ic('list', 40), '아직 내 오답노트가 없어요. 선생님이 노트를 만들어 주시면 여기에 보여요.'));
-      put(this.list, h('table', { class: 'table' },
+      put(this.list, h('table', { class: 'table notes-table' },
         h('thead', {}, h('tr', {}, ...['노트', '문항', '마지막 수정', '답지', ''].map((t) => h('th', {}, t)))),
         h('tbody', {}, ...notes.map((note) => {
           const open = btn('PDF 보기', { size: 'sm', variant: 'soft', iconName: 'external' });
           const save = btn('PDF 받기', { size: 'sm', iconName: 'download' });
           open.addEventListener('click', () => busy(open, () => this.pdf(note, false)));
           save.addEventListener('click', () => busy(save, () => this.pdf(note, true)));
-          return h('tr', {}, h('td', {}, note.title), h('td', {}, `${note.problemCount}문항`), h('td', {}, date(note.updatedAt, true)),
+          return h('tr', {}, h('td', { class: 'note-name' }, note.title), h('td', {}, `${note.problemCount}문항`), h('td', {}, date(note.updatedAt, true)),
             h('td', {}, pill(note.answersAllowed ? '답지 포함' : '문제만', note.answersAllowed ? 'green' : 'grey')), h('td', { class: 'acts' }, open, save));
         })),
       ));

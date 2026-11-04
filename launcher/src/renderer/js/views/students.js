@@ -296,7 +296,7 @@ export class StudentsView {
     const head = trash ? ['이름', '학교·학년', '삭제한 사람', '남은 기간', ''] : [all, '이름', '학교·학년', '담당 선생님', '계정', '마지막 수정', ''];
     put(
       this.table,
-      h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), h('tbody', {}, ...list.map((s) => (trash ? this.deletedRow(s) : this.row(s))))),
+      h('table', { class: 'table students-table' }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), h('tbody', {}, ...list.map((s) => (trash ? this.deletedRow(s) : this.row(s))))),
     );
     if (animate) reveal(this.table.querySelector('tbody'));
   }
@@ -311,16 +311,16 @@ export class StudentsView {
     return h(
       'tr',
       {},
-      h('td', {}, pick),
+      h('td', { class: 'student-select' }, pick),
       h(
         'td',
-        {},
+        { class: 'student-name' },
         h('div', { style: { fontWeight: 600 } }, s.name),
         s.memo ? h('div', { class: 'subtle', title: s.memo, style: { maxWidth: '320px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, s.memo) : null,
       ),
       h('td', {}, schoolGrade(s) || h('span', { class: 'subtle' }, '-')),
       h('td', {}, s.teacher ? h('span', { class: mine ? 'hl' : '' }, s.teacher.name) : h('span', { class: 'subtle' }, '없음')),
-      h('td', {},
+      h('td', { class: 'student-account' },
         h('div', { class: 'account-cell' },
           s.account ? h('div', {}, h('div', { class: 'mono selectable' }, s.account.username),
             h('div', { class: 'pills' },
@@ -331,12 +331,12 @@ export class StudentsView {
           btn(s.account ? '계정 관리' : '계정 만들기', { size: 'sm', variant: 'soft', onClick: () => this.account(s) }),
         ),
       ),
-      h('td', { class: 'subtle' }, [s.updatedBy?.name, ago(s.updatedAt)].filter(Boolean).join(' · ')),
+      h('td', { class: 'subtle student-updated' }, [s.updatedBy?.name, ago(s.updatedAt)].filter(Boolean).join(' · ')),
       h(
         'td',
         { class: 'acts' },
-        btn('', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', onClick: () => this.edit(s) }),
-        btn('', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '삭제', onClick: () => this.remove(s) }),
+        btn('', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', cls: 'student-edit', onClick: () => this.edit(s) }),
+        btn('', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '삭제', cls: 'student-remove', onClick: () => this.remove(s) }),
       ),
     );
   }
@@ -474,7 +474,7 @@ export class StudentsView {
     return h(
       'tr',
       {},
-      h('td', {}, h('div', { style: { fontWeight: 600 } }, s.name)),
+      h('td', { class: 'student-name' }, h('div', { style: { fontWeight: 600 } }, s.name)),
       h('td', {}, schoolGrade(s) || h('span', { class: 'subtle' }, '-')),
       h('td', { class: 'subtle' }, [s.deletedBy?.name, ago(s.deletedAt)].filter(Boolean).join(' · ')),
       h('td', {}, pill(left > 0 ? `${left}일 뒤 완전히 삭제` : '곧 완전히 삭제', left <= 3 ? 'red' : 'grey')),
