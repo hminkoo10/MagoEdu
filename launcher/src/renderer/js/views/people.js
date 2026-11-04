@@ -65,7 +65,7 @@ export class PeopleView {
           h('h1', { class: 'title' }, this.isAdmin ? '계정 관리' : '선생님 관리'),
           h('div', { class: 'subtitle' }, this.isAdmin ? '원장·선생님·운영자 계정을 직접 만들고 관리해요.' : `${u.academy?.name || '우리 학원'} 선생님 계정을 만들고 관리해요.`),
         ),
-        h('div', { class: 'right' }, this.isAdmin ? null : btn('학원 이름 바꾸기', { variant: 'white', iconName: 'edit', onClick: () => this.renameAcademy() }), this.isAdmin ? null : btn('학원 코드', { variant: 'white', onClick: () => editAcademyCode(this.cloud).catch((e) => toast(e.message, 'error')) }), add),
+        h('div', { class: 'right' }, this.isAdmin ? null : btn('학원 이름 바꾸기', { variant: 'white', iconName: 'edit', onClick: () => this.renameAcademy() }), add),
       ),
       toolbar,
       this.table,

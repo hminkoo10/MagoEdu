@@ -37,8 +37,8 @@ const hits = [
 const fields = (s) => ({ school: s.name, schoolOffice: s.office, schoolCode: s.code });
 function fixture(t, api = async () => ({ schools: hits }), dialog = async () => false) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const context = vm.createContext({ Node, document: { createElement: (tag) => new Node(tag), createTextNode: (text) => new Node('', text) }, setTimeout, clearTimeout });
-  const ui = vm.runInContext(`${source('ui.js')}\n({ h, input, put, field, select, appLabel });`, context);
+  const context = vm.createContext({ Node, document: { createElement: (tag) => new Node(tag), createTextNode: (text) => new Node('', text) }, setTimeout, clearTimeout, requestAnimationFrame() {} });
+  const ui = vm.runInContext(`${source('ui.js')}\n({ h, input, put, field, select, segmented, appLabel });`, context);
   const schoolSearch = vm.runInNewContext(`${source('school-search.js')}\nschoolSearch;`, { ...ui, setTimeout, clearTimeout });
   const StudentsView = vm.runInNewContext(`${source('views/students.js')}\nStudentsView;`, { ...ui, schoolSearch, dialog, toast() {} });
   const cloud = { api };
