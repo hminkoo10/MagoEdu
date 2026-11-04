@@ -89,11 +89,11 @@ async function setup(t) {
   await lee.login('lee', 'pass1234');
   const bossApi = new ApiClient({ serverUrl: s.base, device: { id: 'boss-pc', name: 'boss', platform: 'test', version: '1' } });
   await bossApi.login('boss', 'pass1234');
-  return { s, cloud, paths, lee, bossApi };
+  return { s, cloud, paths, lee, bossApi, admin };
 }
 
 test('통합 클라우드: 학원 학생 명단을 프로그램에 넘기고, 프로그램 부탁으로 학생을 고침', async (t) => {
-  const { s, cloud, paths, lee, bossApi } = await setup(t);
+  const { s, cloud, paths, lee, bossApi, admin } = await setup(t);
   const dirs = paths.account(cloud.user.id).app('notes');
   const session = { requestDir: dirs.requests, academyInfoFile: dirs.academyInfo, academyDir: dirs.academy };
   const info = () => sdk.academyInfo(session);
@@ -112,10 +112,32 @@ test('통합 클라우드: 학원 학생 명단을 프로그램에 넘기고, �
     const i = info();
     assert.equal(i.format, 1);
     assert.equal(i.academy.name, '마고');
+    assert.deepEqual(i.academy.subjects, ['math']);
     assert.deepEqual([i.me.name, i.me.role], ['김선생', 'teacher']);
     assert.deepEqual(i.members.map((m) => m.name).sort(), ['김선생', '원장', '이선생']);
     assert.deepEqual([i.students, i.purged, i.purgeDays, i.ai], [[], [], 30, null]);
     assert.ok(!fs.existsSync(paths.account(cloud.user.id).app('navi-pc').academyInfo), 'academyInfo 가 없는 프로그램에는 쓰지 않음');
+  });
+
+  await t.test('계약 과목: 실시간 알림 뒤 내 계정·켜진 프로그램 파일을 함께 갱신', async () => {
+    const stamp = cloud.academyStamp;
+    const r = await s.request('PATCH', `/api/academies/${cloud.user.academy.id}`, { token: admin, body: { subjects: ['math', 'english'] } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    await until(() => info()?.academy.subjects.join(',') === 'math,english', 6000, '새 계약 과목 파일');
+    assert.deepEqual(cloud.user.academy.subjects, ['math', 'english']);
+    assert.deepEqual(info().academy.subjects, ['math', 'english']);
+    assert.ok(cloud.academyStamp > stamp);
+  });
+
+  await t.test('계약 과목: 끊긴 동안 바뀌어도 hello 뒤 내 계정부터 받아 파일 갱신', async () => {
+    cloud._stopRealtime();
+    const r = await s.request('PATCH', `/api/academies/${cloud.user.academy.id}`, { token: admin, body: { subjects: ['korean'] } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.deepEqual(cloud.user.academy.subjects, ['math', 'english']);
+    cloud._startRealtime();
+    await until(() => info()?.academy.subjects.join(',') === 'korean', 6000, '재연결 뒤 계약 과목 파일');
+    assert.deepEqual(cloud.user.academy.subjects, ['korean']);
+    assert.deepEqual(info().academy.subjects, ['korean']);
   });
 
   await t.test('다른 사람이 학생·학원 AI 를 바꾸면 실시간으로 다시 씀', async () => {

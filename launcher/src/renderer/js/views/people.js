@@ -2,7 +2,7 @@
 //   원장: 우리 학원 선생님 계정 만들기·지우기·비밀번호 초기화·사용 중지·프로그램 권한
 //   운영자: 모든 계정 (원장·선생님·운영자), 학원
 import { editAcademyCode } from '../student-accounts.js';
-import { appLabel } from '../ui.js';
+import { appLabel, subjectChecks, subjectText } from '../ui.js';
 import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, checkbox, toggle, segmented, pill, menu, bytes, ago, initial, ROLE, confirmDialog, secretDialog, reveal, put } from '../ui.js';
 
 export class PeopleView {
@@ -213,7 +213,8 @@ export class PeopleView {
       : null;
     const academy = this.isAdmin ? select([['__new', '+ 새 학원 만들기'], ...this.academies.map((a) => [String(a.id), a.name])], this.academies[0] ? String(this.academies[0].id) : '__new') : null;
     const newAcademy = input({ placeholder: '새 학원 이름' });
-    const newWrap = field('새 학원 이름', newAcademy);
+    const subjects = subjectChecks();
+    const newWrap = h('div', {}, field('새 학원 이름', newAcademy), field('계약 과목', subjects.el));
     const academyWrap = academy ? field('학원', academy) : null;
     const quota = input({ type: 'number', min: '0', placeholder: '비우면 기본값' });
     const sync = () => {
@@ -249,8 +250,10 @@ export class PeopleView {
         if (this.isAdmin) {
           body.role = role.value;
           if (role.value !== 'admin') {
-            if (academy.value === '__new') body.academyName = newAcademy.value;
-            else body.academyId = Number(academy.value);
+            if (academy.value === '__new') {
+              body.academyName = newAcademy.value;
+              body.academySubjects = subjects.value();
+            } else body.academyId = Number(academy.value);
           }
           if (quota.value !== '') body.quotaMb = Number(quota.value);
         }
@@ -471,18 +474,38 @@ export class PeopleView {
             }
           });
           const code = btn('학원 코드', { variant: 'subtle', size: 'sm', onClick: () => editAcademyCode(this.cloud, `?academy=${encodeURIComponent(a.id)}`).catch((e) => toast(e.message, 'error')) });
-          return h('div', { class: 'row' }, ic('building', 20), h('div', { class: 'grow' }, h('div', { class: 'row-title' }, a.name), h('div', { class: 'row-desc' }, `원장 ${a.directors}명 · 선생님 ${a.teachers}명 · 학원 공간 ${bytes(a.usageBytes)}${a.quotaBytes ? ` / ${bytes(a.quotaBytes)}` : ' (제한 없음)'}`)), code, edit, quota, del);
+          const subjects = btn('과목', { variant: 'subtle', size: 'sm' });
+          subjects.addEventListener('click', async () => {
+            const checks = subjectChecks(a.subjects);
+            const ok = await dialog({
+              title: `${a.name} 계약 과목`,
+              sub: '계약한 과목만 오답노트에서 교재를 새로 등록할 수 있어요. 과목을 빼도 이미 올린 교재는 볼 수 있어요.',
+              body: field('계약 과목', checks.el),
+              ok: '저장',
+              onOk: async () => {
+                const selected = checks.value();
+                if (!selected.length && !(await confirmDialog('과목을 하나도 고르지 않았어요.', '이 학원은 오답노트에서 새 교재를 등록할 수 없어요. 그래도 저장할까요?', '저장'))) return false;
+                await this.cloud.api('PATCH', `/api/academies/${a.id}`, { subjects: selected });
+              },
+            });
+            if (ok) {
+              await this.loadAcademies();
+              draw();
+            }
+          });
+          return h('div', { class: 'row' }, ic('building', 20), h('div', { class: 'grow' }, h('div', { class: 'row-title' }, a.name), h('div', { class: 'row-desc' }, `과목: ${subjectText(a.subjects)} · 원장 ${a.directors}명 · 선생님 ${a.teachers}명 · 학원 공간 ${bytes(a.usageBytes)}${a.quotaBytes ? ` / ${bytes(a.quotaBytes)}` : ' (제한 없음)'}`)), subjects, code, edit, quota, del);
         }),
       );
       if (!this.academies.length) put(list, h('div', { class: 'empty' }, '학원이 없어요'));
     };
     draw();
     const name = input({ placeholder: '새 학원 이름' });
+    const subjects = subjectChecks();
     const add = btn('추가', { variant: 'soft' });
     add.addEventListener('click', () =>
       busy(add, async () => {
         try {
-          await this.cloud.api('POST', '/api/academies', { name: name.value });
+          await this.cloud.api('POST', '/api/academies', { name: name.value, subjects: subjects.value() });
           name.value = '';
           await this.loadAcademies();
           draw();
@@ -491,7 +514,7 @@ export class PeopleView {
         }
       }),
     );
-    await dialog({ title: '학원 관리', wide: true, body: h('div', {}, list, h('div', { class: 'form-row', style: { marginTop: '14px', alignItems: 'center' } }, name, h('div', { style: { flex: 'none' } }, add))), ok: '닫기', cancel: null });
+    await dialog({ title: '학원 관리', wide: true, body: h('div', {}, list, h('div', { class: 'form-row', style: { marginTop: '14px', alignItems: 'center' } }, name, h('div', { style: { flex: 'none' } }, subjects.el), h('div', { style: { flex: 'none' } }, add))), ok: '닫기', cancel: null });
     this.load();
   }
 }

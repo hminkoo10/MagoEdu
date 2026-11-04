@@ -2,7 +2,7 @@
 
 // 여러 라우트가 함께 쓰는 기능: 설정, 활동 기록, 로그인 세션, 계정 도우미
 
-const { DAY, HttpError, forbidden, notFound, randomToken, sha256Hex, jsonParse, intOr } = require('./util');
+const { DAY, HttpError, forbidden, notFound, randomToken, sha256Hex, jsonParse, intOr, parseSubjects } = require('./util');
 
 const DEFAULT_SETTINGS = {
   defaultQuotaMb: 2048, // 계정마다 서버에 둘 수 있는 기본 용량
@@ -71,6 +71,12 @@ function createServices({ db, config, log }) {
     return db.get('SELECT name FROM academies WHERE id = ?', id)?.name || null;
   }
 
+  function academyInfo(id) {
+    if (!id) return null;
+    const a = db.get('SELECT id, name, subjects FROM academies WHERE id = ?', id);
+    return a ? { id: a.id, name: a.name, subjects: parseSubjects(a.subjects) } : null;
+  }
+
   function usageBytes(userId) {
     return db.get('SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE user_id = ? AND deleted = 0 AND evicted = 0', userId).n;
   }
@@ -112,7 +118,7 @@ function createServices({ db, config, log }) {
       name: u.name,
       role: u.role,
       roleLabel: ROLE_LABEL[u.role],
-      academy: u.academy_id ? { id: u.academy_id, name: academyName(u.academy_id) } : null,
+      academy: academyInfo(u.academy_id),
       status: u.status,
       suspendedReason: u.suspended_reason || null,
       mustChangePassword: !!u.must_change_password,

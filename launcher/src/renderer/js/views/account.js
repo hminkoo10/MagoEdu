@@ -1,5 +1,5 @@
 // 내 계정: 아이디·비밀번호·이름 바꾸기, 저장 공간, 로그인한 기기
-import { appLabel } from '../ui.js';
+import { appLabel, SUBJECTS } from '../ui.js';
 import { h, ic, btn, busy, toast, field, input, passwordInput, checkbox, pill, bytes, ago, initial, ROLE, confirmDialog, reveal, put } from '../ui.js';
 
 export class AccountView {
@@ -26,7 +26,7 @@ export class AccountView {
   }
 
   update(s) {
-    const key = `${s.user.name}|${s.user.username}`;
+    const key = JSON.stringify([s.user.name, s.user.username, s.user.academy?.name, s.user.academy?.subjects]);
     if (key !== this._key) this.renderProfile(s.user);
     if (!this.student && s.devicesRevision !== this._devicesRevision) {
       this._devicesRevision = s.devicesRevision;
@@ -35,7 +35,7 @@ export class AccountView {
   }
 
   renderProfile(u) {
-    this._key = `${u.name}|${u.username}`;
+    this._key = JSON.stringify([u.name, u.username, u.academy?.name, u.academy?.subjects]);
     const nameInput = input({ value: u.name });
     const save = btn('저장');
     save.addEventListener('click', () =>
@@ -59,6 +59,15 @@ export class AccountView {
           h('div', { style: { fontSize: '20px', fontWeight: 700 } }, u.name),
           h('div', { class: 'muted', style: { marginTop: '2px', display: 'flex', gap: '6px', alignItems: 'center' } }, h('span', { class: 'mono' }, u.username), pill(ROLE[u.role], u.role === 'admin' ? 'dark' : u.role === 'director' ? '' : 'grey')),
           u.academy ? h('div', { class: 'subtle', style: { marginTop: '4px' } }, u.academy.name) : null,
+          u.academy && ['director', 'teacher'].includes(u.role) ? h('div', { style: { marginTop: '10px' } },
+            h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' } },
+              h('span', { class: 'muted' }, '계약 과목'),
+              ...((u.academy.subjects ?? ['math']).length
+                ? SUBJECTS.filter(([code]) => (u.academy.subjects ?? ['math']).includes(code)).map(([, name]) => pill(name))
+                : [h('span', { class: 'subtle' }, '계약한 과목 없음')]),
+            ),
+            h('div', { class: 'subtle', style: { marginTop: '6px', fontSize: '12px' } }, '과목을 늘리거나 바꾸려면 운영자에게 문의해 주세요.'),
+          ) : null,
         ),
       ),
       h('div', { style: { height: '16px' } }),

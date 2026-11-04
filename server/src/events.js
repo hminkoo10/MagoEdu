@@ -2,7 +2,7 @@
 
 // 실시간 알림 (Server-Sent Events)
 //   GET /api/sync/events?apps=a,b  →  event: hello / event: change {appId, seq, deviceId[, scope: 'academy']} / ": ping" (25초마다)
-//                                     event: academy {kind: 'students' | 'ai'}  (학원 학생 명단·학원 AI 가 바뀜 → 다시 받기)
+//                                     event: academy {kind: 'students' | 'ai' | 'academy'}  (학생 명단·AI·학원 이름/계약 과목이 바뀜 → 다시 받기, academy 는 /api/me)
 //
 // 계정의 동기화 파일이 바뀌면(올리기·지우기·서버 정리) 그 계정의 연결에 바로 알려 준다.
 // 받는 쪽은 GET /api/sync/<앱>?since=<마지막 seq> 로 바뀐 것만 가져간다.

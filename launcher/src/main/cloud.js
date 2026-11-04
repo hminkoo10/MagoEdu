@@ -845,13 +845,17 @@ class Cloud extends EventEmitter {
   _startRealtime() {
     this._stopRealtime();
     const stream = new EventStream({ api: this.api, log: this.log });
-    stream.on('hello', () => {
+    stream.on('hello', async () => {
       this._online(true);
       for (const id of this._syncIds()) this._queueSync(id, REMOTE_DELAY); // 끊긴 동안 바뀐 것
+      await this.refreshMe().catch(() => {}); // 끊긴 동안 바뀐 학원 이름·계약 과목부터 받는다
+      if (this.events !== stream) return;
       this._queueAcademyInfo();
     });
     stream.on('change', (e) => this._onRemoteChange(e));
-    stream.on('academy', () => {
+    stream.on('academy', async (e) => {
+      if (e?.kind === 'academy') await this.refreshMe().catch(() => {});
+      if (this.events !== stream) return;
       this.academyStamp += 1;
       this.emitState();
       this._queueAcademyInfo();

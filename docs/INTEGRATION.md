@@ -240,7 +240,7 @@ SDK 없이 하려면 `MAGOEDU_REQUEST_DIR/<요청 ID>.json` 에 `{ "paths": [...
 ```json
 {
   "format": 1,
-  "academy": { "id": 3, "name": "마고학원" },
+  "academy": { "id": 3, "name": "마고학원", "subjects": ["math", "english"] },
   "me": { "id": "<계정 ID>", "name": "김선생", "role": "teacher" },
   "members": [{ "id": "<계정 ID>", "name": "김선생", "role": "teacher", "roleLabel": "선생님" }],
   "students": [{ "id": "…", "name": "홍길동", "school": "마고고", "grade": "고1", "teacher": { "id": "…", "name": "김선생" },
@@ -252,6 +252,7 @@ SDK 없이 하려면 `MAGOEDU_REQUEST_DIR/<요청 ID>.json` 에 `{ "paths": [...
 }
 ```
 
+- `academy.subjects` 는 학원이 계약한 과목이에요 (`math`·`english`·`korean`, 이 순서, 비어 있을 수 있어요). 없으면(예전 통합 클라우드) `["math"]` 로 보세요. 운영자가 바꾸면 곧바로 파일을 새로 써요 (통합 클라우드 1.2.13 부터).
 - `students` 에는 지운 학생(`deletedAt`)도 있어요. 화면에서는 숨기거나 '되살리기'로 보여 주세요. `ai` 는 학원 AI 가 없으면 `null` 이고, `provider` 는 `gemini` · `openai`(OpenAI 호환) · `anthropic` 이에요.
 - **학원 AI 키는 프로그램에 오지 않아요** (서버에만 있고, 원장도 끝 4자리만 봐요). `cloud.academyAi(session)` 이 부를 곳을 알려 줘요 → `{ provider, model, model2, rpm, source, baseUrl, apiKey }`.
   그 AI 의 주소·키 자리에 그대로 넣어 부르면 돼요.
@@ -424,6 +425,7 @@ data: {"appId":"tajong","seq":123,"deviceId":"바꾼 기기 ID"}
 - 그 계정의 파일이 바뀔 때마다(올리기·지우기·서버 보관 기간 정리) 저장이 끝난 뒤 보내요. `deviceId` 는 바꾼 기기의 세션 기기 ID, 서버가 정리했으면 `null`.
   내 기기 ID 와 같으면 내가 올린 것이니 건너뛰어도 돼요.
 - 학원 공간이 바뀌면 그 학원 사람 모두에게 `{"appId":…,"seq":…,"deviceId":…,"scope":"academy"}` 를 보내요. `seq` 는 학원 공간 목록의 `seq` 와 비교해요.
+- `event: academy` 는 그 학원 사람에게 `{"kind":"students"}`, `{"kind":"ai"}`, `{"kind":"academy"}` 를 보내요. `academy` 는 학원 이름·계약 과목이 바뀌었다는 뜻이에요. `/api/me` 를 먼저 다시 받은 뒤 `academy-info.json` 을 새로 써요. 다시 연결된 `hello` 때도 같은 순서로 갱신해요.
 - 서버는 1분쯤마다 세션을 다시 확인해서 로그아웃·사용 중지된 연결은 끊어요. 세션 하나에 연결은 5개까지(넘으면 오래된 것부터 끊음).
 - 끊기면 1초에서 시작해 두 배씩, 많아야 30초 간격으로 다시 붙고, 다시 붙으면 `since` 로 한 번 받아요. 70초 넘게 아무것도 오지 않으면(ping 포함) 끊긴 것으로 봐요.
 - 서버 한 대 안에서만 알려요. nginx·Cloudflare 앞에 두어도 되고(25초 ping 으로 100초 끊김을 막음), 서버가 `x-accel-buffering: no` 를 보내니 nginx 가 모아 두지 않아요.

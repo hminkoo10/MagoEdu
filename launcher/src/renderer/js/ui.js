@@ -78,6 +78,20 @@ export function checkbox(label, checked, onChange) {
   return h('label', { class: 'check' }, input, h('span', { class: 'box' }, ic('check', 14, 3)), h('span', {}, label));
 }
 
+export const SUBJECTS = [['math', '수학'], ['english', '영어'], ['korean', '국어']];
+
+export function subjectChecks(selected = ['math']) {
+  const chosen = new Set(selected);
+  const el = h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '16px' } },
+    ...SUBJECTS.map(([code, name]) => checkbox(name, chosen.has(code), (checked) => checked ? chosen.add(code) : chosen.delete(code))),
+  );
+  return { el, value: () => SUBJECTS.filter(([code]) => chosen.has(code)).map(([code]) => code) };
+}
+
+export function subjectText(list = ['math']) {
+  return SUBJECTS.filter(([code]) => list.includes(code)).map(([, name]) => name).join(' · ') || '계약한 과목 없음';
+}
+
 /** 회색 트랙 위에서 흰 표시가 미끄러지는 선택 */
 export function segmented(options, value, onChange, { onPage = false } = {}) {
   const pill = h('span', { class: 'seg-pill' });

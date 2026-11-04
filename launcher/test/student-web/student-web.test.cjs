@@ -528,6 +528,131 @@ if (!process.versions.electron) {
       ok(topDialog()?.textContent.includes('저장'));
       finish(); await pending;
     });
+    await run('계약 과목: 원장·선생님 프로필과 실시간 갱신, 운영자·학생은 숨김', async () => {
+      const { AccountView } = await import('./js/views/account.js');
+      cloud.refreshStorage = async () => ({ apps: [], usageBytes: 0, quotaBytes: 0 });
+      cloud.api = async () => ({ devices: [] });
+      for (const role of ['director', 'teacher', 'admin', 'student']) {
+        state.user = { ...state.user, role, academy: { id: 7, name: '마고', subjects: ['math', 'english'] } };
+        const view = new AccountView({ cloud, store: { state } }); mount(view);
+        if (['director', 'teacher'].includes(role)) {
+          equal([...view.profile.querySelectorAll('.pill')].slice(1).map((p) => p.textContent), ['수학', '영어']);
+          ok(view.profile.textContent.includes('과목을 늘리거나 바꾸려면 운영자에게 문의해 주세요.'));
+          equal(view.profile.querySelectorAll('input[type=checkbox]').length, 0);
+          state.user = { ...state.user, academy: { ...state.user.academy, name: '바뀐 학원', subjects: [] } };
+          view.update(state);
+          ok(view.profile.textContent.includes('바뀐 학원') && view.profile.textContent.includes('계약한 과목 없음'));
+          equal(view.profile.querySelectorAll('.pill').length, 1);
+          state.user = { ...state.user, academy: { ...state.user.academy, subjects: ['korean'] } };
+          view.update(state);
+          equal([...view.profile.querySelectorAll('.pill')].slice(1).map((p) => p.textContent), ['국어']);
+        } else ok(!view.profile.textContent.includes('계약 과목'));
+      }
+    });
+    await run('학원 관리: 과목 저장·빈 과목 재확인·취소·새 학원 과목', async () => {
+      const { PeopleView } = await import('./js/views/people.js');
+      state.user.role = 'admin';
+      let academy = { id: 7, name: '마고', subjects: ['math'], directors: 1, teachers: 0, usageBytes: 0, quotaBytes: 0 };
+      cloud.api = async (m, p, b) => {
+        calls.push([m, p, b]);
+        if (m === 'GET' && p === '/api/academies') return { academies: [academy] };
+        if (m === 'PATCH') { academy = { ...academy, ...b }; return { academy }; }
+        if (m === 'POST') return { academy: { id: 8, ...b } };
+        return { users: [] };
+      };
+      const view = new PeopleView({ cloud, store: { state } }); mount(view); await until(() => view.academies.length);
+      const pending = view.manageAcademies(); await until(() => topDialog());
+      ok(topDialog().textContent.includes('과목: 수학'));
+      button('과목', topDialog()).click();
+      equal(topDialog().querySelector('.dialog-title').textContent, '마고 계약 과목');
+      ok(topDialog().textContent.includes('과목을 빼도 이미 올린 교재는 볼 수 있어요.'));
+      equal([...topDialog().querySelectorAll('.check')].map((c) => c.textContent), ['수학', '영어', '국어']);
+      equal([...topDialog().querySelectorAll('input')].map((c) => c.checked), [true, false, false]);
+      topDialog().querySelectorAll('input')[1].click(); button('저장', topDialog()).click();
+      await until(() => topDialog()?.querySelector('.dialog-title').textContent === '학원 관리');
+      await until(() => topDialog().textContent.includes('과목: 수학 · 영어'));
+      equal(calls.find((c) => c[0] === 'PATCH'), ['PATCH', '/api/academies/7', { subjects: ['math', 'english'] }]);
+      button('과목', topDialog()).click();
+      for (const input of topDialog().querySelectorAll('input:checked')) input.click();
+      button('저장', topDialog()).click(); await until(() => topDialog()?.textContent.includes('그래도 저장할까요?'));
+      button('취소', topDialog()).click(); await tick();
+      equal(calls.filter((c) => c[0] === 'PATCH').length, 1);
+      equal(topDialog().querySelector('.dialog-title').textContent, '마고 계약 과목');
+      button('저장', topDialog()).click(); await until(() => topDialog()?.textContent.includes('그래도 저장할까요?'));
+      button('저장', topDialog()).click();
+      await until(() => topDialog()?.querySelector('.dialog-title').textContent === '학원 관리');
+      await until(() => topDialog().textContent.includes('계약한 과목 없음'));
+      equal(calls.filter((c) => c[0] === 'PATCH').at(-1)[2], { subjects: [] });
+      const inputs = topDialog().querySelectorAll('input[type=checkbox]');
+      equal([...inputs].map((c) => c.checked), [true, false, false]);
+      inputs[2].click();
+      topDialog().querySelector('input[placeholder="새 학원 이름"]').value = '새 학원';
+      button('추가', topDialog()).click(); await until(() => calls.some((c) => c[0] === 'POST'));
+      equal(calls.find((c) => c[0] === 'POST'), ['POST', '/api/academies', { name: '새 학원', subjects: ['math', 'korean'] }]);
+      button('닫기', topDialog()).click(); await pending;
+    });
+    await run('계정 만들기: 새 학원일 때만 계약 과목과 요청 본문', async () => {
+      const { PeopleView } = await import('./js/views/people.js');
+      state.user = { ...state.user, role: 'admin', allowedApps: null };
+      cloud.api = async (m, p, b) => {
+        calls.push([m, p, b]);
+        if (p === '/api/academies') return { academies: [{ id: 7, name: '마고', subjects: ['math'] }] };
+        if (m === 'POST') return { user: { name: b.name, username: b.username } };
+        return { users: [] };
+      };
+      const view = new PeopleView({ cloud, store: { state } }); mount(view); await until(() => view.academies.length);
+      const pending = view.create();
+      const dialog = topDialog();
+      const [role, academy] = dialog.querySelectorAll('select');
+      const newName = dialog.querySelector('input[placeholder="새 학원 이름"]');
+      const wrap = newName.closest('.field').parentElement;
+      equal(wrap.style.display, 'none');
+      academy.value = '__new'; academy.dispatchEvent(new Event('change'));
+      equal(wrap.style.display, '');
+      equal([...wrap.querySelectorAll('input[type=checkbox]')].map((c) => c.checked), [true, false, false]);
+      role.value = 'admin'; role.dispatchEvent(new Event('change')); equal(wrap.style.display, 'none');
+      role.value = 'director'; role.dispatchEvent(new Event('change')); equal(wrap.style.display, '');
+      newName.value = '새 영어 학원';
+      wrap.querySelectorAll('input[type=checkbox]')[0].click(); wrap.querySelectorAll('input[type=checkbox]')[1].click();
+      button('만들기', dialog).click(); await pending;
+      const body = calls.find((c) => c[0] === 'POST')[2];
+      equal([body.academyName, body.academySubjects], ['새 영어 학원', ['english']]);
+      ok(!('academyId' in body));
+      const existing = view.create(); button('만들기', topDialog()).click(); await existing;
+      const existingBody = calls.filter((c) => c[0] === 'POST').at(-1)[2];
+      equal(existingBody.academyId, 7); ok(!('academySubjects' in existingBody));
+    });
+    await run('가입 코드: 과목 선택·요청·목록 표시', async () => {
+      const { CodesView } = await import('./js/views/codes.js');
+      let codes = [];
+      cloud.api = async (m, p, b) => {
+        calls.push([m, p, b]);
+        if (m === 'POST') {
+          const code = { id: 1, code: 'MAGO-TEST-CODE', academyName: b.academyName, subjects: b.subjects, state: 'active', uses: 0, maxUses: 1 };
+          codes = [code]; return { code };
+        }
+        return { codes };
+      };
+      const view = new CodesView({ cloud }); mount(view); await tick();
+      const pending = view.create();
+      const checks = topDialog().querySelectorAll('input[type=checkbox]');
+      equal([...checks].map((c) => c.checked), [true, false, false]);
+      checks[0].click(); checks[1].click();
+      button('만들기', topDialog()).click();
+      await until(() => topDialog()?.textContent.includes('가입 코드를 만들었어요'));
+      equal(calls.find((c) => c[0] === 'POST')[2].subjects, ['english']);
+      button('확인', topDialog()).click(); await pending;
+      await until(() => view.table.querySelector('tbody'));
+      equal([...view.table.querySelectorAll('th')].slice(0, 3).map((c) => c.textContent), ['코드', '학원', '과목']);
+      equal(view.table.querySelector('tbody tr').children[2].textContent, '영어');
+    });
+    await run('활동 기록: 계약 과목과 이전 과목 표시', async () => {
+      const { AuditView } = await import('./js/views/audit.js');
+      cloud.api = async () => ({ entries: [{ id: 1, at: 1, action: 'academy.subjects', detail: { subjects: ['math', 'english'], before: ['math'] } }], more: false });
+      const view = new AuditView({ cloud }); mount(view); await until(() => view.table.querySelector('tbody'));
+      ok(view.table.textContent.includes('계약 과목 바꿈'));
+      ok(view.table.textContent.includes('수학 · 영어 (전: 수학)'));
+    });
     console.log('STUDENT_TESTS=' + JSON.stringify(results));
     win.destroy();
     app.exit(results.some((r) => r.error) ? 1 : 0);

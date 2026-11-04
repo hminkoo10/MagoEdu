@@ -1,5 +1,5 @@
 // 활동 기록 (운영자): 누가 언제 계정을 만들고 지웠는지, 코드를 만들었는지 등
-import { h, ic, btn, busy, input, select, pill, date, bytes, reveal, put } from '../ui.js';
+import { h, ic, btn, busy, input, select, pill, date, bytes, reveal, put, subjectText } from '../ui.js';
 
 const LABEL = {
   login: ['로그인', 'grey'],
@@ -23,6 +23,7 @@ const LABEL = {
   'notice.delete': ['공지 지움', 'grey'],
   'academy.create': ['학원 만듦', 'green'],
   'academy.update': ['학원 이름 바꿈', 'grey'],
+  'academy.subjects': ['계약 과목 바꿈', 'yellow'],
   'academy.delete': ['학원 지움', 'red'],
   'app.create': ['프로그램 추가', 'green'],
   'app.update': ['프로그램 고침', 'grey'],
@@ -35,6 +36,7 @@ const LABEL = {
 function detailText(e) {
   const d = e.detail;
   if (!d) return '';
+  if (e.action === 'academy.subjects') return `${subjectText(d.subjects)} (전: ${subjectText(d.before)})`;
   if (e.action === 'storage.cold_evict' || e.action === 'storage.cold_run') return `${d.groups || 0}묶음 · 파일 ${d.files || 0}개 · ${bytes(d.bytes || 0)}`;
   if (e.action === 'user.delete' && d.to) return `학원 공간 자료는 ${d.to}에게 넘김 (파일 ${d.files || 0}개)`;
   if (e.action === 'user.create' && d.role) return { admin: '운영자', director: '원장', teacher: '선생님' }[d.role] || '';

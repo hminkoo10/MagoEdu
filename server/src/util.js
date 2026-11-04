@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 
 const DAY = 24 * 60 * 60 * 1000;
+const SUBJECTS = ['math', 'english', 'korean'];
 
 class HttpError extends Error {
   constructor(status, message, code, extra) {
@@ -109,8 +110,23 @@ function jsonParse(text, fallback) {
   }
 }
 
+function normalizeSubjects(value) {
+  if (!Array.isArray(value) || value.some((s) => !SUBJECTS.includes(s))) {
+    throw bad('과목은 수학·영어·국어 중에서 골라 주세요.', 'invalid_subjects');
+  }
+  return SUBJECTS.filter((s) => value.includes(s));
+}
+
+function parseSubjects(value) {
+  const list = jsonParse(value, null);
+  return Array.isArray(list) ? SUBJECTS.filter((s) => list.includes(s)) : ['math'];
+}
+
 module.exports = {
   DAY,
+  SUBJECTS,
+  normalizeSubjects,
+  parseSubjects,
   HttpError,
   bad,
   forbidden,

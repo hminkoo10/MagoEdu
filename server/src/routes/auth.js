@@ -4,7 +4,7 @@
 
 const crypto = require('node:crypto');
 const { readJson } = require('../http');
-const { HttpError, bad, notFound, normalizeUsername, validatePassword, validateName, str } = require('../util');
+const { HttpError, bad, notFound, normalizeUsername, validatePassword, validateName, str, parseSubjects } = require('../util');
 const { hashPassword, verifyPassword, DUMMY_HASH, RateLimiter } = require('../security');
 
 function register(router, deps) {
@@ -105,7 +105,7 @@ function register(router, deps) {
       // 다른 요청이 먼저 썼을 수 있으니 한 번 더 확인
       const fresh = db.get('SELECT uses, max_uses FROM signup_codes WHERE id = ?', code.id);
       if (fresh.uses >= fresh.max_uses) throw bad('이미 다 사용한 가입 코드예요.', 'invalid_code');
-      const academyId = db.run('INSERT INTO academies(name, created_at) VALUES (?, ?)', academy, now).lastInsertRowid;
+      const academyId = db.run('INSERT INTO academies(name, subjects, created_at) VALUES (?, ?, ?)', academy, JSON.stringify(parseSubjects(code.subjects)), now).lastInsertRowid;
       const id = db.run(
         `INSERT INTO users(uid, username, name, role, academy_id, password_hash, created_by, created_at, updated_at, password_changed_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

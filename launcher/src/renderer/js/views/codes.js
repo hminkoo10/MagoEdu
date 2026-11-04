@@ -1,5 +1,5 @@
 // 원장 가입 코드 (운영자): 코드를 만들어 원장님께 주면, 원장님이 직접 가입해 학원과 계정을 만든다
-import { h, ic, btn, toast, dialog, field, input, select, pill, date, ago, confirmDialog, secretDialog, reveal, put } from '../ui.js';
+import { h, ic, btn, toast, dialog, field, input, select, pill, date, ago, confirmDialog, secretDialog, reveal, put, subjectChecks, subjectText } from '../ui.js';
 
 const STATE = { active: ['쓸 수 있음', 'green'], used: ['다 씀', 'grey'], expired: ['기간 끝남', 'yellow'], revoked: ['취소함', 'red'] };
 
@@ -54,6 +54,7 @@ export class CodesView {
         {},
         h('td', {}, h('div', { style: { display: 'flex', alignItems: 'center', gap: '4px' } }, h('span', { class: 'mono selectable', style: { fontWeight: 700, fontSize: '15px' } }, c.code), copy)),
         h('td', {}, c.academyName || h('span', { class: 'subtle' }, '가입할 때 입력')),
+        h('td', {}, subjectText(c.subjects)),
         h('td', {}, c.memo || h('span', { class: 'subtle' }, '-')),
         h('td', { class: 'num' }, `${c.uses} / ${c.maxUses}`),
         h('td', { class: 'subtle' }, c.expiresAt ? `${date(c.expiresAt)}까지` : '기한 없음'),
@@ -66,7 +67,7 @@ export class CodesView {
       h(
         'table',
         { class: 'table' },
-        h('thead', {}, h('tr', {}, ...['코드', '학원', '메모', '사용', '기간', '상태', '만든 사람', ''].map((t, i) => h('th', { class: i === 3 ? 'num' : '' }, t)))),
+        h('thead', {}, h('tr', {}, ...['코드', '학원', '과목', '메모', '사용', '기간', '상태', '만든 사람', ''].map((t, i) => h('th', { class: i === 4 ? 'num' : '' }, t)))),
         h('tbody', {}, ...rows),
       ),
     );
@@ -75,6 +76,7 @@ export class CodesView {
 
   async create() {
     const academy = input({ placeholder: '비우면 원장님이 가입할 때 입력' });
+    const subjects = subjectChecks();
     const memo = input({ placeholder: '예: 마고수학학원 본원 원장님' });
     const uses = select(
       [
@@ -97,10 +99,10 @@ export class CodesView {
     const ok = await dialog({
       title: '원장 가입 코드 만들기',
       sub: '이 코드로 가입하면 새 학원과 원장 계정이 만들어져요.',
-      body: h('div', {}, field('학원 이름', academy), field('메모', memo), h('div', { class: 'form-row', style: { marginTop: '14px' } }, field('쓸 수 있는 횟수', uses), field('쓸 수 있는 기간', days))),
+      body: h('div', {}, field('학원 이름', academy), field('계약 과목', subjects.el), field('메모', memo), h('div', { class: 'form-row', style: { marginTop: '14px' } }, field('쓸 수 있는 횟수', uses), field('쓸 수 있는 기간', days))),
       ok: '만들기',
       onOk: async () => {
-        const r = await this.cloud.api('POST', '/api/codes', { academyName: academy.value, memo: memo.value, maxUses: Number(uses.value), expiresInDays: Number(days.value) });
+        const r = await this.cloud.api('POST', '/api/codes', { academyName: academy.value, subjects: subjects.value(), memo: memo.value, maxUses: Number(uses.value), expiresInDays: Number(days.value) });
         made = r.code;
       },
     });

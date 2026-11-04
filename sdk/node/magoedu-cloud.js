@@ -20,6 +20,7 @@
 //
 // 학원 학생 명단·학원 AI (매니페스트 "academyInfo": true, 학원에 속한 계정):
 //   cloud.academyInfo(session)              // { academy, me, members, students, purged, purgeDays, ai } (없으면 null)
+//     academy.subjects: 계약 과목 ['math', 'english', 'korean'] 순서, 빈 배열 가능. 없으면 ['math'] (통합 클라우드 1.2.13 부터)
 //   const stop = cloud.watchAcademyInfo(session, (info) => ...)   // 바뀔 때마다
 //   await cloud.saveStudent(session, { name: '홍길동', ... })   // 추가 (rev 를 주면 고치기) → { ok, student, error?, errorCode? }
 //   await cloud.deleteStudent(session, id) / cloud.restoreStudent(session, id)

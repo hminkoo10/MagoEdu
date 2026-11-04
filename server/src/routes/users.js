@@ -12,6 +12,8 @@ const {
   normalizeUsername,
   validatePassword,
   validateName,
+  normalizeSubjects,
+  parseSubjects,
   randomPassword,
   randomCode,
   intOr,
@@ -114,7 +116,8 @@ function register(router, deps) {
         } else {
           const academyName = str(body.academyName, 60);
           if (!academyName) throw bad('학원을 고르거나 새 학원 이름을 입력해 주세요.', 'invalid_academy');
-          academyId = db.run('INSERT INTO academies(name, created_at) VALUES (?, ?)', academyName, now).lastInsertRowid;
+          const subjects = body.academySubjects === undefined ? ['math'] : normalizeSubjects(body.academySubjects);
+          academyId = db.run('INSERT INTO academies(name, subjects, created_at) VALUES (?, ?, ?)', academyName, JSON.stringify(subjects), now).lastInsertRowid;
         }
       }
       const id = db.run(
@@ -408,6 +411,7 @@ function register(router, deps) {
       academies: rows.map((a) => ({
         id: a.id,
         name: a.name,
+        subjects: parseSubjects(a.subjects),
         createdAt: a.created_at,
         directors: db.get("SELECT COUNT(*) AS n FROM users WHERE academy_id = ? AND role = 'director'", a.id).n,
         teachers: db.get("SELECT COUNT(*) AS n FROM users WHERE academy_id = ? AND role = 'teacher'", a.id).n,
@@ -423,9 +427,10 @@ function register(router, deps) {
     const body = await readJson(ctx.req);
     const name = str(body.name, 60);
     if (!name) throw bad('학원 이름을 입력해 주세요.');
-    const id = db.run('INSERT INTO academies(name, created_at) VALUES (?, ?)', name, Date.now()).lastInsertRowid;
-    svc.audit(ctx, 'academy.create', name, null, id);
-    return { academy: { id, name } };
+    const subjects = body.subjects === undefined ? ['math'] : normalizeSubjects(body.subjects);
+    const id = db.run('INSERT INTO academies(name, subjects, created_at) VALUES (?, ?, ?)', name, JSON.stringify(subjects), Date.now()).lastInsertRowid;
+    svc.audit(ctx, 'academy.create', name, { subjects }, id);
+    return { academy: { id, name, subjects } };
   });
 
   router.patch('/api/academies/:id', async (ctx) => {
@@ -435,6 +440,12 @@ function register(router, deps) {
     const a = db.get('SELECT * FROM academies WHERE id = ?', id);
     if (!a) throw notFound('학원을 찾을 수 없어요.');
     const body = await readJson(ctx.req);
+    const before = parseSubjects(a.subjects);
+    let subjects = before;
+    if (body.subjects !== undefined) {
+      if (actor.role !== 'admin') throw forbidden('계약 과목은 운영자만 바꿀 수 있어요.');
+      subjects = normalizeSubjects(body.subjects);
+    }
     let name = a.name;
     if (body.name !== undefined) {
       name = str(body.name, 60);
@@ -450,7 +461,13 @@ function register(router, deps) {
       db.run('UPDATE academies SET quota_mb = ? WHERE id = ?', q, id);
       svc.audit(ctx, 'academy.quota', name, { quotaMb: q }, id);
     }
-    return { academy: { id, name, quotaMb: db.get('SELECT quota_mb FROM academies WHERE id = ?', id).quota_mb ?? null } };
+    const subjectsChanged = JSON.stringify(subjects) !== JSON.stringify(before);
+    if (subjectsChanged) {
+      db.run('UPDATE academies SET subjects = ? WHERE id = ?', JSON.stringify(subjects), id);
+      svc.audit(ctx, 'academy.subjects', name, { subjects, before }, id);
+    }
+    if (subjectsChanged || name !== a.name) deps.events.publishAcademyInfo(id, 'academy');
+    return { academy: { id, name, quotaMb: db.get('SELECT quota_mb FROM academies WHERE id = ?', id).quota_mb ?? null, subjects } };
   });
 
   router.delete('/api/academies/:id', (ctx) => {
@@ -479,6 +496,7 @@ function register(router, deps) {
       code: c.code,
       role: c.role,
       academyName: c.academy_name || '',
+      subjects: parseSubjects(c.subjects),
       memo: c.memo || '',
       maxUses: c.max_uses,
       uses: c.uses,
@@ -498,6 +516,7 @@ function register(router, deps) {
     const actor = svc.requireRole(ctx, 'admin');
     const body = await readJson(ctx.req);
     const maxUses = intOr(body.maxUses, 1, 1, 100);
+    const subjects = body.subjects === undefined ? ['math'] : normalizeSubjects(body.subjects);
     const days = body.expiresInDays === 0 || body.expiresInDays === null ? 0 : intOr(body.expiresInDays, 7, 1, 365);
     const now = Date.now();
     let code;
@@ -506,8 +525,8 @@ function register(router, deps) {
       if (!db.get('SELECT 1 FROM signup_codes WHERE code = ?', code)) break;
     }
     const id = db.run(
-      `INSERT INTO signup_codes(code, role, academy_name, memo, max_uses, expires_at, created_by, created_at)
-       VALUES (?, 'director', ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO signup_codes(code, role, academy_name, memo, max_uses, expires_at, created_by, created_at, subjects)
+       VALUES (?, 'director', ?, ?, ?, ?, ?, ?, ?)`,
       code,
       str(body.academyName, 60) || null,
       str(body.memo, 200) || null,
@@ -515,8 +534,9 @@ function register(router, deps) {
       days ? now + days * DAY : null,
       actor.id,
       now,
+      JSON.stringify(subjects),
     ).lastInsertRowid;
-    svc.audit(ctx, 'code.create', code, { academyName: str(body.academyName, 60) || null, maxUses, days });
+    svc.audit(ctx, 'code.create', code, { academyName: str(body.academyName, 60) || null, maxUses, days, subjects });
     return { code: publicCode(db.get('SELECT * FROM signup_codes WHERE id = ?', id)) };
   });
 

@@ -340,6 +340,12 @@ const MIGRATIONS = [
   UPDATE apps SET name = '마고 과목내비'
   WHERE id = 'mago-navi-pc' AND name = '마고 과목내비 (PC)';
   `,
+
+  // 9: 학원 계약 과목 (기존 학원·원장 가입 코드는 수학)
+  `
+  ALTER TABLE academies ADD COLUMN subjects TEXT NOT NULL DEFAULT '["math"]';
+  ALTER TABLE signup_codes ADD COLUMN subjects TEXT NOT NULL DEFAULT '["math"]';
+  `,
 ];
 
 function openDb(file) {
