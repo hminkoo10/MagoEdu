@@ -62,7 +62,7 @@ export class StudentsView {
     this.filter = { who: u.role === 'teacher' ? 'mine' : 'all', grade: '', q: '' };
     this.table = h('div', { class: 'table-wrap' });
     this.count = h('span', { class: 'muted' });
-    this.bulk = btn('계정 일괄 생성', { variant: 'soft', disabled: true });
+    this.bulk = btn('계정 일괄 생성', { variant: 'soft', title: '학생을 고르면 고른 학생만, 안 고르면 지금 목록에서 계정이 없는 학생 모두에게 만들어요' });
     this.bulk.addEventListener('click', async () => {
       await busy(this.bulk, () => this.bulkAccounts());
       this.updateSelection();
@@ -201,19 +201,26 @@ export class StudentsView {
     this.grades = grades;
   }
 
+  /** 지금 탭·학년·검색으로 보이는 학생 */
+  visible() {
+    const f = this.filter;
+    const active = this.students.filter((s) => !s.deletedAt);
+    let list = f.who === 'deleted' ? this.students.filter((s) => s.deletedAt) : f.who === 'mine' ? active.filter((s) => s.teacher?.id === this.me) : active;
+    if (f.grade) list = list.filter((s) => s.grade === f.grade);
+    if (f.q) list = list.filter((s) => [s.name, s.school, s.memo].some((t) => String(t || '').toLowerCase().includes(f.q)));
+    return list;
+  }
+
   render(animate = false) {
     if (!this.loaded) return;
     const f = this.filter;
     const active = this.students.filter((s) => !s.deletedAt);
-    const deleted = this.students.filter((s) => s.deletedAt);
     this.fillGrades(active);
     const trash = f.who === 'deleted';
     this.deletedNote.style.display = trash ? '' : 'none';
     this.deletedNote.lastChild.textContent = `삭제한 학생은 ${this.purgeDays}일 동안 여기 있어요. 그 안에는 학원 사람 누구나 되살릴 수 있고, 지나면 그 학생의 자료(오답노트 등)와 함께 완전히 지워져요.`;
-    let list = trash ? deleted : f.who === 'mine' ? active.filter((s) => s.teacher?.id === this.me) : active;
+    const list = this.visible();
     const filtered = !!(f.grade || f.q);
-    if (f.grade) list = list.filter((s) => s.grade === f.grade);
-    if (f.q) list = list.filter((s) => [s.name, s.school, s.memo].some((t) => String(t || '').toLowerCase().includes(f.q)));
     this.count.textContent = `${list.length}명`;
     this.updateSelection();
     if (!list.length) {
@@ -276,15 +283,26 @@ export class StudentsView {
     );
   }
 
+  // 버튼은 끄지 않음: 못 만들 때는 눌렀을 때 이유를 알려 줌 (삭제한 학생 탭에서는 숨김)
   updateSelection() {
-    this.bulk.disabled = !this.selected.size || this.filter.who === 'deleted';
+    this.bulk.style.display = this.filter.who === 'deleted' ? 'none' : '';
     this.bulk.textContent = this.selected.size ? `계정 일괄 생성 (${this.selected.size}명)` : '계정 일괄 생성';
   }
 
   async bulkAccounts() {
     const qs = this.qs();
-    const studentIds = [...this.selected];
-    if (!studentIds.length) return;
+    if (!this.loaded) {
+      toast(this.isAdmin && !this.academy ? '학원을 먼저 골라 주세요.' : '학생 명단을 불러온 뒤에 다시 눌러 주세요.', 'warning');
+      return;
+    }
+    // 고른 학생이 없으면 지금 목록에서 계정이 없는 학생 모두
+    const picked = this.selected.size > 0;
+    const list = this.visible();
+    const studentIds = picked ? [...this.selected] : list.filter((s) => !s.account).map((s) => s.id);
+    if (!studentIds.length) {
+      toast(list.length ? '지금 목록의 학생은 모두 계정이 있어요.' : '계정을 만들 학생이 없어요. ‘학생 추가’로 학생을 먼저 넣어 주세요.', 'warning', 4000);
+      return;
+    }
     try {
       const r = await this.cloud.api('GET', `/api/academy${qs}`);
       if (!(r.academy || r).code) {
@@ -293,8 +311,10 @@ export class StudentsView {
       }
       let result;
       const ok = await dialog({
-        title: `${studentIds.length}명의 계정을 만들까요?`,
-        sub: '이미 계정이 있는 학생은 건너뛰어요. 새 임시 비밀번호는 한 번만 보여요.',
+        title: picked ? `${studentIds.length}명의 계정을 만들까요?` : `계정이 없는 학생 ${studentIds.length}명의 계정을 만들까요?`,
+        sub: picked
+          ? '이미 계정이 있는 학생은 건너뛰어요. 새 임시 비밀번호는 한 번만 보여요.'
+          : '고른 학생이 없어서 지금 목록에서 계정이 없는 학생 모두에게 만들어요. 새 임시 비밀번호는 한 번만 보여요.',
         ok: '일괄 생성',
         onOk: async () => {
           try {

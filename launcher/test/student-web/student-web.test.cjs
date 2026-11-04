@@ -217,7 +217,40 @@ if (!process.versions.electron) {
       ok(topDialog().textContent.includes('이미 계정이 있어요'));
       ok(button('인쇄', topDialog()) && button('CSV 받기', topDialog()));
       button('닫기', topDialog()).click(); await tick();
-      ok(view.bulk.disabled); equal(view.selected.size, 0);
+      ok(!view.bulk.disabled); equal(view.bulk.textContent, '계정 일괄 생성'); equal(view.selected.size, 0);
+    });
+    await run('일괄 생성: 고른 학생이 없으면 목록의 계정 없는 학생 모두, 만들 학생이 없으면 이유를 알림', async () => {
+      const { StudentsView } = await import('./js/views/students.js');
+      state.user.role = 'director';
+      let list = [];
+      cloud.api = async (m, p, b) => {
+        calls.push([m, p, b]);
+        if (p === '/api/academy') return { code: 'mago' };
+        if (p === '/api/academy/members') return { members: [] };
+        if (p === '/api/students') return { students: list, purgeDays: 30 };
+        return { created: [], skipped: [] };
+      };
+      const view = new StudentsView({ cloud, store: { state } }); mount(view); await until(() => view.loaded);
+      ok(!view.bulk.disabled, '학생이 없어도 버튼은 눌려요');
+      view.bulk.click(); await until(() => document.body.textContent.includes('‘학생 추가’로 학생을 먼저 넣어 주세요'));
+      ok(!calls.some((c) => c[1] === '/api/academy'), '만들 학생이 없으면 서버에 묻지 않아요');
+      list = [{ id: 's1', name: '김학생', account: { username: 'mago2611001' } }, { id: 's2', name: '이학생', grade: '고1' }, { id: 's3', name: '박학생', grade: '고2' }, { id: 's4', name: '최학생', deletedAt: 1 }];
+      await view.load(); await until(() => view.table.querySelector('tbody'));
+      view.bulk.click(); await until(() => topDialog()?.textContent.includes('계정이 없는 학생 2명의 계정을 만들까요?'));
+      button('일괄 생성', topDialog()).click(); await until(() => calls.some((c) => c[0] === 'POST'));
+      equal(calls.find((c) => c[0] === 'POST'), ['POST', '/api/students/accounts/bulk', { studentIds: ['s2', 's3'] }]);
+      await until(() => topDialog()?.textContent.includes('새로 만든 계정이 없어요')); button('닫기', topDialog()).click();
+      await until(() => !view.bulk.querySelector('.spinner'));
+      calls.length = 0;
+      view.gradeSel.value = '고2'; view.gradeSel.dispatchEvent(new Event('change'));
+      const pending = view.bulkAccounts(); await until(() => topDialog()?.textContent.includes('계정이 없는 학생 1명의'));
+      button('취소', topDialog()).click(); await pending;
+      list = list.map((s) => (s.deletedAt ? s : { ...s, account: { username: 'x' } }));
+      await view.load(); calls.length = 0;
+      await view.bulkAccounts(); ok(document.body.textContent.includes('지금 목록의 학생은 모두 계정이 있어요'));
+      ok(!calls.some((c) => c[0] === 'POST'));
+      button('삭제한 학생').click(); await tick();
+      equal(view.bulk.style.display, 'none');
     });
     await run('학원 코드 없음: 원장은 현장에서 설정, 선생님은 안내', async () => {
       const { StudentsView } = await import('./js/views/students.js');
