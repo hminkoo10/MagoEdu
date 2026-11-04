@@ -11,6 +11,7 @@ const { pathToFileURL } = require('node:url');
 
 const { startServer, ADMIN_PASSWORD } = require('../../server/test/helpers');
 const { makeZip } = require('./lib/zipwriter');
+const { safeStorage } = require('./lib/safe-storage');
 const { makePaths } = require('../src/core/paths');
 const { Store } = require('../src/main/store');
 const { Cloud } = require('../src/main/cloud');
@@ -106,7 +107,7 @@ test('통합 클라우드: 웹의 ‘PC에 설치’, 인터넷이 끊겼을 때
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const paths = makePaths({ userData: path.join(root, 'roaming'), localData: path.join(root, 'local') });
   const open = async (p = paths) => {
-    const cloud = new Cloud({ paths: p, store: new Store({ paths: p, defaults: { serverUrl: s.base } }), version: '1.0.0', log: quiet });
+    const cloud = new Cloud({ paths: p, store: new Store({ paths: p, safeStorage, defaults: { serverUrl: s.base } }), version: '1.0.0', log: quiet });
     cloud.launched = [];
     cloud.toasts = [];
     cloud.runner.launch = ({ appId, env }) => cloud.launched.push({ appId, ticket: env.MAGOEDU_TICKET });

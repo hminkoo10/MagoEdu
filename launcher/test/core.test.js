@@ -10,6 +10,8 @@ const path = require('node:path');
 
 const { startServer, ADMIN_PASSWORD } = require('../../server/test/helpers');
 const { makeZip } = require('./lib/zipwriter');
+const { safeStorage } = require('./lib/safe-storage');
+const { Store } = require('../src/main/store');
 const { ApiClient } = require('../src/core/api');
 const { makePaths } = require('../src/core/paths');
 const { Installer } = require('../src/core/installer');
@@ -256,7 +258,7 @@ test('통합 클라우드 핵심: 설치·동기화·보관 기간·예전 데�
     const payload = verifyTicket(meta.keys, ticket, { appId: 'notes' });
     assert.equal(payload.sub, uid);
     assert.equal(verifyTicket(meta.keys, ticket, { appId: 'other' }), null);
-    const store = new TicketStore(A.paths.account(uid).tickets);
+    const store = new TicketStore(A.paths.account(uid).tickets, new Store({ paths: A.paths, safeStorage }));
     await store.put('notes', ticket, expiresAt);
     assert.equal((await store.get('notes', meta.keys)).ticket, ticket);
 

@@ -6,6 +6,8 @@
 // (sdk/ 의 magoedu_cloud.py, magoedu-cloud.js 참고) 그래서 프로그램 파일만 따로 복사해 실행할 수는 없다.
 
 const crypto = require('node:crypto');
+const fsp = require('node:fs/promises');
+const path = require('node:path');
 const { readJson, writeJson } = require('./fsutil');
 
 const PREFIX = 'MGT1';
@@ -85,21 +87,41 @@ async function writeTrust(file, { serverUrl, serverId, keys }) {
 }
 
 class TicketStore {
-  constructor(file) {
+  constructor(file, store = null) {
     this.file = file;
+    this.store = store;
+  }
+
+  async _read() {
+    try {
+      const data = await fsp.readFile(this.file);
+      // 이전 평문 허가증은 옮겨 쓰지 않고 폐기한다.
+      if (data[0] === 0x7b) {
+        await fsp.rm(this.file, { force: true });
+        return {};
+      }
+      if (!this.store?._canEncrypt()) return {};
+      return sanitizeTickets(JSON.parse(this.store.safe.decryptString(data)));
+    } catch {
+      return {};
+    }
   }
 
   async get(appId, keys) {
-    const all = sanitizeTickets(await readJson(this.file, {}));
+    const all = await this._read();
     const t = all[appId];
     if (!t) return null;
     return verifyTicket(keys, t.ticket, { appId }) ? t : null;
   }
 
   async put(appId, ticket, expiresAt) {
-    const all = sanitizeTickets(await readJson(this.file, {}));
+    const all = await this._read();
+    // 로그인 정보와 같은 Windows 암호화를 쓴다. 불가능하면 디스크에 남기지 않는다.
+    if (!this.store?._canEncrypt()) return;
     all[appId] = { ticket, expiresAt, savedAt: Date.now() };
-    await writeJson(this.file, all);
+    const data = this.store.safe.encryptString(JSON.stringify(all));
+    await fsp.mkdir(path.dirname(this.file), { recursive: true });
+    await fsp.writeFile(this.file, data, { mode: 0o600 });
   }
 }
 

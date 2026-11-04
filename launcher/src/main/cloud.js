@@ -270,14 +270,29 @@ class Cloud extends EventEmitter {
     if (session && session.token && normalizeServerUrl(session.serverUrl) === normalizeServerUrl(cfg.serverUrl)) {
       this.api = this._makeApi(cfg.serverUrl, session.token);
       this.user = session.user;
+      await this._clearOtherTickets(this.user.id);
       this.dataKey = session.dataKey || null;
       this.phase = 'ready';
       this._loadCachedCatalog();
       this.emitState();
       this._afterLogin({ fromSession: true }).catch((err) => this.log.warn('[시작]', err.message));
     } else {
+      await this._clearOtherTickets();
       this.phase = cfg.serverUrl ? 'login' : 'setup';
       this.emitState();
+    }
+  }
+
+  async _clearOtherTickets(uid) {
+    // 같은 Windows 프로필에 남은 다른 마고에듀 계정의 허가증만 지운다.
+    const entries = await fsp.readdir(path.join(this.paths.userData, 'accounts'), { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name === uid) continue;
+      try {
+        await fsp.rm(this.paths.account(entry.name).tickets, { force: true });
+      } catch {
+        /* 읽거나 지울 수 없는 계정 폴더는 건너뜀 */
+      }
     }
   }
 
@@ -343,6 +358,7 @@ class Cloud extends EventEmitter {
     // 다른 계정으로 켜 둔 프로그램은 끈다 (그 계정으로 계속 돌면서 이 계정의 것처럼 보이지 않게)
     await this._stopApps((info) => info.userId !== r.user.id);
     this.user = r.user;
+    await this._clearOtherTickets(this.user.id);
     this.authMessage = null;
     this.phase = 'ready';
     this.online = true;
@@ -386,6 +402,8 @@ class Cloud extends EventEmitter {
     if (uid) {
       const stopped = await this._stopApps((info) => !info.userId || info.userId === uid);
       await Promise.all(stopped.map((id) => this.syncApp(id, { quiet: true }).catch(() => {})));
+      // 앱을 끈 뒤 폐기하므로 인터넷 없이 로그아웃해도 허가증이 남지 않는다.
+      await fsp.rm(this.paths.account(uid).tickets, { force: true }).catch(() => {});
     }
     this._stopTimers();
     this._stopRealtime();
@@ -1082,7 +1100,7 @@ class Cloud extends EventEmitter {
 
   // ---------------------------------------------------------------- 실행
   async _ticket(id, uid) {
-    const store = new TicketStore(this.paths.account(uid).tickets);
+    const store = new TicketStore(this.paths.account(uid).tickets, this.store);
     try {
       const r = await this._call(() => this.api.post(`/api/apps/${encodeURIComponent(id)}/ticket`, {}));
       await store.put(id, r.ticket, r.expiresAt);
