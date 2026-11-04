@@ -81,12 +81,6 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "배포본: $name ($sha)"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: magoedu-cloud-server
-          path: ${{ env.TARBALL }}
-          retention-days: 14
-
       - name: 배포 설정 확인
         if: env.HAS_TARGET != 'true'
         run: echo "::notice::DEPLOY_SSH_KEY 가 없어서 서버 배포는 건너뛰었어요. README 의 ‘서버 설치’를 참고해 넣어 주세요."

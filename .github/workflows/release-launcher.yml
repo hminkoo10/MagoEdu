@@ -61,10 +61,10 @@ jobs:
         working-directory: launcher
         run: npm ci
 
+      # 서버 시험은 CI(리눅스)가 함
       - name: 시험
-        run: |
-          (cd server && npm test)
-          (cd launcher && npm test)
+        working-directory: launcher
+        run: npm test
 
       - name: 버전 정하기
         working-directory: launcher
