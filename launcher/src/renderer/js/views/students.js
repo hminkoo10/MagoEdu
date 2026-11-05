@@ -66,8 +66,8 @@ export class StudentsView {
       variant: 'white', disabled: this.isAdmin,
       onClick: () => this.editCode(this.qs()).catch((e) => toast(errorText(e), 'error')),
     }) : null;
-    this.bulk = btn('계정 일괄 생성', { variant: 'soft', title: '학생을 고르면 고른 학생만, 안 고르면 지금 목록에서 계정이 없는 학생 모두에게 만들어요' });
-    this.bulkHint = h('p', { class: 'card-desc' }, '계정 일괄 생성: 선택한 학생의 로그인 아이디·임시 비밀번호를 만듭니다. 선택하지 않으면 현재 목록에서 계정이 없는 학생 모두에게 만듭니다.');
+    this.bulk = btn('계정 일괄 생성', { variant: 'soft' });
+    this.bulkHint = h('p', { class: 'card-desc' }, '학생을 안 고르면 목록에서 계정 없는 학생 모두에게 만들어요.');
     this.bulk.addEventListener('click', async () => {
       await busy(this.bulk, () => this.bulkAccounts());
       this.updateSelection();
@@ -128,7 +128,7 @@ export class StudentsView {
           'div',
           { class: 'tt' },
           h('h1', { class: 'title' }, '학생 명단'),
-          h('div', { class: 'subtitle' }, `${where} 학생 명단은 오답노트 같은 학원 프로그램이 같이 써요. 담당 선생님이 바뀔 수 있어서 학원 사람 누구나 추가·수정할 수 있어요.`),
+          h('div', { class: 'subtitle' }, `학원 구성원이 함께 쓰는 명단이에요.`),
         ),
         h('div', { class: 'right' }, this.codeButton, btn('학생 추가', { variant: 'primary', iconName: 'userPlus', onClick: () => this.edit(null) })),
       ),
@@ -149,7 +149,7 @@ export class StudentsView {
         return;
       }
       if (!this.academy) {
-        put(this.table, h('div', { class: 'empty' }, ic('building', 40, 1.6), '학원이 없어요. ‘계정 관리’의 ‘학원 관리’에서 먼저 만들어 주세요.'));
+        put(this.table, h('div', { class: 'empty' }, ic('building', 40, 1.6), '‘계정 관리 → 학원 관리’에서 학원을 만들어요.'));
         return;
       }
     }
@@ -181,7 +181,7 @@ export class StudentsView {
   // 일괄 생성과 학생 추가가 같은 학원 코드 확인·설정 흐름을 쓴다.
   async ensureAcademyCode(qs, required = false) {
     if (!required && await this.academyCode(qs)) return true;
-    if (!['director', 'admin'].includes(this.role)) throw new Error('원장님께 학원 코드 설정을 부탁해 주세요. 명단에서 ‘계정 만들기’로 나중에 만들 수 있어요.');
+    if (!['director', 'admin'].includes(this.role)) throw new Error('학원 코드 설정은 원장님께 요청해요.');
     return this.editCode(qs);
   }
 
@@ -274,7 +274,7 @@ export class StudentsView {
     this.fillGrades(active);
     const trash = f.who === 'deleted';
     this.deletedNote.style.display = trash ? '' : 'none';
-    this.deletedNote.lastChild.textContent = `삭제한 학생은 ${this.purgeDays}일 동안 여기 있어요. 그 안에는 학원 사람 누구나 되살릴 수 있고, 지나면 그 학생의 자료(오답노트 등)와 함께 완전히 지워져요.`;
+    this.deletedNote.lastChild.textContent = `${this.purgeDays}일 안에 되살릴 수 있어요. 이후 학생 자료도 영구 삭제돼요.`;
     const list = this.visible();
     const filtered = !!(f.grade || f.q);
     this.count.textContent = `${list.length}명`;
@@ -285,8 +285,8 @@ export class StudentsView {
         : trash
           ? '삭제한 학생이 없어요'
           : f.who === 'mine' && active.length
-            ? '내가 담당인 학생이 없어요. ‘전체’에서 학생을 찾아 담당 선생님을 정할 수 있어요.'
-            : '아직 학생이 없어요. ‘학생 추가’를 눌러 넣어 주세요.';
+            ? '내 담당 학생이 없어요. ‘전체’에서 확인해요.'
+            : '아직 학생이 없어요.';
       put(this.table, h('div', { class: 'empty' }, ic(trash ? 'trash' : 'graduationCap', 40, 1.6), text));
       return;
     }
@@ -337,8 +337,8 @@ export class StudentsView {
       h(
         'td',
         { class: 'acts' },
-        btn('고치기', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', cls: 'student-edit', onClick: () => this.edit(s) }),
-        btn('삭제', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '삭제', cls: 'student-remove', onClick: () => this.remove(s) }),
+        btn('고치기', { variant: 'subtle', size: 'sm', iconName: 'edit', cls: 'student-edit', onClick: () => this.edit(s) }),
+        btn('삭제', { variant: 'subtle', size: 'sm', iconName: 'trash', cls: 'student-remove', onClick: () => this.remove(s) }),
       ),
     );
   }
@@ -361,7 +361,7 @@ export class StudentsView {
     const list = this.visible();
     const studentIds = picked ? [...this.selected] : list.filter((s) => !s.account).map((s) => s.id);
     if (!studentIds.length) {
-      toast(list.length ? '지금 목록의 학생은 모두 계정이 있어요.' : '계정을 만들 학생이 없어요. ‘학생 추가’로 학생을 먼저 넣어 주세요.', 'warning', 4000);
+      toast(list.length ? '지금 목록의 학생은 모두 계정이 있어요.' : '‘학생 추가’로 계정을 만들 학생을 등록해요.', 'warning', 4000);
       return;
     }
     try {
@@ -371,7 +371,7 @@ export class StudentsView {
         title: picked ? `${studentIds.length}명의 계정을 만들까요?` : `계정이 없는 학생 ${studentIds.length}명의 계정을 만들까요?`,
         sub: picked
           ? '이미 계정이 있는 학생은 건너뛰어요. 새 임시 비밀번호는 한 번만 보여요.'
-          : '고른 학생이 없어서 지금 목록에서 계정이 없는 학생 모두에게 만들어요. 새 임시 비밀번호는 한 번만 보여요.',
+          : '계정 없는 학생 전체가 대상이에요. 임시 비밀번호는 한 번만 보여요.',
         ok: '일괄 생성',
         onOk: async () => {
           result = await this.createAccounts(studentIds, qs);
@@ -399,7 +399,7 @@ export class StudentsView {
       }));
       return b;
     };
-    await dialog({ title: '학생 초대 코드를 만들었어요', wide: true, sub:`${date(r.expiresAt, true)}까지 한 번 사용할 수 있습니다. 1. 가입 주소 복사 → 2. 학생에게 전달 → 3. 학생이 아이디·비밀번호를 정해 가입. 코드는 이 창에서만 확인할 수 있습니다.`,
+    await dialog({ title: '학생 초대 코드를 만들었어요', wide: true, sub:`${date(r.expiresAt, true)}까지 1회 사용. 코드는 이 창에서만 보여요.`,
       body: h('div', {}, h('div', { class: 'secret' }, h('span', { class: 'mono selectable' }, r.code), copy('코드 복사', r.code, '코드를 복사했어요')), h('p', { class: 'selectable', style: { overflowWrap: 'anywhere' } }, url.href)),
       footLeft: copy('가입 주소 복사', url.href, '가입 주소를 복사했어요'), ok: '닫기', cancel: null });
   }
@@ -423,7 +423,7 @@ export class StudentsView {
     const refresh = () => { close?.click(); this.load(); };
     const invite = action('초대 코드 만들기', async () => {
       let r;
-      const ok = await dialog({ title: `${s.name} 초대 코드를 만들까요?`, sub: '7일 동안 한 번 쓸 수 있어요. 새 코드를 만들면 이전 코드는 쓸 수 없어요.', ok: '만들기', onOk: async () => { r = await this.cloud.api('POST', `${path}/invite${qs}`, {}); } });
+      const ok = await dialog({ title: `${s.name} 초대 코드를 만들까요?`, sub: '7일 내 1회 사용. 이전 코드는 취소돼요.', ok: '만들기', onOk: async () => { r = await this.cloud.api('POST', `${path}/invite${qs}`, {}); } });
       if (!ok || !r) return;
       await this.showInvite(r);
     });
@@ -437,7 +437,7 @@ export class StudentsView {
         onOk: async () => { r = await this.cloud.api('PATCH', `${path}/account${qs}`, { resetPassword: true }); } });
       if (!ok || !r) return;
       refresh();
-      await secretDialog('임시 비밀번호를 만들었어요', '지금 한 번만 보여요. 학생에게 전달해 주세요. 처음 로그인할 때 바꿔야 해요.', r.password);
+      await secretDialog('임시 비밀번호를 만들었어요', '지금 한 번만 보여요. 학생은 첫 로그인 때 바꿔야 해요.', r.password);
     });
     const remove = action('계정 지우기', async () => {
       const ok = await dialog({ title: `${s.name} 계정을 지울까요?`, sub: '학생 명단과 자료는 남고, 로그인 계정만 지워져요.', ok: '계정 지우기', danger: true,
@@ -446,10 +446,10 @@ export class StudentsView {
     }, true);
     const shown = dialog({
       title: `${s.name} ${a ? '계정 관리' : '계정 만들기'}`,
-      sub: a ? '아이디·사용 여부·과목내비 서비스 키를 바꿀 수 있습니다.' : '직접 만들거나 초대 코드로 학생이 아이디·비밀번호를 정하게 해요.',
+      sub: a ? '' : '',
       body: h('div', {}, field('아이디', username),
         a ? field('계정 켜기', toggle(active, (on) => { active = on; }), '끄면 학생이 로그인할 수 없어요.') : field('비밀번호', password),
-        a ? field('마고 과목내비 서비스 키', ai, '담당 선생님 키는 명단의 담당 선생님이 등록한 키를 써요.') : null,
+        a ? field('마고 과목내비 서비스 키', ai, '') : null,
         a ? h('p', { class: 'muted' }, `마지막 로그인: ${a.lastLoginAt ? date(a.lastLoginAt, true) : '아직 없어요'}`) : null,
         h('div', { class: 'toolbar' }, ...(a ? [reset, remove] : [invite, revoke])),
       ),
@@ -501,9 +501,9 @@ export class StudentsView {
     const memo = h('textarea', { class: 'input', placeholder: '예: 화·목 수업, 서술형이 약함', style: { minHeight: '84px' } });
     let accountMode = 'later';
     const hints = {
-      later: '명단에서 ‘계정 만들기’로 언제든 만들 수 있어요.',
+      later: '명단에서 나중에 만들어요.',
       invite: '학생이 7일 안에 직접 아이디·비밀번호를 정해요.',
-      temp: '학원 코드로 아이디를 만들고 임시 비밀번호는 한 번만 보여요. 처음 로그인할 때 바꿔야 해요.',
+      temp: '학원 코드로 자동 발급해요. 임시 비밀번호는 한 번만 보여요.',
     };
     const accountField = s ? null : field('계정', segmented([['later', '나중에'], ['invite', '초대 코드'], ['temp', '아이디·임시 비밀번호']], accountMode, (v) => {
       accountMode = v;
@@ -525,14 +525,14 @@ export class StudentsView {
     let saved = null;
     const ok = await dialog({
       title: s ? `${s.name} 고치기` : '학생 추가',
-      sub: s ? '학원 사람 누구나 고칠 수 있어요. 고친 내용은 학원 사람 모두에게 보여요.' : '학원 사람 누구나 이 학생을 보고 고칠 수 있어요. 담당 선생님은 나중에 바꿀 수 있어요.',
+      sub: s ? '변경 내용은 학원 구성원 모두에게 보여요.' : '학원 구성원 모두가 보고 고칠 수 있어요.',
       wide: true,
       body: h(
         'div',
         {},
         h('div', { class: 'form-row' }, field('이름', name), field('학년', grade)),
         field('학교', school.el),
-        field('담당 선생님', teacher, '담당이 바뀌면 여기서 바꿔 주세요. 담당 선생님은 ‘내 담당’에서 바로 찾을 수 있어요.'),
+        field('담당 선생님', teacher, ''),
         field('메모', memo),
         accountField,
         h('datalist', { id: 'student-grades' }, ...this.grades.map((g) => h('option', { value: g }))),
@@ -561,7 +561,7 @@ export class StudentsView {
             this.load();
             if (base.deletedAt) throw new Error('그사이 다른 사람이 이 학생을 삭제했어요. ‘삭제한 학생’에서 되살린 뒤 고쳐 주세요.');
             fill(base);
-            throw new Error(`그사이 ${base.updatedBy ? `${base.updatedBy.name}님이` : '다른 사람이'} 먼저 고쳤어요. 고친 내용으로 바꿔 놓았으니, 확인하고 다시 저장해 주세요.`);
+            throw new Error(`${base.updatedBy ? `${base.updatedBy.name}님이` : '다른 사람이'} 바꾼 내용을 불러왔어요. 확인 후 다시 저장해요.`);
           }
           if (e.code === 'student_deleted' || e.code === 'no_student') this.load();
           throw e;
@@ -597,7 +597,7 @@ export class StudentsView {
     const qs = this.qs();
     const ok = await dialog({
       title: `${s.name} 학생을 삭제할까요?`,
-      sub: `삭제해도 ${this.purgeDays}일 안에는 누구나 ‘삭제한 학생’에서 되살릴 수 있어요. 그 뒤에는 이 학생의 자료(오답노트 등)도 함께 완전히 지워져요.`,
+      sub: `‘삭제한 학생’에서 ${this.purgeDays}일 내 복구 가능. 이후 학생 자료도 영구 삭제돼요.`,
       ok: '삭제',
       danger: true,
       onOk: () => this.cloud.api('DELETE', `/api/students/${encodeURIComponent(s.id)}${qs}`),

@@ -1,6 +1,6 @@
 'use strict';
 
-// 실제 로컬 서버 + 웹 렌더러. 외부 접속 차단, 모든 데이터는 이 worktree의 시험 폴더에만.
+// 실제 로컬 서버 + 웹 렌더러. 외부 접속 차단, 모든 데이터는 OS 임시 폴더에만.
 // 실행 전 메모리·공용 e2e.lock 확보 필요. PNG는 MAGOEDU_REVIEW_DIR 지정 시에만 저장.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -28,7 +28,8 @@ async function main() {
   const { _electron } = require('playwright');
   const { createCloudServer, loadConfig } = require('../../../server/src/app');
   const crypto = require('node:crypto');
-  const temp = fs.mkdtempSync(path.join(__dirname, '.easy-review-'));
+  const tempDir = require('node:os').tmpdir();
+  const temp = fs.mkdtempSync(path.join(tempDir, '.easy-review-'));
   const base = 'http://127.0.0.1:8491';
   const password = 'review-password-123';
   const server = createCloudServer(loadConfig({}, { dataDir: path.join(temp, 'server'), adminPassword: password, launcherRepo: '', background: false, quiet: true }));
@@ -140,7 +141,7 @@ async function main() {
         assert.equal(await page.locator('details[open]').count(), 0);
         await page.locator('summary').first().click();
         for (const size of sizes) await check('학원AI고급', size);
-        await btn('저장').click(); await page.getByText('기본 설정을 저장했습니다', { exact: true }).waitFor();
+        await btn('저장').click(); await page.getByText('기본 설정을 저장했어요', { exact: true }).waitFor();
         const saved = (await api('GET', '/api/academy/ai/all', null, dir)).default;
         assert.equal(saved.model, 'preserved-model'); assert.equal(saved.model2, 'preserved-fallback'); assert.equal(saved.rpm, 17); assert.ok(saved.keyHint);
         await page.locator('summary').filter({ hasText: '고급: 프로그램별 설정' }).click();
@@ -188,7 +189,7 @@ async function main() {
     await app?.close().catch(() => {});
     await server.close();
     const resolved = path.resolve(temp);
-    assert.equal(path.dirname(resolved), __dirname);
+    assert.equal(path.dirname(resolved), path.resolve(tempDir));
     assert.ok(path.basename(resolved).startsWith('.easy-review-'));
     fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }

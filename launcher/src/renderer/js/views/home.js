@@ -17,13 +17,13 @@ export async function askLegacy(cloud, id, list, store) {
         { class: 'grow' },
         h('div', { class: 'row-title' }, l.label),
         h('div', { class: 'row-desc' }, `파일 ${l.files}개 · ${bytes(l.bytes)}`),
-        l.importedBy ? h('div', { class: 'row-desc hl' }, `이 컴퓨터에서 ${l.importedBy} 계정으로 이미 가져온 적이 있어요`) : null,
+        l.importedBy ? h('div', { class: 'row-desc hl' }, `${l.importedBy} 계정으로 이미 가져왔어요`) : null,
       ),
     ),
   );
   const ok = await dialog({
     title: '예전 데이터를 가져올까요?',
-    sub: `이 컴퓨터에 따로 설치해서 쓰던 ${app?.name || '프로그램'} 데이터가 있어요.\n내 계정으로 가져오면 다른 컴퓨터에서도 같이 쓸 수 있어요. (예전 데이터는 그대로 남아요)`,
+    sub: `${app?.name || '프로그램'} 데이터를 내 계정에 복사해요. 원본은 남아요.`,
     body: h('div', {}, ...rows),
     ok: '가져오기',
     cancel: '이번엔 건너뛰기',
@@ -70,7 +70,7 @@ export class HomeView {
       busy(syncAll, async () => {
         try {
           await cloud.syncAll();
-          toast('서버와 맞추기를 마쳤습니다', 'success', 1800);
+          toast('서버와 맞추기를 마쳤어요', 'success', 1800);
         } catch (e) { toast(errorText(e), 'error'); }
       }),
     );
@@ -84,7 +84,7 @@ export class HomeView {
       { class: 'card empty', style: { display: 'none' } },
       ic('box', 40, 1.6),
       h('div', { style: { fontWeight: 600, color: 'var(--grey700)', fontSize: '15px' } }, '쓸 수 있는 프로그램이 없어요'),
-      h('div', { class: 'muted', style: { marginTop: '4px' } }, '원장님이나 운영자에게 프로그램 사용 권한을 받아 주세요.'),
+      h('div', { class: 'muted', style: { marginTop: '4px' } }, '프로그램 사용은 원장님·운영자에게 문의해요.'),
     );
     this.el = h(
       'div',
@@ -92,7 +92,7 @@ export class HomeView {
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '프로그램'), this.sub), h('div', { class: 'right' }, reload, syncAll)),
       this.notice,
       this.webNote,
-      h('p', { class: 'card-desc' }, this.web ? '1. PC 프로그램은 통합 클라우드 앱 설치 → 2. PC에 설치 → 3. PC에서 실행. 웹 프로그램은 ‘열기’로 바로 사용합니다.' : '1. 사용할 프로그램 설치 → 2. 열기. 다른 컴퓨터의 자료가 안 보이면 ‘지금 맞추기’를 누르세요.'),
+      h('p', { class: 'card-desc' }, this.web ? '' : ''),
       this.grid,
       this.empty,
     );
@@ -103,8 +103,8 @@ export class HomeView {
     if (!s.client?.canOpenApp) {
       const text =
         s.client?.os === 'android'
-          ? 'PC 프로그램은 Windows PC의 통합 클라우드 앱에서 쓸 수 있어요. 안드로이드용 프로그램은 여기서 바로 내려받을 수 있어요.'
-          : 'PC용 프로그램은 Windows PC의 통합 클라우드 앱에서 사용합니다. 웹 프로그램은 ‘열기’로 바로 사용하고, 공지·계정·관리 기능도 여기서 이용할 수 있습니다.';
+          ? 'PC 프로그램은 Windows에서 사용해요.'
+          : 'PC 프로그램은 Windows에서 사용해요.';
       return h('div', { class: 'note', style: { marginBottom: '16px' } }, ic('info', 18), h('span', {}, text));
     }
     const open = btn('통합 클라우드 열기', { variant: 'primary', size: 'sm', iconName: 'cloud' });
@@ -117,7 +117,7 @@ export class HomeView {
       h(
         'div',
         { style: { flex: 1, minWidth: 0 } },
-        h('div', {}, '프로그램 설치·실행과 서버 데이터 맞추기는 PC의 통합 클라우드 앱에서 합니다. ‘PC에 설치’·‘PC에서 실행’을 누르면 이 PC의 통합 클라우드 앱이 열려서 설치하거나 실행해요.'),
+        h('div', {}, 'PC 프로그램은 설치된 통합 클라우드 앱에서 열려요.'),
         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' } }, open, download),
       ),
     );
@@ -203,7 +203,7 @@ export class HomeView {
     c.match.addEventListener('click', () => busy(c.match, async () => {
       try {
         const result = await this.cloud.sync(c.app.id);
-        if (result) toast('서버와 맞추기를 마쳤습니다', 'success');
+        if (result) toast('서버와 맞추기를 마쳤어요', 'success');
       } catch (e) { toast(errorText(e), 'error'); }
     }));
     return c;
@@ -293,7 +293,7 @@ export class HomeView {
     if (!a.installed) syncEl = [];
     else if (!sy) syncEl = [ic('cloud', 15), '아직 서버와 맞추기 전'];
     else if (sy.status === 'syncing') syncEl = [h('span', { class: 'spinner', style: { width: '13px', height: '13px', borderWidth: '2px' } }), '서버와 맞추는 중'];
-    else if (sy.status === 'offline') syncEl = [ic('cloudOff', 15), '연결되면 자동으로 맞춥니다'];
+    else if (sy.status === 'offline') syncEl = [ic('cloudOff', 15), '연결되면 자동으로 맞춰요'];
     else if (sy.status === 'error') {
       warn = true;
       syncEl = [ic('alert', 15), '서버와 맞추기 실패'];
@@ -306,7 +306,7 @@ export class HomeView {
     } else syncEl = [ic('cloudCheck', 15), `서버와 맞춤 · ${ago(sy.at)}`];
     c.sync.className = `sync ${warn ? 'warn' : ''}`;
     c.sync.title = sy?.localOnly?.files
-      ? `오래 쓰지 않아 서버 보관 기간(${a.coldStorage?.days || 30}일)이 지난 데이터예요. 이 컴퓨터에는 그대로 있고, 다시 쓰면 서버에 다시 올라가요.`
+      ? `서버 보관 ${a.coldStorage?.days || 30}일 경과. 이 PC에 남아 있고, 다시 쓰면 서버에 올라가요.`
       : sy?.error || '';
     put(c.sync, ...syncEl);
     c.more.style.display = a.installed || a.running || a.release?.notes ? '' : 'none';
@@ -319,9 +319,9 @@ export class HomeView {
     const canOpen = !!this.store.state.client?.canOpenApp;
     c.sync.className = 'sync';
     c.sync.style.display = canOpen ? 'none' : ''; // 버튼 셋이 한 줄에 들어가게
-    c.sync.title = canOpen ? '' : '통합 클라우드 앱이 있는 Windows PC에서 설치·실행할 수 있어요';
+    c.sync.title = canOpen ? '' : 'Windows PC의 통합 클라우드 앱에서 사용해요';
     if (canOpen) put(c.sync);
-    else put(c.sync, ic('monitor', 15), 'Windows PC에서 설치·실행할 수 있어요');
+    else put(c.sync, ic('monitor', 15), 'Windows PC에서 사용해요');
     const key = `web|${canOpen}|${!!a.release}`;
     if (c._primary !== key) {
       c._primary = key;
@@ -373,7 +373,7 @@ export class HomeView {
     c.sync.className = 'sync';
     c.sync.style.display = '';
     c.sync.title = '';
-    put(c.sync, ic('globe', 15), '설치 없이 브라우저에서 써요');
+    put(c.sync, ic('globe', 15), '브라우저에서 열려요');
     const key = `link|${!!a.url}`;
     if (c._primary !== key) {
       c._primary = key;
@@ -413,15 +413,15 @@ export class HomeView {
         toast(errorText(e), 'error');
       }
     });
-    const here = btn('이 기기에서 받기', { variant: 'subtle', iconName: 'download', title: '지금 이 기기로 APK 파일을 받아요' });
+    const here = btn('이 기기에서 받기', { variant: 'subtle', iconName: 'download', title: 'APK 파일 내려받기' });
     const shown = dialog({
       title: `${a.name}은(는) 휴대폰에서 받아요`,
-      sub: '안드로이드 휴대폰이나 태블릿에서 아래 사이트를 열고, 같은 아이디로 로그인한 뒤 이 프로그램의 ‘내려받기’를 눌러 주세요.',
+      sub: '안드로이드에서 아래 주소에 로그인해 내려받아요.',
       body: h(
         'div',
         {},
         h('div', { class: 'secret' }, h('span', { class: 'mono' }, site), copy),
-        h('div', { class: 'note', style: { marginTop: '12px' } }, ic('info', 18), h('span', {}, '설치할 때 ‘알 수 없는 앱 설치’를 허용할지 물으면 허용해 주세요. 앱에서도 같은 아이디로 로그인하면 PC와 데이터가 함께 맞춰져요.')),
+        h('div', { class: 'note', style: { marginTop: '12px' } }, ic('info', 18), h('span', {}, '설치 시 ‘알 수 없는 앱 설치’ 허용이 필요해요.')),
       ),
       ok: '확인',
       cancel: null,
@@ -544,7 +544,7 @@ export class HomeView {
   }
 
   async stopApp(a) {
-    const ok = await dialog({ title: `${a.name}을(를) 끌까요?`, sub: '저장하지 않은 내용이 있으면 프로그램에서 먼저 저장해 주세요.', ok: '끄기', danger: true });
+    const ok = await dialog({ title: `${a.name}을(를) 끌까요?`, sub: '저장하지 않은 내용은 사라질 수 있어요.', ok: '끄기', danger: true });
     if (ok) this.cloud.stop(a.id);
   }
 
@@ -553,10 +553,10 @@ export class HomeView {
     let removeData = false;
     const info = await this.cloud.dataInfo(a.id).catch(() => null);
     const localOnly = a.sync?.localOnly?.files || 0;
-    const warnBox = h('div', { class: 'note danger', style: { display: 'none', marginTop: '12px' } }, ic('warning', 18), h('span', {}, `이 컴퓨터에만 있는 데이터 ${localOnly}개(서버 보관 기간이 지난 것)는 지우면 되살릴 수 없어요.`));
+    const warnBox = h('div', { class: 'note danger', style: { display: 'none', marginTop: '12px' } }, ic('warning', 18), h('span', {}, `이 컴퓨터에만 있는 데이터 ${localOnly}개는 지우면 복구할 수 없어요.`));
     const ok = await dialog({
       title: `${a.name}을(를) 삭제할까요?`,
-      sub: '프로그램만 지우고, 데이터는 서버와 이 컴퓨터에 그대로 남아요. 다시 설치하면 이어서 쓸 수 있어요.',
+      sub: '데이터는 서버와 이 컴퓨터에 남아요.',
       body: h(
         'div',
         {},

@@ -9,7 +9,7 @@ export class ServerView {
     this.el = h(
       'div',
       {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '서버 설정'), h('div', { class: 'subtitle' }, '모든 계정에 적용되는 기본값과 서버 현황이에요.'))),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '서버 설정'), h('div', { class: 'subtitle' }, '기본값은 모든 계정에 적용돼요.'))),
       h('div', { class: 'stack' }, this.stats, this.form),
     );
     this.load();
@@ -29,7 +29,7 @@ export class ServerView {
     const stat = (k, v) => h('div', { class: 'stat' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v));
     const run = btn('지금 정리', { size: 'sm' });
     run.addEventListener('click', async () => {
-      if (!(await confirmDialog('오래 안 쓴 데이터를 지금 정리할까요?', '프로그램마다 정한 보관 기간이 지난 데이터를 서버에서 지워요. (원래는 6시간마다 알아서 해요)', '정리'))) return;
+      if (!(await confirmDialog('오래 안 쓴 데이터를 지금 정리할까요?', '보관 기간이 지난 데이터를 서버에서 지워요. 자동 정리는 6시간마다 실행해요.', '정리'))) return;
       await busy(run, async () => {
         const r = await this.cloud.api('POST', '/api/admin/cold-storage/run', {});
         toast(r.groups ? `${r.groups}묶음(${bytes(r.bytes)})을 정리했어요` : '정리할 데이터가 없어요', 'success');
@@ -86,10 +86,10 @@ export class ServerView {
       h(
         'div',
         { class: 'grid2', style: { gap: '4px 16px' } },
-        field('계정마다 서버 저장 공간 (MB)', quota, '계정별로 따로 정하지 않았을 때. 0 이면 제한 없음'),
-        field('학원마다 학원 공간 (MB)', academyQuota, '같은 학원 사람들이 함께 쓰는 공간. 학원별로 따로 정하지 않았을 때. 0 이면 제한 없음'),
-        field('인터넷 없이 쓸 수 있는 기간 (일)', ticket, '서버에 연결하지 못해도 이 기간 동안은 프로그램을 켤 수 있어요.'),
-        field('자동 로그아웃 (일)', session, '이 기간 동안 쓰지 않은 컴퓨터는 로그아웃돼요.'),
+        field('계정마다 서버 저장 공간 (MB)', quota, '개별 설정이 없을 때 적용. 0은 무제한.'),
+        field('학원마다 학원 공간 (MB)', academyQuota, '학원 공용 공간. 개별 설정이 없을 때 적용. 0은 무제한.'),
+        field('인터넷 없이 쓸 수 있는 기간 (일)', ticket, ''),
+        field('자동 로그아웃 (일)', session, '사용하지 않은 기기만 로그아웃돼요.'),
         field('활동 기록 보관 (일)', audit),
       ),
       h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '18px' } }, save),

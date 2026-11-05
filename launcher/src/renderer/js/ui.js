@@ -177,18 +177,18 @@ export function reveal(container) {
 
 // ---------------------------------------------------------------- 토스트
 const ERROR_TEXT = {
-  account_exists: '명단의 ‘계정 관리’를 이용해 주세요. 이미 계정이 있습니다.',
-  username_taken: '다른 아이디를 입력해 주세요. 이미 사용 중인 아이디입니다.',
-  academy_code_required: '먼저 ‘학원 코드 정하기’를 눌러 주세요. 선생님은 원장님께 요청해 주세요.',
-  academy_code_taken: '다른 학원 코드를 입력해 주세요. 이미 사용 중입니다.',
-  student_deleted: '‘삭제한 학생’에서 되살린 뒤 다시 시도해 주세요.',
-  no_student: '학생 명단을 새로 확인해 주세요. 학생을 찾을 수 없습니다.',
-  no_account: '먼저 학생 계정을 만들어 주세요.',
-  invalid_code: '코드를 다시 확인해 주세요. 사용할 수 없거나 기간이 지난 코드입니다.',
-  rate_limited: '잠시 기다린 뒤 다시 시도해 주세요. 요청이 많습니다.',
-  session_invalid: '다시 로그인해 주세요. 로그인 상태가 만료되었습니다.',
-  auth_required: '로그인한 뒤 다시 시도해 주세요.',
-  offline: '인터넷 연결을 확인한 뒤 다시 시도해 주세요.',
+  account_exists: '이미 계정이 있어요. 명단의 ‘계정 관리’를 열어요.',
+  username_taken: '사용 중인 아이디예요. 다른 아이디를 입력해요.',
+  academy_code_required: '‘학원 코드 정하기’가 필요해요. 선생님은 원장님께 요청해요.',
+  academy_code_taken: '사용 중인 학원 코드예요. 다른 코드를 입력해요.',
+  student_deleted: '‘삭제한 학생’에서 되살린 뒤 다시 시도해요.',
+  no_student: '학생을 찾지 못했어요. 명단을 새로 고침해요.',
+  no_account: '학생 계정을 만든 뒤 다시 시도해요.',
+  invalid_code: '사용할 수 없는 코드예요. 코드·기간을 확인해요.',
+  rate_limited: '요청이 많아요. 잠시 후 다시 시도해요.',
+  session_invalid: '로그인이 만료됐어요. 다시 로그인해요.',
+  auth_required: '로그인 후 다시 시도해요.',
+  offline: '인터넷 연결을 확인하고 다시 시도해요.',
 };
 
 /** API·저장 값은 그대로 두고 화면에 표시할 오류만 풀어 쓴다. */
@@ -196,7 +196,7 @@ export function errorText(error) {
   const message = String(error?.message ?? error ?? '');
   const code = error?.code || message.match(/\b[a-z]+(?:_[a-z]+)+\b/)?.[0];
   if (ERROR_TEXT[code]) return `${ERROR_TEXT[code]} (${code})`;
-  if (!message || !/[가-힣]/.test(message)) return `다시 시도해 주세요. 계속 안 되면 원장님이나 운영자에게 아래 내용을 알려 주세요.${message ? ` (${message})` : ''}`;
+  if (!message || !/[가-힣]/.test(message)) return `다시 시도해요. 계속 실패하면 원장님·운영자에게 오류를 알려요.${message ? ` (${message})` : ''}`;
   return message;
 }
 

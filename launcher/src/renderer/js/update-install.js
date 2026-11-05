@@ -1,6 +1,6 @@
 import { h, btn, dialog } from './ui.js';
 
-const NOTICE = '업데이트를 설치하려고 잠시 닫아요. 1분쯤 뒤에 다시 켜져요.';
+const NOTICE = '업데이트로 잠시 닫아요. 약 1분 뒤 다시 켜져요.';
 
 export function updateInstallButton(cloud, store, { confirm = false, label = '지금 설치' } = {}) {
   const u = store.state.update;

@@ -15,7 +15,7 @@ async function exercise(rendererUrl) {
   const assert = (value, message) => { if (!value) throw new Error(message); };
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
   const ready = { status: 'ready', current: '1.0.0', version: '1.1.0' };
-  const notice = '업데이트를 설치하려고 잠시 닫아요. 1분쯤 뒤에 다시 켜져요.';
+  const notice = '업데이트로 잠시 닫아요. 약 1분 뒤 다시 켜져요.';
   const state = {
     phase: 'ready', version: '1.0.0', online: true, user: { id: 'test', role: 'teacher', name: '시험 계정' },
     config: { serverUrl: '', deviceName: '시험 PC', closeToTray: true }, apps: [], notices: [], unreadNotices: 0, update: ready,

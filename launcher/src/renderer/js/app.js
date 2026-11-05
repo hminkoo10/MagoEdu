@@ -38,7 +38,7 @@ function serverUrl() {
 }
 
 function navFor(user) {
-  const help = { id: 'help', icon: 'help', label: '도움말', title: '사용 설명서를 브라우저에서 열기' };
+  const help = { id: 'help', icon: 'help', label: '도움말', title: '브라우저에서 열기' };
   if (user.role === 'student') return [
     { id: 'my-notes', icon: 'list', label: '내 오답노트' },
     { id: 'student-navi', icon: 'graduationCap', label: '마고 과목내비' },
@@ -100,7 +100,7 @@ class Shell {
       'div',
       { class: 'offline-bar', style: { display: 'none' } },
       ic('cloudOff', 16),
-      web ? '인터넷 연결을 확인해 주세요. 서버에 연결되지 않았습니다.' : '서버에 연결되지 않았습니다. 설치한 프로그램은 사용할 수 있고, 연결되면 데이터를 서버와 자동으로 맞춥니다.',
+      web ? '인터넷 연결을 확인해요. 서버에 연결되지 않았어요.' : '인터넷 연결을 확인해요. 설치한 프로그램은 쓸 수 있어요.',
     );
     this.pill = h('div', { class: 'nav-pill' });
     this.nav = h('nav', { class: 'nav' }, this.pill);
@@ -300,7 +300,7 @@ async function logoutFlow() {
   await dialog({
     title: '로그아웃할까요?',
     sub: store.state.web
-      ? '이 브라우저에서만 로그아웃해요. 다른 기기는 그대로예요.'
+      ? '다른 기기는 로그아웃되지 않아요.'
       : running.length
         ? `켜져 있는 프로그램(${running.map((a) => a.name).join(', ')})을 끄고, 데이터를 서버에 올린 뒤 로그아웃해요.`
         : '이 컴퓨터에 받아 둔 데이터는 그대로 남아요.',
@@ -357,7 +357,7 @@ function serverView({ back } = {}) {
   go.addEventListener('click', submit);
   url.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
   return authFrame(
-    authHead('서버 연결', '학원 서버 주소를 운영자에게 받아서 넣어 주세요.'),
+    authHead('서버 연결', '운영자에게 받은 서버 주소를 입력해요.'),
     field('서버 주소', url),
     err,
     h('div', { style: { height: '20px' } }),
@@ -402,7 +402,7 @@ function loginView() {
       ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, h('a', { class: 'link', href: '/download/launcher', style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } }, ic('download', 14), 'Windows 프로그램 내려받기'))
       : null;
   const view = authFrame(
-    authHead('마고에듀 통합 클라우드', '학원 계정으로 로그인해 주세요.'),
+    authHead('마고에듀 통합 클라우드', ''),
     s.authMessage ? h('div', { class: 'note warn', style: { marginBottom: '16px' } }, ic('warning', 18), h('span', {}, s.authMessage)) : null,
     sso ? h('div', { class: 'note', style: { marginBottom: '16px' } }, ic('info', 18), h('span', {}, '로그인하면 웹 프로그램으로 바로 돌아가요.')) : null,
     field(null, user),
@@ -538,7 +538,7 @@ async function forcePasswordChange() {
   const pw2 = passwordInput({ placeholder: '한 번 더' });
   const done = await dialog({
     title: '새 비밀번호를 정해 주세요',
-    sub: '1. 받은 비밀번호 입력 → 2. 새 비밀번호를 두 번 입력 → 3. 바꾸기',
+    sub: '',
     body: h('div', {}, field('지금 비밀번호', cur), field('새 비밀번호', pw), field('새 비밀번호 확인', pw2)),
     ok: '바꾸기',
     cancel: '로그아웃',

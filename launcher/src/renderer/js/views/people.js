@@ -63,7 +63,7 @@ export class PeopleView {
           'div',
           { class: 'tt' },
           h('h1', { class: 'title' }, this.isAdmin ? '계정 관리' : '선생님 관리'),
-          h('div', { class: 'subtitle' }, this.isAdmin ? '원장·선생님·운영자 계정을 직접 만들고 관리해요.' : `${u.academy?.name || '우리 학원'} 선생님 계정을 만들고 관리해요.`),
+          h('div', { class: 'subtitle' }, this.isAdmin ? '' : ``),
         ),
         h('div', { class: 'right' }, this.isAdmin ? null : btn('학원 이름 바꾸기', { variant: 'white', iconName: 'edit', onClick: () => this.renameAcademy() }), add),
       ),
@@ -112,11 +112,11 @@ export class PeopleView {
   render(users) {
     const appNames = Object.fromEntries(this.apps().map((a) => [a.id, appLabel(a)]));
     if (!users.length) {
-      put(this.table, h('div', { class: 'empty' }, ic('users', 40, 1.6), this.isAdmin ? '계정이 없어요' : '아직 선생님 계정이 없어요. ‘선생님 추가’를 눌러 만들어 주세요.'));
+      put(this.table, h('div', { class: 'empty' }, ic('users', 40, 1.6), this.isAdmin ? '계정이 없어요' : '아직 선생님 계정이 없어요.'));
       return;
     }
     const rows = users.map((u) => {
-      const more = btn('관리', { variant: 'subtle', size: 'sm', iconName: 'more', title: '관리' });
+      const more = btn('관리', { variant: 'subtle', size: 'sm', iconName: 'more' });
       more.addEventListener('click', () => this.openMenu(more, u));
       if (!u.manageable) more.style.visibility = 'hidden';
       const perm = u.allowedApps === null ? h('span', { class: 'subtle' }, '모든 프로그램') : u.allowedApps.length ? h('span', {}, u.allowedApps.map((id) => appNames[id] || id).join(', ')) : h('span', { class: 'subtle' }, '없음');
@@ -186,7 +186,7 @@ export class PeopleView {
       ? h(
           'div',
           { class: 'row', style: { padding: '0 0 10px', borderBottom: 0 } },
-          h('div', { class: 'grow' }, h('div', { class: 'row-title', style: { fontSize: '14px' } }, '모든 프로그램'), h('div', { class: 'row-desc' }, '나중에 새로 생기는 프로그램도 쓸 수 있어요.')),
+          h('div', { class: 'grow' }, h('div', { class: 'row-title', style: { fontSize: '14px' } }, '모든 프로그램'), h('div', { class: 'row-desc' }, '새로 추가되는 프로그램도 포함해요.')),
           toggle(all, (v) => {
             all = v;
             drawList();
@@ -230,7 +230,7 @@ export class PeopleView {
     let result = null;
     const ok = await dialog({
       title: this.isAdmin ? '계정 만들기' : '선생님 추가',
-      sub: this.isAdmin ? null : '1. 계정 만들기 → 2. 선생님에게 아이디·비밀번호 전달 → 3. 첫 로그인 때 비밀번호 변경',
+      sub: this.isAdmin ? null : '',
       wide: true,
       body: h(
         'div',
@@ -238,7 +238,7 @@ export class PeopleView {
         role ? h('div', { class: 'form-row' }, field('종류', role), academyWrap) : null,
         academy ? newWrap : null,
         h('div', { class: 'form-row', style: { marginTop: '14px' } }, field('이름', name), field('아이디', username)),
-        field('비밀번호', pw, '6자 이상. 비워 두면 임시 비밀번호를 자동으로 만듭니다.'),
+        field('비밀번호', pw, '6자 이상. 비우면 자동으로 만들어요.'),
         field('쓸 수 있는 프로그램', apps.el),
         this.isAdmin ? field('저장 공간 한도 (MB)', quota, '0 이면 제한 없음') : null,
         h('div', { style: { marginTop: '14px' } }, checkbox('처음 로그인할 때 비밀번호 바꾸게 하기', true, (v) => (mustChange = v))),
@@ -262,7 +262,7 @@ export class PeopleView {
     });
     if (!ok || !result) return;
     toast(`${result.user.name} 계정을 만들었어요`, 'success');
-    if (result.password) await secretDialog('계정을 만들었어요', `아이디 ${result.user.username} 의 비밀번호예요. 이 창을 닫으면 다시 볼 수 없어요.`, result.password);
+    if (result.password) await secretDialog('계정을 만들었어요', `아이디 ${result.user.username} · 닫으면 다시 볼 수 없어요.`, result.password);
     await this.loadAcademies();
     this.load();
   }
@@ -272,7 +272,7 @@ export class PeopleView {
     let res = null;
     const ok = await dialog({
       title: `${u.name} 비밀번호 초기화`,
-      sub: '초기화하면 모든 컴퓨터에서 로그아웃되고, 다음 로그인 때 비밀번호를 새로 정해요.',
+      sub: '모든 기기에서 로그아웃돼요. 다음 로그인 때 비밀번호를 바꿔요.',
       body: field('새 비밀번호', pw),
       ok: '초기화',
       onOk: async () => {
@@ -286,7 +286,7 @@ export class PeopleView {
     const apps = this.appChecks(u.allowedApps);
     const ok = await dialog({
       title: `${u.name} 프로그램 권한`,
-      sub: '고른 프로그램만 목록에 보이고 실행할 수 있어요.',
+      sub: '고른 프로그램만 사용할 수 있어요.',
       body: apps.el,
       ok: '저장',
       onOk: () => this.cloud.api('PATCH', `/api/users/${u.id}`, { allowedApps: apps.value() }),
@@ -362,7 +362,7 @@ export class PeopleView {
     const reason = input({ placeholder: '예: 휴직 (선택)' });
     const ok = await dialog({
       title: `${u.name} 계정을 사용 중지할까요?`,
-      sub: '로그인할 수 없게 되고 모든 컴퓨터에서 로그아웃돼요. 데이터는 그대로 남고, 언제든 다시 쓰게 할 수 있어요.',
+      sub: '모든 기기에서 로그아웃되고 로그인이 막혀요. 데이터는 남아요.',
       body: field('이유', reason),
       ok: '사용 중지',
       danger: true,
@@ -401,7 +401,7 @@ export class PeopleView {
     }
     const ok = await dialog({
       title: `${u.name} 계정을 삭제할까요?`,
-      sub: `서버에 있는 이 계정의 개인 데이터(${bytes(u.usageBytes)})는 함께 지워지고 되살릴 수 없어요.\n${handover}확인하려면 아이디 ${u.username} 을(를) 입력해 주세요.`,
+      sub: `개인 데이터 ${bytes(u.usageBytes)}도 영구 삭제돼요.\n${handover}아이디 ${u.username}을(를) 입력해요.`,
       body: pick ? h('div', {}, field('넘겨받을 사람', pick), field('아이디', typed)) : typed,
       ok: '삭제',
       danger: true,
@@ -439,7 +439,7 @@ export class PeopleView {
     const draw = () => {
       put(list, 
         ...this.academies.map((a) => {
-          const edit = btn('이름 바꾸기', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '이름 바꾸기' });
+          const edit = btn('이름 바꾸기', { variant: 'subtle', size: 'sm', iconName: 'edit' });
           edit.addEventListener('click', async () => {
             const name = input({ value: a.name });
             const ok = await dialog({ title: '학원 이름 바꾸기', body: field('학원 이름', name), ok: '저장', onOk: () => this.cloud.api('PATCH', `/api/academies/${a.id}`, { name: name.value }) });
@@ -448,12 +448,12 @@ export class PeopleView {
               draw();
             }
           });
-          const quota = btn('학원 공간 용량', { variant: 'subtle', size: 'sm', iconName: 'cloud', title: '학원 공간 용량' });
+          const quota = btn('학원 공간 용량', { variant: 'subtle', size: 'sm', iconName: 'cloud' });
           quota.addEventListener('click', async () => {
             const q = input({ type: 'number', min: '0', value: a.quotaMb ?? '', placeholder: '비우면 기본값' });
             const ok = await dialog({
               title: `${a.name} 학원 공간 용량`,
-              sub: `같은 학원 사람들이 함께 쓰는 공간(예: 오답노트 교재)이에요. 지금 ${bytes(a.usageBytes)} 쓰고 있어요.`,
+              sub: `학원 공용 공간 · ${bytes(a.usageBytes)} 사용 중`,
               body: field('한도 (MB)', q, '0 이면 제한 없음, 비우면 서버 기본값'),
               ok: '저장',
               onOk: () => this.cloud.api('PATCH', `/api/academies/${a.id}`, { quotaMb: q.value === '' ? null : Number(q.value) }),
@@ -463,9 +463,9 @@ export class PeopleView {
               draw();
             }
           });
-          const del = btn('지우기', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '지우기', disabled: a.directors + a.teachers > 0 });
+          const del = btn('지우기', { variant: 'subtle', size: 'sm', iconName: 'trash', disabled: a.directors + a.teachers > 0 });
           del.addEventListener('click', async () => {
-            if (!(await confirmDialog(`${a.name} 학원을 삭제할까요?`, '학원과 학원에 보관한 자료를 삭제합니다. 삭제한 학원은 되돌릴 수 없습니다.', '삭제', true))) return;
+            if (!(await confirmDialog(`${a.name} 학원을 삭제할까요?`, '학원과 보관 자료가 영구 삭제돼요.', '삭제', true))) return;
             try {
               await this.cloud.api('DELETE', `/api/academies/${a.id}`);
               await this.loadAcademies();
@@ -480,12 +480,12 @@ export class PeopleView {
             const checks = subjectChecks(a.subjects);
             const ok = await dialog({
               title: `${a.name} 계약 과목`,
-              sub: '계약한 과목만 오답노트에서 교재를 새로 등록할 수 있어요. 과목을 빼도 이미 올린 교재는 볼 수 있어요.',
+              sub: '선택한 과목만 새 교재를 등록해요. 기존 교재는 유지돼요.',
               body: field('계약 과목', checks.el),
               ok: '저장',
               onOk: async () => {
                 const selected = checks.value();
-                if (!selected.length && !(await confirmDialog('과목을 하나도 고르지 않았어요.', '이 학원은 오답노트에서 새 교재를 등록할 수 없어요. 그래도 저장할까요?', '저장'))) return false;
+                if (!selected.length && !(await confirmDialog('과목을 하나도 고르지 않았어요.', '이 학원은 새 교재를 등록할 수 없어요.', '저장'))) return false;
                 await this.cloud.api('PATCH', `/api/academies/${a.id}`, { subjects: selected });
               },
             });

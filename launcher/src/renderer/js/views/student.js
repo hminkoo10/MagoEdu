@@ -14,7 +14,7 @@ export class StudentNotesView {
     const reload = btn('새로 고침', { iconName: 'rotate' });
     reload.addEventListener('click', () => busy(reload, () => this.load()));
     this.el = h('div', {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '내 오답노트'), h('div', { class: 'subtitle' }, '‘PDF 보기’로 노트를 열고, ‘PDF 받기’로 저장합니다. 답지는 선생님이 허용한 노트에만 포함됩니다.')), h('div', { class: 'right' }, reload)),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '내 오답노트'), h('div', { class: 'subtitle' }, '답지는 선생님이 허용한 노트에만 포함돼요.')), h('div', { class: 'right' }, reload)),
       this.list,
     );
     this.load();
@@ -26,7 +26,7 @@ export class StudentNotesView {
     try {
       const notes = await this.cloud.api('GET', '/api/me/notes');
       if (seq !== this.seq) return;
-      if (!notes.length) return put(this.list, h('div', { class: 'empty' }, ic('list', 40), '아직 내 오답노트가 없어요. 선생님이 노트를 만들어 주시면 여기에 보여요.'));
+      if (!notes.length) return put(this.list, h('div', { class: 'empty' }, ic('list', 40), '아직 내 오답노트가 없어요.'));
       put(this.list, h('table', { class: 'table notes-table' },
         h('thead', {}, h('tr', {}, ...['노트', '문항', '마지막 수정', '답지', ''].map((t) => h('th', {}, t)))),
         h('tbody', {}, ...notes.map((note) => {
@@ -75,7 +75,7 @@ export class StudentNaviView {
     const user = store.state.user;
     const open = btn('열기', { variant: 'primary', iconName: 'external', onClick: () => cloud.openExternal('https://magonavi.milky.kr').catch((e) => toast(errorText(e), 'error')) });
     this.el = h('div', {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '마고 과목내비'), h('div', { class: 'subtitle' }, '설치 없이 웹에서 내 과목과 진로를 살펴봐요.'))),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '마고 과목내비'), h('div', { class: 'subtitle' }, '내 과목과 진로를 살펴봐요.'))),
       h('div', { class: 'apps-grid' }, h('div', { class: 'app-card' },
         h('div', { class: 'app-head' }, h('div', { class: 'app-icon', style: { background: '#fff' } }, naviIcon(56)), h('div', {}, h('div', { class: 'app-name' }, '마고 과목내비'), h('div', { class: 'app-ver' }, '웹 프로그램'))),
         h('div', { class: 'app-desc' }, user.aiMode === 'teacher' ? `담당 선생님 키를 써요.${user.student?.teacherName ? ` 담당: ${user.student.teacherName} 선생님` : ''}` : '학원 AI를 써요.'),

@@ -5,8 +5,8 @@ export async function editAcademyCode(cloud, qs = '') {
   const code = input({ value: (r.academy || r).code || '', placeholder: '예: mago', maxlength: '8' });
   return dialog({
     title: '학원 코드 정하기',
-    sub: '학생 아이디는 학원 코드 + 연월 + 번호로 만들어요. 예: mago2611001',
-    body: field('학원 코드', code, '영문 소문자·숫자로 2~8자를 넣어 주세요. 다른 학원과 겹치지 않아야 해요.'),
+    sub: '학생 아이디: 학원 코드 + 연월 + 번호 (예: mago2611001)',
+    body: field('학원 코드', code, '영문 소문자·숫자 2~8자. 다른 학원과 중복 불가.'),
     ok: '저장',
     onOk: async () => {
       const value = code.value.trim();
@@ -70,7 +70,7 @@ export async function showCredentials({ created = [], skipped = [] }) {
   const csv = btn('CSV 받기', { iconName: 'download', onClick: () => downloadBlob(new Blob([credentialsCsv(created)], { type: 'text/csv;charset=utf-8' }), '학생-계정.csv') });
   await dialog({
     title: `계정 ${created.length}개를 만들었어요`,
-    sub: '임시 비밀번호는 지금 한 번만 보여요. 닫기 전에 인쇄하거나 CSV로 받아 주세요. 학생은 처음 로그인할 때 비밀번호를 바꿔야 해요.',
+    sub: '임시 비밀번호는 한 번만 보여요. 닫기 전 인쇄·CSV 저장이 필요해요.',
     wide: true,
     body: h('div', {},
       created.length ? h('div', { class: 'table-wrap' }, credentialsTable(created)) : h('p', {}, '새로 만든 계정이 없어요.'),

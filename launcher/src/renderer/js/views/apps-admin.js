@@ -25,7 +25,7 @@ export class AppsAdminView {
       h(
         'div',
         { class: 'page-head' },
-        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '프로그램 관리'), h('div', { class: 'subtitle' }, '통합 클라우드에서 설치하거나 여는 프로그램과 배포 위치, 서버 보관 기간을 정해요.')),
+        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '프로그램 관리'), h('div', { class: 'subtitle' }, '')),
         h('div', { class: 'right' }, refresh, btn('프로그램 추가', { variant: 'primary', iconName: 'plus', onClick: () => this.edit(null) })),
       ),
       this.list,
@@ -75,7 +75,7 @@ export class AppsAdminView {
               h('div', { class: 'app-name', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, a.name, h('span', { class: 'subtle mono' }, a.id), a.enabled ? null : pill('숨김', 'grey')),
               h('div', { class: 'muted' }, src),
             ),
-            h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' } }, h('span', { class: 'muted' }, '목록에 보이기'), enabled, btn('고치기', { variant: 'subtle', iconName: 'edit', title: '고치기', onClick: () => this.edit(a) })),
+            h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' } }, h('span', { class: 'muted' }, '목록에 보이기'), enabled, btn('고치기', { variant: 'subtle', iconName: 'edit', onClick: () => this.edit(a) })),
           ),
           // 웹 프로그램은 배포 버전 대신 앱 비밀값 (웹 프로그램 서버가 로그인 코드를 바꿀 때 씀)
           web
@@ -87,7 +87,7 @@ export class AppsAdminView {
                   'div',
                   { class: 'grow' },
                   h('div', { class: 'row-title' }, rel ? `최신 버전 ${rel.version}` : '아직 배포된 버전 없음'),
-                  h('div', { class: 'row-desc' }, rel ? `${rel.fileName} · ${bytes(rel.size)}${rel.publishedAt ? ` · ${date(rel.publishedAt)} 배포` : ''}` : android ? 'APK 파일을 배포하면 여기에 나타나요.' : '묶음 파일(zip)을 배포하면 여기에 나타나요.'),
+                  h('div', { class: 'row-desc' }, rel ? `${rel.fileName} · ${bytes(rel.size)}${rel.publishedAt ? ` · ${date(rel.publishedAt)} 배포` : ''}` : android ? '배포된 APK가 없어요.' : '배포된 ZIP이 없어요.'),
                   a.releaseError ? h('div', { class: 'row-desc', style: { color: 'var(--danger)' } }, `확인 실패: ${a.releaseError}`) : null,
                 ),
                 h('span', { class: 'subtle' }, a.releaseCheckedAt ? `${ago(a.releaseCheckedAt)} 확인` : ''),
@@ -98,7 +98,7 @@ export class AppsAdminView {
             : h(
                 'div',
                 { class: 'row' },
-                h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '오래 안 쓰면 서버에서 정리'), h('div', { class: 'row-desc' }, '정한 기간 동안 쓰지 않은 큰 데이터(예: 오답노트 문제집)는 서버에서만 지우고, 그 데이터를 쓰던 컴퓨터에는 남겨 둬요.')),
+                h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '오래 안 쓰면 서버에서 정리'), h('div', { class: 'row-desc' }, '서버에서만 지워요. 사용하던 컴퓨터에는 남아요.')),
                 h('div', { style: { display: 'flex', alignItems: 'center', gap: '16px', flex: 'none' } }, h('span', { class: 'muted' }, '기간'), days, h('span', { class: 'muted' }, '일'), cold),
               ),
         );
@@ -108,11 +108,11 @@ export class AppsAdminView {
     const l = r.launcher;
     put(this.launcher, 
       h('h2', { class: 'card-title' }, ic('cloud', 18), '통합 클라우드 프로그램'),
-      h('p', { class: 'card-desc' }, '설치된 통합 클라우드는 이 서버를 통해 새 버전을 받아 스스로 업데이트해요.'),
+      h('p', { class: 'card-desc' }, ''),
       h(
         'div',
         { class: 'row' },
-        h('div', { class: 'grow' }, h('div', { class: 'row-title' }, l ? `배포된 버전 ${l.version}` : '아직 배포된 설치 파일 없음'), h('div', { class: 'row-desc' }, l ? l.setupName : r.launcherError || 'GitHub Releases 에 MagoEduCloud-Setup-x.y.z.exe 와 latest.yml 을 올리면 나타나요.')),
+        h('div', { class: 'grow' }, h('div', { class: 'row-title' }, l ? `배포된 버전 ${l.version}` : '아직 배포된 설치 파일 없음'), h('div', { class: 'row-desc' }, l ? l.setupName : r.launcherError || '배포 파일: MagoEduCloud-Setup-x.y.z.exe · latest.yml')),
       ),
     );
   }
@@ -127,7 +127,7 @@ export class AppsAdminView {
         'div',
         { class: 'grow' },
         h('div', { class: 'row-title' }, '앱 비밀값'),
-        h('div', { class: 'row-desc' }, a.hasSecret ? '만들어 두었어요. 웹 프로그램 서버가 통합 클라우드 계정으로 로그인시킬 때 써요.' : '아직 없어요. 만들어서 웹 프로그램 서버의 MAGO_APP_SECRET 에 넣어야 통합 클라우드 계정으로 로그인할 수 있어요.'),
+        h('div', { class: 'row-desc' }, a.hasSecret ? '등록됨 · 통합 클라우드 계정 로그인용' : '미등록 · 웹 서버의 MAGO_APP_SECRET에 설정해요.'),
       ),
       make,
     );
@@ -135,7 +135,7 @@ export class AppsAdminView {
 
   /** 앱 비밀값은 서버에 해시만 남아서 한 번만 보여 준다 */
   async makeSecret(a) {
-    if (a.hasSecret && !(await confirmDialog(`${a.name} 앱 비밀값을 새로 만들까요?`, '새로 만들면 예전 비밀값으로는 더 로그인할 수 없어요. 웹 프로그램 서버의 MAGO_APP_SECRET 도 바로 바꿔 주세요. (이미 로그인한 사람은 그대로예요)', '새로 만들기', true))) return;
+    if (a.hasSecret && !(await confirmDialog(`${a.name} 앱 비밀값을 새로 만들까요?`, '이전 비밀값으로 새 로그인 불가. 서버의 MAGO_APP_SECRET도 바꿔요. 기존 로그인은 유지돼요.', '새로 만들기', true))) return;
     let secret = null;
     try {
       secret = (await this.cloud.api('POST', `/api/admin/apps/${a.id}/secret`, {})).secret;
@@ -155,7 +155,7 @@ export class AppsAdminView {
     });
     await dialog({
       title: '앱 비밀값을 만들었어요',
-      sub: `${a.name} 웹 프로그램 서버의 환경 변수 MAGO_APP_SECRET 에 넣어 주세요. 이 창을 닫으면 다시 볼 수 없어요.`,
+      sub: `${a.name} 서버의 MAGO_APP_SECRET에 설정해요. 닫으면 다시 볼 수 없어요.`,
       ok: '확인',
       cancel: null,
       body: h('div', { class: 'secret long' }, h('span', { class: 'mono' }, secret), copy),
@@ -201,8 +201,8 @@ export class AppsAdminView {
     const gh = h('div', {}, field('저장소', repo), field('묶음 파일 이름 규칙 (정규식, 괄호 안이 버전)', asset));
     const exeField = field('실행 파일', exe);
     const typeField = field('배포 위치', type);
-    const urlField = field('주소', url, '누르면 브라우저에서 이 주소를 열어요. https:// 로 시작해야 해요 (시험할 때는 http://localhost 도 돼요).');
-    const autoRow = h('div', { class: 'row', style: { borderBottom: 0, marginTop: '6px' } }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '기본으로 윈도우 시작 시 실행'), h('div', { class: 'row-desc' }, '윈도우가 켜질 때 이 프로그램도 실행해요 (예: 타종). 사용자가 바꿀 수 있어요.')), toggle(autoLaunch, (v) => (autoLaunch = v)));
+    const urlField = field('주소', url, 'https:// 필수. 로컬 시험은 http://localhost 허용.');
+    const autoRow = h('div', { class: 'row', style: { borderBottom: 0, marginTop: '6px' } }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '기본으로 윈도우 시작 시 실행'), h('div', { class: 'row-desc' }, '사용자가 바꿀 수 있어요.')), toggle(autoLaunch, (v) => (autoLaunch = v)));
     const sync = () => {
       const pc = platform.value === 'windows';
       const web = platform.value === 'web'; // 웹은 배포 파일 없이 주소만
@@ -226,7 +226,7 @@ export class AppsAdminView {
         {},
         h('div', { class: 'form-row' }, field('ID', id, '영어 소문자, 바꿀 수 없음'), field('이름', name)),
         field('설명', desc),
-        field('플랫폼', platform, '안드로이드는 통합 클라우드가 설치하지 않고, 휴대폰 브라우저에서 내려받게 해요. 웹은 주소만 있고, 누르면 브라우저에서 열려요.'),
+        field('플랫폼', platform, '안드로이드는 휴대폰에 설치해요. 웹은 브라우저에서 열려요.'),
         typeField,
         urlField,
         gh,

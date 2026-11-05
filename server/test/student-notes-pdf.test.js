@@ -325,14 +325,15 @@ test('학생 PDF: 두 단·빈 노트·읽는 순서·해설의 반복 번호를
 });
 
 function store(t) {
-  const dir = fs.mkdtempSync(path.join(__dirname, '.student-notes-'));
+  const tempDir = require('node:os').tmpdir();
+  const dir = fs.mkdtempSync(path.join(tempDir, '.student-notes-'));
   const sql = new DatabaseSync(':memory:');
   sql.exec('CREATE TABLE shared_files (academy_id INTEGER, app_id TEXT, path TEXT, sha256 TEXT, updated_at INTEGER, deleted INTEGER DEFAULT 0)');
   const db = { get: (q, ...args) => sql.prepare(q).get(...args), all: (q, ...args) => sql.prepare(q).all(...args) };
   const blobs = new BlobStore(dir, db, { info() {} });
   t.after(() => {
     blobs.close(); sql.close();
-    assert.ok(path.resolve(dir).startsWith(path.resolve(__dirname) + path.sep));
+    assert.ok(path.resolve(dir).startsWith(path.resolve(tempDir) + path.sep));
     fs.rmSync(dir, { recursive: true, force: true });
   });
   const put = (p, value, { academy = 1, app = 'ohdapnote', deleted = 0, updated = 20 } = {}) => {

@@ -9,10 +9,10 @@ const { startServer, ADMIN_PASSWORD } = require('../../../server/test/helpers');
 const { makeZip } = require('../lib/zipwriter');
 
 const ROOT = path.join(__dirname, '..', '..');
-const OUT = path.join(ROOT, 'test', 'out');
+const OUT = path.join(os.tmpdir(), 'magoedu-ui-out');
 
 async function startAll({ adminPassword } = {}) {
-  fs.mkdirSync(OUT, { recursive: true });
+  if (process.env.MAGOEDU_E2E_SCREENSHOTS !== '0') fs.mkdirSync(OUT, { recursive: true });
   const server = await startServer(adminPassword === undefined ? {} : { adminPassword });
   // 시험용 프로그램 두 개
   const windows = process.platform === 'win32';

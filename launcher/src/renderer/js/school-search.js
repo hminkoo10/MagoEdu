@@ -52,7 +52,7 @@ export function schoolSearch(cloud) {
     const q = name.value.trim();
     if (composing || q.length < 2) return;
     if (q.length > 20 || !/^[가-힣A-Za-z0-9 ]+$/.test(q)) {
-      status.textContent = '검색은 한글·영문·숫자 2~20자. 입력한 이름만 저장할 수도 있어요.';
+      status.textContent = '검색: 한글·영문·숫자 2~20자. 직접 입력도 가능해요.';
       return;
     }
     const request = seq;
@@ -70,9 +70,9 @@ export function schoolSearch(cloud) {
         }, [s.name, s.region, KIND[s.kind] || s.kind].filter(Boolean).join(' · '))));
         list.hidden = !hits.length;
         name.setAttribute('aria-expanded', String(!!hits.length));
-        status.textContent = hits.length ? '학교를 고르거나 입력한 이름만 저장하세요.' : '검색 결과가 없어요. 입력한 이름만 저장할 수 있어요.';
+        status.textContent = hits.length ? '학교 선택 또는 직접 입력' : '검색 결과가 없어요. 입력한 이름으로 저장해요.';
       } catch (e) {
-        if (request === seq) status.textContent = `${e.message || '학교 검색에 실패했어요.'} 입력한 이름만 저장할 수 있어요.`;
+        if (request === seq) status.textContent = `${e.message || '학교 검색에 실패했어요.'} 입력한 이름으로 저장해요.`;
       } finally {
         if (request === seq) pending = false;
       }

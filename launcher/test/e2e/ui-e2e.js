@@ -1,7 +1,7 @@
 'use strict';
 
 // 통합 클라우드 화면 전체 흐름 (실제 서버 + Electron)
-//   xvfb-run -a node test/e2e/ui-e2e.js   → test/out/*.png
+//   node test/e2e/ui-e2e.js → OS 임시 폴더/magoedu-ui-out/*.png (화면 없는 Linux는 xvfb-run 사용)
 const assert = require('node:assert/strict');
 const { startAll } = require('./harness');
 
@@ -34,7 +34,7 @@ const { startAll } = require('./harness');
     await page.locator('.app-card').filter({ hasText: '오답노트' }).getByRole('button', { name: '설치' }).click();
     await page.locator('.app-card').filter({ hasText: '오답노트' }).getByRole('button', { name: '열기' }).waitFor({ timeout: 20000 });
     await page.locator('.app-card').filter({ hasText: '오답노트' }).getByRole('button', { name: '지금 맞추기', exact: true }).click();
-    await page.getByText('서버와 맞추기를 마쳤습니다', { exact: true }).waitFor();
+    await page.getByText('서버와 맞추기를 마쳤어요', { exact: true }).waitFor();
     await t.shot('04-installed');
     step('설치');
     await page.locator('.app-card').filter({ hasText: '오답노트' }).getByRole('button', { name: '열기' }).click();
@@ -98,9 +98,11 @@ const { startAll } = require('./harness');
     // 8) 로그아웃 → 원장 가입
     await page.locator('button[title="로그아웃"]').click();
     await page.locator('.dialog').getByRole('button', { name: '로그아웃', exact: true }).click();
-    await page.getByText('원장 가입 코드로 가입').click();
-    await page.getByPlaceholder('MAGO-XXXX-XXXX').fill(code);
+    await page.getByText('가입 코드가 있어요').click();
+    await page.getByPlaceholder('받은 가입 코드').fill(code);
     await btn('다음').click();
+    // 다음 단계의 예약된 자동 포커스가 입력 중인 칸을 바꾸지 않도록 기다린다.
+    await page.waitForFunction(() => document.activeElement?.getAttribute('placeholder') === '예: 홍길동');
     await page.getByPlaceholder('예: 홍길동').fill('김원장');
     await page.getByPlaceholder('영어 소문자·숫자 3자 이상').fill('kim');
     await page.getByPlaceholder('6자 이상').fill('secret12');
@@ -121,7 +123,7 @@ const { startAll } = require('./harness');
     await t.shot('19-teacher-password');
     await btn('확인').click();
     await page.locator('.table tbody tr', { hasText: 'lee' }).waitFor();
-    await page.locator('.table tbody tr', { hasText: 'lee' }).locator('button[title="관리"]').click();
+    await page.locator('.table tbody tr', { hasText: 'lee' }).getByRole('button', { name: '관리', exact: true }).click();
     await t.shot('20-teacher-menu');
     await page.mouse.click(5, 700);
     await page.locator('.nav-item[data-id="home"]').click();

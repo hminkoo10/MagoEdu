@@ -85,7 +85,7 @@ export class AuditView {
     this.el = h(
       'div',
       {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '활동 기록'), h('div', { class: 'subtitle' }, '계정을 만들고 지우거나, 가입 코드를 만드는 등 중요한 일이 모두 남아요.'))),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '활동 기록'), h('div', { class: 'subtitle' }, ''))),
       h('div', { class: 'toolbar' }, kind, search),
       this.table,
       h('div', { style: { display: 'flex', justifyContent: 'center', marginTop: '14px' } }, this.moreBtn),

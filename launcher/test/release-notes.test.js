@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 const { spawnSync } = require('node:child_process');
 const { readJsonSync } = require('../src/core/fsutil');
@@ -27,7 +28,7 @@ test('내역: 숫자 버전 내림차순, next·깨진 항목 제외, 입력 보
 
 test('내역: 실제 묶음 파일 읽기, 없는·깨진 파일과 IPC 실패는 빈 내역', async (t) => {
   const { loadReleaseNotes } = await renderer();
-  const root = fs.mkdtempSync(path.join(__dirname, '.notes-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), '.notes-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const file = path.join(root, 'notes.json');
   const bridge = (p) => ({ getReleaseNotes: async () => readJsonSync(p, null) });
@@ -76,7 +77,7 @@ test('승격: next → 새 버전, 같은 문장으로 릴리스 설명, 기존 
 });
 
 test('승격: 빈 next는 파일 그대로, 빈 설명으로 기존 방식 유지', (t) => {
-  const root = fs.mkdtempSync(path.join(__dirname, '.promote-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), '.promote-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const file = path.join(root, 'notes.json');
   const output = path.join(root, 'notes.md');
@@ -107,7 +108,7 @@ try { electron = require('electron'); } catch { /* 없으면 건너뜀 */ }
 // 화면 없는 리눅스(CI)에서는 Electron 창을 띄울 수 없음
 const noDisplay = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
 test('내역 화면: PC·웹 단추, 정렬·빈 내역·텍스트 안전성, 열기·닫기·Esc', { skip: (!electron && 'electron 이 없음') || (noDisplay && '화면(DISPLAY)이 없음') }, () => {
-  const root = fs.mkdtempSync(path.join(__dirname, '.notes-ui-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), '.notes-ui-'));
   try {
     const env = { ...process.env, TEMP: root, TMP: root };
     delete env.ELECTRON_RUN_AS_NODE;

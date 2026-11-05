@@ -13,7 +13,7 @@ export class CodesView {
       h(
         'div',
         { class: 'page-head' },
-        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '원장 가입 코드'), h('div', { class: 'subtitle' }, '코드를 만들어 원장님께 드리면, 통합 클라우드에서 ‘가입 코드가 있어요’로 직접 가입해요.')),
+        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '원장 가입 코드'), h('div', { class: 'subtitle' }, '원장님이 ‘가입 코드가 있어요’에서 가입해요.')),
         h('div', { class: 'right' }, btn('코드 만들기', { variant: 'primary', iconName: 'plus', onClick: () => this.create() })),
       ),
       this.table,
@@ -36,7 +36,7 @@ export class CodesView {
       return;
     }
     const rows = codes.map((c) => {
-      const copy = btn('복사', { variant: 'subtle', size: 'sm', iconName: 'copy', title: '복사' });
+      const copy = btn('복사', { variant: 'subtle', size: 'sm', iconName: 'copy' });
       copy.addEventListener('click', async () => {
         await this.cloud.copy(c.code);
         toast('코드를 복사했어요', 'success', 1600);
@@ -98,7 +98,7 @@ export class CodesView {
     let made = null;
     const ok = await dialog({
       title: '원장 가입 코드 만들기',
-      sub: '이 코드로 가입하면 새 학원과 원장 계정이 만들어져요.',
+      sub: '새 학원과 원장 계정이 만들어져요.',
       body: h('div', {}, field('학원 이름', academy), field('계약 과목', subjects.el), field('메모', memo), h('div', { class: 'form-row', style: { marginTop: '14px' } }, field('쓸 수 있는 횟수', uses), field('쓸 수 있는 기간', days))),
       ok: '만들기',
       onOk: async () => {
@@ -107,7 +107,7 @@ export class CodesView {
       },
     });
     if (!ok || !made) return;
-    await secretDialog('가입 코드를 만들었어요', '원장님께 이 코드와 서버 주소를 알려 주세요.', made.code);
+    await secretDialog('가입 코드를 만들었어요', '코드와 서버 주소를 원장님께 전달해요.', made.code);
     this.load();
   }
 }

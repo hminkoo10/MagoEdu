@@ -15,7 +15,7 @@ export class AccountView {
     this.el = h(
       'div',
       {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, this.required ? '새 비밀번호를 정해 주세요' : '내 계정'), h('div', { class: 'subtitle' }, this.required ? '처음 받은 비밀번호나 초기화된 비밀번호는 다른 화면을 쓰기 전에 바꿔야 해요.' : this.student ? '아이디와 비밀번호를 바꿔요. 이름과 담당 선생님은 선생님이 관리해요.' : '아이디와 비밀번호를 바꾸고, 로그인한 기기를 관리해요.'))),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, this.required ? '새 비밀번호를 정해 주세요' : '내 계정'), h('div', { class: 'subtitle' }, this.required ? '계속하려면 비밀번호를 바꿔야 해요.' : this.student ? '이름·담당 선생님 변경은 선생님께 요청해요.' : ''))),
       h('div', { class: 'grid2' }, h('div', { class: 'stack' }, this.required ? null : this.profile, this.required ? null : this.usernameCard(), this.passwordCard()), this.student ? null : h('div', { class: 'stack' }, this.storage, this.devices)),
     );
     this.renderProfile(store.state.user);
@@ -66,7 +66,7 @@ export class AccountView {
                 ? SUBJECTS.filter(([code]) => (u.academy.subjects ?? ['math']).includes(code)).map(([, name]) => pill(name))
                 : [h('span', { class: 'subtle' }, '계약한 과목 없음')]),
             ),
-            h('div', { class: 'subtle', style: { marginTop: '6px', fontSize: '12px' } }, '과목을 늘리거나 바꾸려면 운영자에게 문의해 주세요.'),
+            h('div', { class: 'subtle', style: { marginTop: '6px', fontSize: '12px' } }, '과목 변경은 운영자에게 문의해요.'),
           ) : null,
         ),
       ),
@@ -95,7 +95,7 @@ export class AccountView {
       'div',
       { class: 'card' },
       h('h2', { class: 'card-title' }, ic('user', 18), '아이디 바꾸기'),
-      h('p', { class: 'card-desc' }, '아이디를 바꿔도 데이터는 그대로예요. 다른 기기에서는 새 아이디로 로그인해요.'),
+      h('p', { class: 'card-desc' }, '데이터는 유지돼요. 다른 기기도 새 아이디로 로그인해요.'),
       field('새 아이디', nu, '영어 소문자·숫자·._- 로 3~32자'),
       this.student ? null : field('지금 비밀번호', pw),
       h('div', { style: { marginTop: '16px', display: 'flex', justifyContent: 'flex-end' } }, go),
@@ -167,15 +167,15 @@ export class AccountView {
       );
       put(this.storage, 
         h('h2', { class: 'card-title' }, ic('cloud', 18), '서버 저장 공간'),
-        h('p', { class: 'card-desc' }, '같은 아이디로 로그인한 컴퓨터끼리 이 데이터를 함께 써요.'),
+        h('p', { class: 'card-desc' }, '같은 아이디의 기기에서 함께 써요.'),
         usage(r.usageBytes, r.quotaBytes),
         h('div', { style: { height: '8px' } }),
         ...rows,
         r.apps.some((a) => a.evictedGroups)
-          ? h('div', { class: 'note', style: { marginTop: '12px' } }, ic('info', 18), h('span', {}, '오래 쓰지 않은 큰 데이터(예: 오답노트 문제집)는 서버에서만 지우고 그 데이터를 쓰던 컴퓨터에는 남겨 둬요. 그 컴퓨터에서 다시 열면 서버에 다시 올라가요.'))
+          ? h('div', { class: 'note', style: { marginTop: '12px' } }, ic('info', 18), h('span', {}, '서버에서 정리한 자료는 원래 PC에 남아요. 다시 열면 서버에 올라가요.'))
           : null,
         aca ? h('h3', { class: 'storage-sub' }, ic('building', 16), `학원 공간 · ${aca.name || '우리 학원'}`) : null,
-        aca ? h('p', { class: 'card-desc' }, '같은 학원 사람들이 함께 쓰는 자료(예: 오답노트 교재)예요. 내 저장 공간과 따로 세요.') : null,
+        aca ? h('p', { class: 'card-desc' }, '학원 공용 자료예요. 개인 용량과 따로 계산해요.') : null,
         aca ? usage(aca.usageBytes, aca.quotaBytes) : null,
         aca ? h('div', { style: { height: '8px' } }) : null,
         ...acaRows,
@@ -217,7 +217,7 @@ export class AccountView {
       });
       put(this.devices, 
         h('div', { style: { display: 'flex', alignItems: 'center' } }, h('h2', { class: 'card-title', style: { flex: 1 } }, ic('monitor', 18), '로그인한 기기'), r.devices.length > 1 ? others : null),
-        h('p', { class: 'card-desc' }, '모르는 기기가 있으면 로그아웃하고 비밀번호를 바꿔 주세요.'),
+        h('p', { class: 'card-desc' }, '모르는 기기는 로그아웃 후 비밀번호를 바꿔요.'),
         ...rows,
       );
       reveal(this.devices);

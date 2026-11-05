@@ -12,7 +12,7 @@ try { electron = require('electron'); } catch { /* 없으면 건너뜀 */ }
 const noDisplay = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
 
 test('업데이트 화면: 실제 Electron에서 설정·카드 반응, 대기·오류·재시도, 글자 크기·폭 확인', { skip: (!electron && 'electron 이 없음') || (noDisplay && '화면(DISPLAY)이 없음') }, () => {
-  const root = fs.mkdtempSync(path.join(__dirname, '.update-ui-'));
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), '.update-ui-'));
   try {
     const env = { ...process.env, TEMP: root, TMP: root };
     delete env.ELECTRON_RUN_AS_NODE;

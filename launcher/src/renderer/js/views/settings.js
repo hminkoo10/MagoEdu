@@ -27,7 +27,7 @@ export class SettingsView {
 
     const devName = input({ value: c.deviceName, maxlength: 80, style: 'width: 220px' });
     devName.addEventListener('change', () => set({ deviceName: devName.value.trim() || this.store.state.config.deviceName }, (config) =>
-      config.deviceNamePending ? '컴퓨터 이름을 저장했어요. 연결되면 기기 목록에도 반영돼요.' : '컴퓨터 이름을 바꿨어요. 로그인한 기기 목록에도 반영했어요.'));
+      config.deviceNamePending ? '이름을 저장했어요. 연결되면 기기 목록에 반영돼요.' : '컴퓨터 이름을 바꿨어요.'));
     const webUrl = /^https?:\/\//i.test(c.serverUrl || '') ? c.serverUrl : null;
 
     this.updRow = h('div', { class: 'update-settings', role: 'status', 'aria-live': 'polite' });
@@ -45,10 +45,10 @@ export class SettingsView {
             'div',
             { class: 'card' },
             h('h2', { class: 'card-title' }, '이 컴퓨터'),
-            row('컴퓨터 이름', '‘로그인한 기기’ 목록에 보이는 이름이에요.', devName),
-            row('컴퓨터를 켜면 자동으로 실행', '창을 띄우지 않고 데이터를 서버와 맞춥니다. ‘윈도우 시작 시 실행’으로 정한 프로그램도 켭니다.', toggle(c.autoStart, (v) => set({ autoStart: v }, v ? '자동 실행을 켰어요' : '자동 실행을 껐어요'))),
-            row('창을 닫아도 계속 실행', '켜면 작업 표시줄 오른쪽 아이콘으로 남습니다. 끄면 창을 닫을 때 통합 클라우드도 종료됩니다.', toggle(c.closeToTray, (v) => set({ closeToTray: v }))),
-            row('프로그램 자동 업데이트', '새 버전이 나오면 알아서 받아요. 켜져 있는 프로그램은 다음에 켤 때 바뀌어요.', toggle(c.autoUpdateApps, (v) => set({ autoUpdateApps: v }))),
+            row('컴퓨터 이름', '‘로그인한 기기’에 표시돼요.', devName),
+            row('컴퓨터를 켜면 자동으로 실행', '창 없이 서버와 맞추고, 자동 실행 프로그램도 켜요.', toggle(c.autoStart, (v) => set({ autoStart: v }, v ? '자동 실행을 켰어요' : '자동 실행을 껐어요'))),
+            row('창을 닫아도 계속 실행', '작업 표시줄 오른쪽에 아이콘이 남아요.', toggle(c.closeToTray, (v) => set({ closeToTray: v }))),
+            row('프로그램 자동 업데이트', '실행 중인 프로그램은 다음에 켤 때 바뀌어요.', toggle(c.autoUpdateApps, (v) => set({ autoUpdateApps: v }))),
           ),
           h(
             'div',
@@ -56,7 +56,7 @@ export class SettingsView {
             h('h2', { class: 'card-title' }, '서버'),
             row('서버 주소', c.serverUrl && c.serverUrl === c.defaultServerUrl ? `${c.serverUrl} · 기본 서버` : c.serverUrl, btn('바꾸기', { size: 'sm', onClick: () => this.changeServer() })),
             row('연결', s.online ? '연결되어 있어요' : '연결되지 않았어요', s.online ? pill('정상', 'green') : pill('끊김', 'red')),
-            webUrl ? row('웹에서 열기', '브라우저·휴대폰에서도 같은 계정으로 공지·계정·관리를 할 수 있어요.', btn('열기', { size: 'sm', onClick: () => cloud.openExternal(webUrl) })) : null,
+            webUrl ? row('웹에서 열기', '같은 계정으로 휴대폰에서도 사용해요.', btn('열기', { size: 'sm', onClick: () => cloud.openExternal(webUrl) })) : null,
           ),
         ),
         h(
@@ -69,7 +69,7 @@ export class SettingsView {
             h('h2', { class: 'card-title' }, '정보'),
             row('프로그램', '마고에듀 통합 클라우드', h('span', { class: 'muted' }, `버전 ${s.version}`)),
             row('만든 사람', null, h('span', { style: { fontWeight: 600 } }, '구현민')),
-            row('통합 클라우드 끄기', '켜져 있는 프로그램은 계속 실행됩니다. 서버와 맞추기는 통합 클라우드를 다시 켜면 이어집니다.', btn('끄기', { size: 'sm', variant: 'danger', onClick: () => this.quit() })),
+            row('통합 클라우드 끄기', '프로그램은 계속 실행돼요. 서버와 맞추기는 멈춰요.', btn('끄기', { size: 'sm', variant: 'danger', onClick: () => this.quit() })),
           ),
         ),
       ),
@@ -97,13 +97,13 @@ export class SettingsView {
             { class: 'card' },
             h('h2', { class: 'card-title' }, '통합 클라우드 앱'),
             row('앱 내려받기', l ? `Windows 10 이상 · 버전 ${l.version}` : '아직 배포된 설치 파일이 없어요', download),
-            open ? row('앱 열기', '이 PC에 설치된 통합 클라우드를 열어요.', open) : null,
+            open ? row('앱 열기', '', open) : null,
           ),
           h(
             'div',
             { class: 'card' },
             h('h2', { class: 'card-title' }, '이 브라우저'),
-            row('기기 이름', '‘로그인한 기기’ 목록에 보이는 이름이에요.', h('span', { style: { fontWeight: 600 } }, s.config.deviceName)),
+            row('기기 이름', '‘로그인한 기기’에 표시돼요.', h('span', { style: { fontWeight: 600 } }, s.config.deviceName)),
             row('연결', s.online ? '연결되어 있어요' : '연결되지 않았어요', s.online ? pill('정상', 'green') : pill('끊김', 'red')),
           ),
         ),
@@ -180,7 +180,7 @@ export class SettingsView {
     });
     await dialog({
       title: '서버 주소 바꾸기',
-      sub: '다른 서버로 바꾸면 로그아웃하고 그 서버 계정으로 다시 로그인해요.',
+      sub: '로그아웃돼요. 새 서버 계정으로 다시 로그인해요.',
       body: field('서버 주소', url),
       ok: '바꾸기',
       footLeft: reset,

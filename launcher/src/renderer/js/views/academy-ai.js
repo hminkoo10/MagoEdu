@@ -27,7 +27,7 @@ function aiForm(cur) {
   const baseUrl = input({ value: cur?.baseUrl || '', placeholder: 'https://api.openai.com/v1' });
   const model = input({ value: cur?.model || '', placeholder: '비우면 프로그램 기본 모델' });
   const model2 = input({ value: cur?.model2 || '', placeholder: '비워도 돼요' });
-  const urlField = field('서비스 주소', baseUrl, 'OpenAI 호환 서비스(OpenRouter·LiteLLM·Ollama·LM Studio 등)를 쓰는 경우에만 변경합니다. 키 없이 쓰는 별도 서버는 키를 비워 두세요.');
+  const urlField = field('서비스 주소', baseUrl, 'OpenAI 호환 서비스만 변경해요. 키 없는 서버는 키를 비워요.');
   const sync = () => {
     const p = provider.value;
     // 같은 AI 종류면 키를 비워 둬도 서버에 있는 키를 그대로 씀
@@ -40,12 +40,12 @@ function aiForm(cur) {
     'div',
     {},
     field('AI 종류', provider),
-    field('서비스 키', key, '선택한 서비스에서 발급받은 키를 붙여넣고 저장하세요. 같은 종류에서는 비워 두면 저장된 키를 유지합니다.'),
+    field('서비스 키', key, '같은 종류는 비워 두면 기존 키를 유지해요.'),
     h('details', { class: 'advanced-settings' },
       h('summary', {}, '고급 설정'),
-      field('분당 요청 한도', rpm, '1분 동안 보낼 수 있는 요청 수입니다. 비워 두면 프로그램 기본값을 사용합니다.'),
+      field('분당 요청 한도', rpm, ''),
       urlField,
-      h('div', { class: 'form-row' }, field('모델', model), field('보조 모델', model2, '기본 모델을 사용할 수 없을 때 대신 사용합니다.')),
+      h('div', { class: 'form-row' }, field('모델', model), field('보조 모델', model2, '기본 모델 실패 시 사용해요.')),
     ),
   );
   const value = () => {
@@ -85,7 +85,7 @@ export class AcademyAiView {
           'div',
           { class: 'tt' },
           h('h1', { class: 'title' }, '학원 AI'),
-          h('div', { class: 'subtitle' }, '오답노트의 정밀 인식과 과목내비에서 쓰는 AI 서비스 키를 학원에 한 번 등록하는 곳입니다.'),
+          h('div', { class: 'subtitle' }, '오답노트 정밀 인식·과목내비에서 함께 쓰는 서비스 키예요.'),
         ),
         this.picker ? h('div', { class: 'right' }, this.picker.el) : null,
       ),
@@ -103,7 +103,7 @@ export class AcademyAiView {
         return;
       }
       if (!this.academy) {
-        this.fail('학원이 없어요. ‘계정 관리’의 ‘학원 관리’에서 먼저 만들어 주세요.');
+        this.fail('‘계정 관리 → 학원 관리’에서 학원을 만들어요.');
         return;
       }
     }
@@ -163,7 +163,7 @@ export class AcademyAiView {
         err.style.display = 'none';
         try {
           await this.putAi('', form.value());
-          toast('기본 설정을 저장했습니다', 'success');
+          toast('기본 설정을 저장했어요', 'success');
         } catch (e) {
           err.textContent = errorText(e);
           err.style.display = '';
@@ -174,7 +174,7 @@ export class AcademyAiView {
     put(
       this.main,
       h('h2', { class: 'card-title' }, ic('key', 18), '기본 설정', d ? pill(PROVIDER[d.provider] || d.provider, 'green') : pill('정하지 않음', 'grey')),
-      h('p', { class: 'card-desc' }, d ? `${summary(d)} · ${ago(d.updatedAt)} 바꿈` : '1. 종류 선택 → 2. 서비스 키 입력 → 3. 저장. 등록 전에는 각 프로그램에서 개인 키를 사용합니다.'),
+      h('p', { class: 'card-desc' }, d ? `${summary(d)} · ${ago(d.updatedAt)} 바꿈` : '등록 전에는 개인 키를 사용해요.'),
       form.el,
       err,
       h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '18px' } }, clear, h('div', { style: { flex: 1 } }), save),
@@ -187,7 +187,7 @@ export class AcademyAiView {
     put(
       this.apps,
       h('summary', { class: 'card-title' }, '고급: 프로그램별 설정'),
-      h('p', { class: 'card-desc' }, '프로그램마다 다른 서비스나 키를 지정할 수 있습니다. 따로 정하지 않으면 기본 설정을 사용합니다.'),
+      h('p', { class: 'card-desc' }, ''),
       ...(progs.length ? progs.map((p) => this.appRow(p)) : [h('div', { class: 'empty', style: { padding: '24px 20px' } }, '프로그램이 없어요')]),
     );
   }
@@ -202,7 +202,7 @@ export class AcademyAiView {
       own ? 'own' : 'default',
       (v) => (v === 'own' ? this.editApp(p) : this.clear(p)),
     );
-    const edit = own ? btn('고치기', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', onClick: () => this.editApp(p) }) : null;
+    const edit = own ? btn('고치기', { variant: 'subtle', size: 'sm', iconName: 'edit', onClick: () => this.editApp(p) }) : null;
     return h(
       'div',
       { class: 'row' },
@@ -210,7 +210,7 @@ export class AcademyAiView {
         'div',
         { class: 'grow' },
         h('div', { class: 'row-title', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, appLabel(p)),
-        h('div', { class: 'row-desc' }, own ? `따로 정함 · ${summary(own)}` : '기본 설정을 사용합니다'),
+        h('div', { class: 'row-desc' }, own ? `따로 정함 · ${summary(own)}` : '기본 설정 사용 중'),
       ),
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flex: 'none' } }, edit, choice),
     );
@@ -230,13 +230,13 @@ export class AcademyAiView {
     const form = aiForm(own);
     const ok = await dialog({
       title: `${appLabel(p)} 서비스 설정`,
-      sub: '이 프로그램에만 적용하는 설정입니다. 같은 학원 계정 모두에 적용됩니다.',
+      sub: '이 프로그램을 쓰는 학원 계정 모두에 적용돼요.',
       wide: true,
       body: form.el,
       ok: '저장',
       onOk: () => this.putAi(p.id, form.value()),
     });
-    if (ok) toast(`${p.name}: 별도 설정을 저장했습니다`, 'success');
+    if (ok) toast(`${p.name}: 별도 설정을 저장했어요`, 'success');
     else this.renderApps(); // 고른 것을 되돌림
   }
 
@@ -244,12 +244,12 @@ export class AcademyAiView {
   async clear(p) {
     const ok = await dialog({
       title: p ? `${appLabel(p)}도 기본 설정을 사용할까요?` : '기본 설정을 지울까요?',
-      sub: p ? '이 프로그램에 따로 저장한 설정과 키를 지웁니다.' : '지우면 별도 설정이 없는 프로그램에서는 개인 키를 입력해야 합니다.',
+      sub: p ? '별도 설정과 키를 지워요.' : '별도 설정이 없으면 개인 키가 필요해요.',
       ok: p ? '기본 설정 사용' : '지우기',
       danger: !p,
       onOk: () => this.putAi(p ? p.id : '', null),
     });
-    if (ok) toast(p ? `${p.name}은(는) 이제 기본 설정을 사용합니다` : '기본 설정을 지웠습니다', 'success');
+    if (ok) toast(p ? `${p.name}: 기본 설정으로 바꿨어요` : '기본 설정을 지웠어요', 'success');
     else if (p) this.renderApps(); // 고른 것을 되돌림
   }
 }

@@ -108,7 +108,7 @@ test('학교 검색: 늦은 응답·닫힌 폼 무시, 실패·빈 결과에도 
   pending[0].resolve({ schools: hits }); await settle();
   assert.equal(f.list.hidden, true);
   pending[1].reject(new Error('학교 검색 서버에 연결하지 못했어요.')); await settle();
-  assert.match(f.status.textContent, /입력한 이름만 저장/);
+  assert.match(f.status.textContent, /입력한 이름으로 저장/);
   assert.deepEqual(plain(f.control.value()), { school: '다른학교', schoolOffice: '', schoolCode: '' });
   type(f.input, '대안학교'); t.mock.timers.tick(300);
   pending[2].resolve({ schools: [] }); await settle();

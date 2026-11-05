@@ -20,7 +20,7 @@ export class NoticesView {
       h(
         'div',
         { class: 'page-head' },
-        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '공지사항'), h('div', { class: 'subtitle' }, u.role === 'admin' ? '전체 공지와 학원별 공지를 올릴 수 있어요.' : '운영자와 원장님이 올린 공지예요.')),
+        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '공지사항'), h('div', { class: 'subtitle' }, u.role === 'admin' ? '' : '')),
         right,
       ),
       this.list,
@@ -52,8 +52,8 @@ export class NoticesView {
         const acts = h('div', { style: { marginLeft: 'auto', display: 'flex', gap: '4px' } });
         if (n.editable) {
           acts.append(
-            btn('고치기', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', onClick: () => this.edit(n) }),
-            btn('지우기', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '지우기', onClick: () => this.remove(n) }),
+            btn('고치기', { variant: 'subtle', size: 'sm', iconName: 'edit', onClick: () => this.edit(n) }),
+            btn('지우기', { variant: 'subtle', size: 'sm', iconName: 'trash', onClick: () => this.remove(n) }),
           );
         }
         const expired = n.expiresAt && n.expiresAt < Date.now();
