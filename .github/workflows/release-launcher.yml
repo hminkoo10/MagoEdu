@@ -17,6 +17,7 @@ on:
       - 'launcher/build/**'
       - 'launcher/package.json'
       - 'launcher/package-lock.json'
+      - 'launcher/scripts/promote-release-notes.cjs'
       - '.github/workflows/release-launcher.yml'
   workflow_dispatch:
     inputs:
@@ -26,7 +27,7 @@ on:
         options: [auto, patch, minor, major, none]
         default: auto
       notes:
-        description: '이번 업데이트 내용 (비우면 커밋 제목으로 자동 작성)'
+        description: 'next 내역이 없을 때 쓸 업데이트 내용 (비우면 커밋 제목으로 자동 작성)'
         type: string
         required: false
 
@@ -81,15 +82,18 @@ jobs:
           fi
           if [ "$BUMP" != "none" ]; then
             npm version "$BUMP" --no-git-tag-version
-            v="$(node -p "require('./package.json').version")"
-            git commit -am "통합 클라우드 v$v 자동 배포"
-            git pull --rebase origin "${GITHUB_REF_NAME}" || true
-            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
           v="$(node -p "require('./package.json').version")"
           if git rev-parse -q --verify "refs/tags/cloud-v$v" > /dev/null; then
             echo "::error::cloud-v$v 은(는) 이미 배포된 버전입니다."
             exit 1
+          fi
+          node scripts/promote-release-notes.cjs "$v" "$RUNNER_TEMP/launcher-release-notes.md"
+          git add package.json package-lock.json src/renderer/release-notes.json
+          if ! git diff --cached --quiet; then
+            git commit -m "통합 클라우드 v$v 자동 배포"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
           echo "VERSION=$v" >> "$GITHUB_ENV"
 
@@ -109,6 +113,9 @@ jobs:
         env:
           NOTES: ${{ inputs.notes }}
         run: |
+          if [ -s "$RUNNER_TEMP/launcher-release-notes.md" ]; then
+            NOTES="$(cat "$RUNNER_TEMP/launcher-release-notes.md")"
+          fi
           if [ -z "$NOTES" ] && [ -n "$PREV_TAG" ]; then
             NOTES="$(git log --no-merges --pretty='- %s' "${PREV_TAG}..HEAD" -- launcher | grep -v '자동 배포' | head -30 || true)"
           fi

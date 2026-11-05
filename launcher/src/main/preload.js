@@ -20,6 +20,7 @@ function on(channel, cb) {
 
 contextBridge.exposeInMainWorld('cloud', {
   getState: () => call('state:get'),
+  getReleaseNotes: () => call('releaseNotes:get'),
   onState: (cb) => on('state', cb),
   onToast: (cb) => on('toast', cb),
   onNavigate: (cb) => on('navigate', cb),

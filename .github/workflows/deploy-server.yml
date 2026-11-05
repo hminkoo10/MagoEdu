@@ -23,6 +23,11 @@ on:
       - 'launcher/src/renderer/**'
       - '.github/workflows/deploy-server.yml'
   workflow_dispatch:
+  # GITHUB_TOKEN의 버전 커밋은 push 워크플로를 부르지 않으므로, 승격된 내역을 다시 배포한다.
+  workflow_run:
+    workflows: ['Release (통합 클라우드)']
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -33,6 +38,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -42,6 +48,8 @@ jobs:
       DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
 
       - uses: actions/setup-node@v5
         with:
@@ -64,13 +72,15 @@ jobs:
 
       - name: 배포본 만들기
         run: |
+          export BUILD_COMMIT="$(git rev-parse HEAD)"
+          echo "BUILD_COMMIT=$BUILD_COMMIT" >> "$GITHUB_ENV"
           v="$(node -p "require('./server/package.json').version")"
-          name="magoedu-cloud-server-$v-${GITHUB_SHA::7}.tar.gz"
+          name="magoedu-cloud-server-$v-${BUILD_COMMIT::7}.tar.gz"
           mkdir -p out/magoedu-cloud-server
           cp -r server/src server/public server/deploy out/magoedu-cloud-server/
           cp server/package.json server/catalog.default.json server/.env.example out/magoedu-cloud-server/
           cp -r launcher/src/renderer out/magoedu-cloud-server/web
-          node -e "require('fs').writeFileSync('out/magoedu-cloud-server/build.json', JSON.stringify({ version: process.argv[1], commit: process.env.GITHUB_SHA, builtAt: Date.now() }))" "$v"
+          node -e "require('fs').writeFileSync('out/magoedu-cloud-server/build.json', JSON.stringify({ version: process.argv[1], commit: process.env.BUILD_COMMIT, builtAt: Date.now() }))" "$v"
           tar -czf "out/$name" -C out magoedu-cloud-server
           sha="$(sha256sum "out/$name" | awk '{print $1}')"
           {
@@ -120,11 +130,11 @@ jobs:
         run: |
           {
             echo "### 서버 배포 완료"
-            echo "- 버전: $VERSION (${GITHUB_SHA::7})"
+            echo "- 버전: $VERSION (${BUILD_COMMIT::7})"
             echo "- 배포본: $TARBALL_NAME"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$SERVER_URL" ]; then
-            if curl -fsS -m 15 "$SERVER_URL/api/meta" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const m=JSON.parse(s);console.log('- 확인:',m.version,m.build&&m.build.commit&&m.build.commit.slice(0,7));process.exit(m.build&&m.build.commit===process.env.GITHUB_SHA?0:1)})" >> "$GITHUB_STEP_SUMMARY"; then
+            if curl -fsS -m 15 "$SERVER_URL/api/meta" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const m=JSON.parse(s);console.log('- 확인:',m.version,m.build&&m.build.commit&&m.build.commit.slice(0,7));process.exit(m.build&&m.build.commit===process.env.BUILD_COMMIT?0:1)})" >> "$GITHUB_STEP_SUMMARY"; then
               echo "공개 주소에서도 새 버전을 확인했어요."
             else
               echo "::warning::$SERVER_URL 에서 새 버전을 확인하지 못했어요. (프록시·방화벽 확인)"

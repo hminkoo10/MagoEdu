@@ -76,6 +76,16 @@ test('웹 화면: 앱 화면 코드를 그대로 내보냄', async (t) => {
     assert.match(css.headers.get('content-type'), /^text\/css/);
   });
 
+  await t.test('업데이트 내역은 앱과 같은 정적 JSON (인증·외부 조회 없이)', async () => {
+    const r = await rq('GET', '/release-notes.json');
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^application\/json/);
+    assert.equal(r.headers.get('cache-control'), 'private, no-cache');
+    const source = JSON.parse(fs.readFileSync(path.join(__dirname, '../../launcher/src/renderer/release-notes.json'), 'utf8'));
+    assert.deepEqual(r.data, source);
+    assert.equal((await fetch(s.base + '/release-notes.json', { method: 'HEAD' })).status, 200);
+  });
+
   await t.test('로고와 파비콘 모두 손글씨 ‘클라우드’ 앱 아이콘', async () => {
     const web = path.join(__dirname, '..', '..', 'launcher', 'src', 'renderer');
     const page = (await rq('GET', '/')).data.toString('utf8');
@@ -158,4 +168,16 @@ test('웹 화면이 없으면 지금처럼 내려받기 안내 페이지', async
   assert.ok(!html.includes('js/app.js'));
   assert.ok(html.includes('translate(137 262)'), '로고는 ‘마고’ 글자가 있는 앱 아이콘');
   assert.equal(r.headers.get('x-frame-options'), 'DENY');
+});
+
+test('배포본 web 폴더에도 같은 업데이트 내역 포함', async (t) => {
+  const webDir = fs.mkdtempSync(path.join(os.tmpdir(), 'magoedu-notes-web-'));
+  const source = path.join(__dirname, '../../launcher/src/renderer/release-notes.json');
+  fs.writeFileSync(path.join(webDir, 'index.html'), '<!doctype html><title>웹</title>');
+  fs.copyFileSync(source, path.join(webDir, 'release-notes.json'));
+  const s = await startServer({ webDir });
+  t.after(async () => { await s.close(); fs.rmSync(webDir, { recursive: true, force: true }); });
+  const r = await s.request('GET', '/release-notes.json');
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data, JSON.parse(fs.readFileSync(source, 'utf8')));
 });

@@ -58,7 +58,7 @@ async function exercise(rendererUrl) {
     }
   };
   layout();
-  assert(settings().querySelector('.row-desc').textContent === '1.1.0 설치 준비 완료 · 켜진 프로그램이 없고 창이 닫혀 있을 때 알아서 설치해요.', '기존 준비 문구 유지');
+  assert(settings().querySelector('.row-desc').textContent === '1.1.0 설치 준비 완료', '준비 문구');
   const { icon } = await import(`${rendererUrl}js/icons.js`);
   const expectedIcon = document.createElement('div');
   expectedIcon.innerHTML = icon('download', 16);

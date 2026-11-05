@@ -270,6 +270,7 @@ function handle(channel, fn) {
 
 function registerIpc() {
   handle('state:get', () => cloud.snapshot());
+  handle('releaseNotes:get', () => readJsonSync(path.join(ROOT, 'src', 'renderer', 'release-notes.json'), null));
   handle('server:set', (url) => cloud.setServer(url));
   handle('auth:login', (u, p) => cloud.login(u, p));
   handle('auth:checkCode', (code) => cloud.checkCode(code));

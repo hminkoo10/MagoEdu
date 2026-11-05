@@ -40,6 +40,7 @@ function viewFixture(file, name, toastMessages = []) {
     .replace(/^import .*;\r?\n/gm, '').replace(`export class ${name}`, `class ${name}`);
   const View = vm.runInNewContext(`${source}\n${name}`, {
     h: element, ic: () => element('icon'), btn: () => element('button'),
+    releaseNotesButton: () => element('button'),
     input: (attrs) => { const el = element('input', attrs); inputs.push(el); return el; },
     toggle: () => element('toggle'), pill: () => element('pill'),
     put: (el, ...children) => { el.children = children; }, reveal() {}, ago: () => '방금',

@@ -161,6 +161,12 @@ docker compose up -d
 
 ## 개발
 
+### 통합 클라우드 업데이트 내역
+
+- 사용자에게 달라지는 점은 매번 `launcher/src/renderer/release-notes.json`의 `next`에 한두 문장씩 추가해요. 버전 번호를 미리 정하지 말고, 개발 용어 없이 ‘~해요’ 말투로 적어요.
+- 자동 릴리스가 버전을 정한 뒤 `next`를 그 버전의 `releases`로 옮기고 비워요. 같은 문장을 GitHub 릴리스 설명에도 써요. `next`가 비면 기존 설명 입력·커밋 제목 방식을 유지해요.
+- PC는 `build.files`의 `src/**/*`에 포함된 파일을 읽고, 웹은 같은 파일을 `/release-notes.json`으로 읽어요. `next`는 화면에 보이지 않아요. 릴리스 성공 뒤 서버 배포도 다시 실행해 버전이 붙은 내역을 반영해요.
+
 | 위치 | 명령 | 내용 |
 | --- | --- | --- |
 | `server` | `npm start` | 서버 켜기 (`server/.env` 읽음, 개발용). `launcher/src/renderer` 를 웹 버전으로 내보내요 (글꼴은 `launcher` 에서 `npm install` 한 번) |

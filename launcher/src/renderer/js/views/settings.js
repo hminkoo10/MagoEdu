@@ -2,6 +2,7 @@
 import { h, ic, btn, busy, toast, dialog, field, input, toggle, pill, ago, put } from '../ui.js';
 import { openInApp } from './home.js';
 import { updateInstallButton } from '../update-install.js';
+import { releaseNotesButton } from '../release-notes.js';
 
 function row(title, desc, right) {
   return h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, title), desc ? h('div', { class: 'row-desc' }, desc) : null), right);
@@ -113,7 +114,7 @@ export class SettingsView {
             'div',
             { class: 'card' },
             h('h2', { class: 'card-title' }, '정보'),
-            row('서비스', '마고에듀 통합 클라우드 (웹)', h('span', { class: 'muted' }, `버전 ${s.version}`)),
+            row('서비스', '마고에듀 통합 클라우드 (웹)', h('div', { class: 'version-actions' }, h('span', { class: 'muted' }, `버전 ${s.version}`), releaseNotesButton(this.cloud))),
             row('만든 사람', null, h('span', { style: { fontWeight: 600 } }, '구현민')),
           ),
         ),
@@ -143,7 +144,7 @@ export class SettingsView {
         right = h('span', { class: 'spinner' });
         break;
       case 'ready':
-        desc = `${u.version} 설치 준비 완료 · 켜진 프로그램이 없고 창이 닫혀 있을 때 알아서 설치해요.`;
+        desc = `${u.version} 설치 준비 완료`;
         right = updateInstallButton(this.cloud, this.store);
         break;
       case 'installing':
@@ -165,7 +166,7 @@ export class SettingsView {
       right = btn('확인', { size: 'sm', iconName: 'refresh' });
       right.addEventListener('click', () => busy(right, () => this.cloud.checkUpdate()));
     }
-    put(this.updRow, row(`통합 클라우드 ${s.version}`, desc, right || h('span')));
+    put(this.updRow, row(`통합 클라우드 ${s.version}`, desc, h('div', { class: 'version-actions' }, right, releaseNotesButton(this.cloud))));
   }
 
   async changeServer() {

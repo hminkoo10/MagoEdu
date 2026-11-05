@@ -435,14 +435,14 @@ function joinView({ code, verified } = {}) {
     history.replaceState(null, '', '#/home');
     render(true);
   } });
-  return authFrame(authHead('학생 계정 만들기', '선생님께 받은 초대로 내 계정을 만들어요.'), view.el);
+  return authFrame(authHead('학생 계정 만들기'), view.el);
 }
 
 function signupView() {
   let step = 1;
   let codeInfo = null;
   const code = input({ cls: 'lg mono', placeholder: '받은 가입 코드', autocomplete: 'off' });
-  const head = authHead('가입 코드 확인', '받은 코드를 넣어 주세요.');
+  const head = authHead('가입 코드 확인', '학원과 원장 계정을 만들어요.');
   const academy = input({ placeholder: '예: 마고수학학원' });
   const name = input({ placeholder: '예: 홍길동' });
   const username = input({ placeholder: '영어 소문자·숫자 3자 이상' });
@@ -462,13 +462,14 @@ function signupView() {
     steps.children[1].classList.toggle('on', step === 2);
     if (step === 1) {
       head.querySelector('h1').textContent = '가입 코드 확인';
-      head.querySelector('p').textContent = '받은 코드를 넣어 주세요.';
+      head.querySelector('p').style.display = 'none'; // 제목만으로 충분
       put(body, field('가입 코드', code));
       nextLabel.textContent = '다음';
       setTimeout(() => code.focus(), 30);
     } else {
       head.querySelector('h1').textContent = '원장 가입';
       head.querySelector('p').textContent = '학원과 원장 계정을 만들어요.';
+      head.querySelector('p').style.display = '';
       academy.disabled = false;
       if (codeInfo.academyName) {
         academy.value = codeInfo.academyName;
