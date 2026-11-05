@@ -1,7 +1,7 @@
 {
   "name": "magoedu-cloud",
   "productName": "MagoEduCloud",
-  "version": "1.2.15",
+  "version": "1.2.16",
   "description": "마고에듀 통합 클라우드 - 학원 프로그램을 한곳에서 설치·실행·업데이트하고 계정별로 데이터를 동기화",
   "main": "src/main/main.js",
   "author": "구현민",
