@@ -572,14 +572,14 @@ class Cloud extends EventEmitter {
     await fsp.mkdir(dir, { recursive: true });
     await Promise.all(
       this.apps.map(async (a) => {
-        if (this.icons[a.id] && this._iconFresh?.[a.id]) return;
+        if (this.icons[a.id] && this._iconFresh?.[a.id] === a.iconUrl) return;
         try {
           const res = await fetch(`${this.api.serverUrl}${a.iconUrl}`, { signal: AbortSignal.timeout(10000) });
           if (!res.ok) return;
           const buf = Buffer.from(await res.arrayBuffer());
           const type = res.headers.get('content-type') || 'image/png';
           this.icons[a.id] = `data:${type};base64,${buf.toString('base64')}`;
-          this._iconFresh = { ...(this._iconFresh || {}), [a.id]: true };
+          this._iconFresh = { ...(this._iconFresh || {}), [a.id]: a.iconUrl };
         } catch {
           /* 아이콘 없이 */
         }

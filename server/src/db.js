@@ -16,7 +16,7 @@ const MAGO_NAVI = {
   name: '마고 과목내비',
   description: '학생마다 희망 학과·대학에 맞춰 고교 선택과목을 짜 주는 웹 프로그램',
   color: '#0F9D8A',
-  icon: 'https://raw.githubusercontent.com/hminkoo10/mago-navi/main/public/icon-512.png',
+  icon: 'https://raw.githubusercontent.com/hminkoo10/mago-navi/main/desktop/build/icon.png',
   source: { type: 'web', url: 'https://magonavi.milky.kr' },
 };
 const MAGO_NAVI_PC = {
@@ -345,6 +345,13 @@ const MIGRATIONS = [
   `
   ALTER TABLE academies ADD COLUMN subjects TEXT NOT NULL DEFAULT '["math"]';
   ALTER TABLE signup_codes ADD COLUMN subjects TEXT NOT NULL DEFAULT '["math"]';
+  `,
+
+  // 10: 과목내비 웹·PC 목록의 옛 초록 로고 → 실제 PC 앱 로고 (운영자 지정 주소는 보존)
+  `
+  UPDATE apps SET icon_url = '${MAGO_NAVI.icon}'
+  WHERE id IN ('mago-navi', 'mago-navi-pc')
+    AND icon_url = 'https://raw.githubusercontent.com/hminkoo10/mago-navi/main/public/icon-512.png';
   `,
 ];
 

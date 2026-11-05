@@ -53,7 +53,7 @@
     "enabled": false,
     "color": "#0F9D8A",
     "source": { "type": "web", "url": "https://magonavi.milky.kr" },
-    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/mago-navi/main/public/icon-512.png",
+    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/mago-navi/main/desktop/build/icon.png",
     "exe": "",
     "coldStorage": { "enabled": false, "days": 30 },
     "autoLaunchDefault": false
@@ -69,7 +69,7 @@
       "repo": "hminkoo10/mago-navi",
       "asset": "^MagoNavi-(\\d+\\.\\d+\\.\\d+)-win-x64\\.zip$"
     },
-    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/mago-navi/main/public/icon-512.png",
+    "iconUrl": "https://raw.githubusercontent.com/hminkoo10/mago-navi/main/desktop/build/icon.png",
     "exe": "MagoNavi.exe",
     "coldStorage": { "enabled": false, "days": 30 },
     "autoLaunchDefault": false

@@ -1,6 +1,11 @@
 import { h, ic, btn, busy, toast, field, input, passwordInput, pill, date, put } from '../ui.js';
 import { downloadBlob } from '../student-accounts.js';
 
+// 학생은 웹 전용. 공개 아이콘 경로로 카탈로그의 원본을 쓰며 프로그램 목록 권한은 필요 없다.
+function naviIcon(size) {
+  return h('img', { src: '/api/apps/mago-navi/icon?logo=pc', alt: '', width: size, height: size, style: { flex: 'none' } });
+}
+
 export class StudentNotesView {
   constructor({ cloud }) {
     this.cloud = cloud;
@@ -72,7 +77,7 @@ export class StudentNaviView {
     this.el = h('div', {},
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '마고 과목내비'), h('div', { class: 'subtitle' }, '설치 없이 웹에서 내 과목과 진로를 살펴봐요.'))),
       h('div', { class: 'apps-grid' }, h('div', { class: 'app-card' },
-        h('div', { class: 'app-head' }, h('div', { class: 'app-icon' }, ic('graduationCap', 32)), h('div', {}, h('div', { class: 'app-name' }, '마고 과목내비'), h('div', { class: 'app-ver' }, '웹 프로그램'))),
+        h('div', { class: 'app-head' }, h('div', { class: 'app-icon', style: { background: '#fff' } }, naviIcon(56)), h('div', {}, h('div', { class: 'app-name' }, '마고 과목내비'), h('div', { class: 'app-ver' }, '웹 프로그램'))),
         h('div', { class: 'app-desc' }, user.aiMode === 'teacher' ? `담당 선생님 키를 써요.${user.student?.teacherName ? ` 담당: ${user.student.teacherName} 선생님` : ''}` : '학원 AI를 써요.'),
         h('div', { class: 'app-foot' }, h('div', { class: 'sync' }, ic('globe', 15), '새 탭에서 열어요'), open),
       )),

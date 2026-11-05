@@ -50,6 +50,15 @@ function contentDisposition(name) {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
+// 원본 주소가 바뀌면 서버 파일과 브라우저 응답 모두 옛 그림을 재사용하지 않는다.
+function iconCacheKey(app) {
+  return `${app.id}-${crypto.createHash('sha256').update(app.iconUrl || '').digest('hex').slice(0, 16)}`;
+}
+
+function iconPath(app) {
+  return `/api/apps/${app.id}/icon?v=${iconCacheKey(app)}`;
+}
+
 function rowToApp(r) {
   return {
     id: r.id,
@@ -612,7 +621,7 @@ class Catalog {
 
   // ---------------- 아이콘 ----------------
   async icon(app) {
-    const cached = path.join(this.iconsDir, app.id);
+    const cached = path.join(this.iconsDir, iconCacheKey(app));
     // 운영자가 직접 넣은 그림이 있으면 그것을 쓴다: icons/<id>.png
     for (const ext of ['.png', '.ico', '.svg']) {
       const f = path.join(this.iconsDir, `${app.id}${ext}`);
@@ -646,4 +655,4 @@ function sniffImageType(buf) {
   return 'application/octet-stream';
 }
 
-module.exports = { Catalog, publicRelease, sniffImageType, SHA_RE, LAUNCHER_SETUP_RE, PLATFORMS, APK_TYPE };
+module.exports = { Catalog, publicRelease, sniffImageType, iconPath, SHA_RE, LAUNCHER_SETUP_RE, PLATFORMS, APK_TYPE };

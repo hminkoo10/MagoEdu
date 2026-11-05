@@ -239,6 +239,11 @@ if (!process.versions.electron) {
     await run('마고 과목내비: 웹 카드만, 프로그램 목록 요청 없음', async () => {
       const { StudentNaviView } = await import('./js/views/student.js');
       mount(new StudentNaviView({ cloud, store: { state } }));
+      const logo = document.querySelector('.app-icon img');
+      ok(logo, '학생 카드도 카탈로그의 앱 로고');
+      equal(logo.getAttribute('src'), '/api/apps/mago-navi/icon?logo=pc');
+      equal(getComputedStyle(document.querySelector('.app-icon')).width, '56px');
+      equal(getComputedStyle(document.querySelector('.app-name')).fontSize, '17px');
       button('열기').click(); await tick();
       equal(calls, [['external', 'https://magonavi.milky.kr']]);
       ok(!document.getElementById('root').textContent.includes('PC에 설치'));

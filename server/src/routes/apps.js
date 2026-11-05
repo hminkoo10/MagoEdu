@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const { readJson, sendJson, send } = require('../http');
 const { HttpError, bad, forbidden, notFound, intOr, str, randomToken, compareVersions } = require('../util');
 const { signTicket } = require('../security');
-const { publicRelease, sniffImageType, PLATFORMS } = require('../catalog');
+const { publicRelease, sniffImageType, iconPath, PLATFORMS } = require('../catalog');
 
 const APP_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
 const RESERVED_IDS = ['events']; // /api/sync/events 와 겹침
@@ -49,7 +49,7 @@ function register(router, deps) {
       color: app.color,
       platform: app.platform,
       url: app.url,
-      iconUrl: `/api/apps/${app.id}/icon`,
+      iconUrl: iconPath(app),
       exe: app.exe,
       autoLaunchDefault: app.autoLaunchDefault,
       coldStorage: app.coldStorage,
@@ -153,7 +153,7 @@ function register(router, deps) {
 
   // ---------------- 운영자: 프로그램 관리 ----------------
   function adminView(app) {
-    return { ...app, release: publicRelease(app.release), iconPath: `/api/apps/${app.id}/icon` };
+    return { ...app, release: publicRelease(app.release), iconPath: iconPath(app) };
   }
 
   function parseApp(body, existing) {
