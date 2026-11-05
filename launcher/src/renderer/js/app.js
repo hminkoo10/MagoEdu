@@ -418,9 +418,9 @@ function loginView() {
       onClick: () => dialog({
         title: '비밀번호를 잊었어요',
         body: h('div', { class: 'dialog-sub' },
-          h('div', {}, "선생님: 원장님께 '비밀번호 초기화'를 부탁해 주세요."),
-          h('div', {}, '원장님: 운영자에게 연락해 주세요.'),
-          h('div', {}, '학생: 담당 선생님께 말해 주세요. 선생님이 학생 명단에서 새 비밀번호를 만들어 드려요.'),
+          h('div', {}, '선생님: 원장님께 비밀번호 초기화를 요청하세요.'),
+          h('div', {}, '원장님: 운영자에게 문의하세요.'),
+          h('div', {}, '학생: 담당 선생님께 비밀번호 초기화를 요청하세요.'),
         ),
         ok: '확인',
         cancel: null,
@@ -444,7 +444,7 @@ function signupView() {
   let step = 1;
   let codeInfo = null;
   const code = input({ cls: 'lg mono', placeholder: '받은 가입 코드', autocomplete: 'off' });
-  const head = authHead('가입 코드 확인', '학원과 원장 계정을 만들어요.');
+  const head = authHead('가입 코드 확인', '새 학원이 만들어져요.');
   const academy = input({ placeholder: '예: 마고수학학원' });
   const name = input({ placeholder: '예: 홍길동' });
   const username = input({ placeholder: '영어 소문자·숫자 3자 이상' });
@@ -470,7 +470,7 @@ function signupView() {
       setTimeout(() => code.focus(), 30);
     } else {
       head.querySelector('h1').textContent = '원장 가입';
-      head.querySelector('p').textContent = '학원과 원장 계정을 만들어요.';
+      head.querySelector('p').textContent = '새 학원이 만들어져요.';
       head.querySelector('p').style.display = '';
       academy.disabled = false;
       if (codeInfo.academyName) {
@@ -480,7 +480,7 @@ function signupView() {
       put(body, 
         field('학원 이름', academy),
         field('이름', name),
-        field('아이디', username, '로그인할 때 쓰는 아이디예요. 나중에 바꿀 수 있어요.'),
+        field('아이디', username),
         field('비밀번호', pw),
         field('비밀번호 확인', pw2),
       );
@@ -510,7 +510,7 @@ function signupView() {
         }
         if (pw.input.value !== pw2.input.value) throw new Error('비밀번호가 서로 달라요.');
         await cloud.signup({ code: code.value.trim(), academyName: academy.value, name: name.value, username: username.value, password: pw.input.value });
-        toast('가입을 완료했습니다', 'success');
+        toast('가입했어요', 'success');
       } catch (e) {
         showErr(errorText(e));
       }

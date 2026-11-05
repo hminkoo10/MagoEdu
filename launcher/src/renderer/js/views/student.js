@@ -99,7 +99,7 @@ export class StudentJoinView {
     let checkedCode = null;
     const showAccount = (r, value) => {
       checkedCode = value;
-      put(info, h('div', { class: 'note', style: { margin: '16px 0' } }, `${r.academyName} · ${r.studentName} 학생이 맞는지 확인해 주세요.`));
+      put(info, h('div', { class: 'note', style: { margin: '16px 0' } }, `${r.academyName} · ${r.studentName} 학생이 맞는지 확인하세요.`));
       fields.style.display = '';
       join.disabled = false;
     };
@@ -122,13 +122,13 @@ export class StudentJoinView {
     join.addEventListener('click', () => busy(join, async () => {
       error.style.display = 'none';
       try {
-        if (!checkedCode || checkedCode !== invite.value.trim()) throw new Error('초대 코드를 먼저 확인해 주세요.');
+        if (!checkedCode || checkedCode !== invite.value.trim()) throw new Error('초대 코드를 먼저 확인하세요.');
         if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username.value.trim())) throw new Error('아이디는 영문 소문자·숫자로 시작하고, 영문 소문자·숫자·._-로 3~32자를 넣어 주세요.');
         if (password.input.value.length < 6) throw new Error('비밀번호는 6자 이상 넣어 주세요.');
         if (password.input.value !== again.input.value) throw new Error('비밀번호가 서로 달라요.');
         await cloud.joinStudent({ code: checkedCode, username: username.value.trim(), password: password.input.value });
         password.input.value = again.input.value = '';
-        toast('가입했어요. 내 오답노트에서 시작해요.', 'success');
+        toast('가입했어요.', 'success');
       } catch (e) { showError(e); }
     }));
     this.el = h('div', {}, verified ? null : [field('학생 초대 코드', invite), check], info, fields, error, h('div', { style: { height: '20px' } }), join,

@@ -211,9 +211,9 @@ if (!process.versions.electron) {
       button('비밀번호를 잊었어요').click();
       equal(topDialog().querySelector('.dialog-title').textContent, '비밀번호를 잊었어요');
       equal([...topDialog().querySelector('.dialog-sub').children].map((el) => el.textContent), [
-        "선생님: 원장님께 '비밀번호 초기화'를 부탁해 주세요.",
-        '원장님: 운영자에게 연락해 주세요.',
-        '학생: 담당 선생님께 말해 주세요. 선생님이 학생 명단에서 새 비밀번호를 만들어 드려요.',
+        '선생님: 원장님께 비밀번호 초기화를 요청하세요.',
+        '원장님: 운영자에게 문의하세요.',
+        '학생: 담당 선생님께 비밀번호 초기화를 요청하세요.',
       ]);
       ok(!button('취소', topDialog()));
       button('확인', topDialog()).click();
