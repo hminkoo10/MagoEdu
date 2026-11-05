@@ -200,7 +200,7 @@ if (!process.versions.electron) {
       }
       state.phase = 'setup'; onState(state);
       ok(document.body.textContent.includes('서버 연결'));
-      button('사용 설명서 보기').click();
+      button('처음이세요? 사용 설명서 보기').click();
       equal(calls.at(-1), ['external', 'https://mago.milky.kr/help/']);
     });
     await run('비밀번호 안내: 역할별 세 줄·확인으로 닫기', async () => {
