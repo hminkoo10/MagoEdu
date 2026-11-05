@@ -4,12 +4,11 @@
 
 const crypto = require('node:crypto');
 const { readJson } = require('../http');
-const { DAY, HttpError, bad, notFound, intOr, normalizeUsername, validatePassword, randomPassword, randomToken, sha256Hex } = require('../util');
-const { hashPassword, RateLimiter } = require('../security');
+const { DAY, bad, notFound, intOr, normalizeUsername, validatePassword, randomPassword, randomToken, sha256Hex } = require('../util');
+const { hashPassword } = require('../security');
 
 function register(router, deps) {
-  const { db, svc, events } = deps;
-  const joinLimit = new RateLimiter({ max: 20, windowMs: 10 * 60 * 1000 });
+  const { db, svc, events, joinCodes } = deps;
 
   function who(ctx, codeOnly = false) {
     const user = svc.requireRole(ctx, ...(codeOnly ? ['admin', 'director'] : ['admin', 'director', 'teacher']));
@@ -196,16 +195,9 @@ function register(router, deps) {
   });
 
   function invite(ctx, code) {
-    const wait = joinLimit.blocked(ctx.ip);
-    if (wait) throw new HttpError(429, '너무 여러 번 시도했어요. 잠시 뒤 다시 해요.', 'rate_limited', { retryAfter: wait });
-    const i = db.get(`SELECT i.*, a.name AS academy_name, s.name AS student_name FROM student_invites i
-      JOIN academies a ON a.id = i.academy_id JOIN students s ON s.id = i.student_id AND s.academy_id = i.academy_id
-      WHERE i.code_hash = ? AND i.used_at IS NULL AND i.expires_at > ? AND s.deleted_at IS NULL AND s.purged_at IS NULL
-      AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = s.id)`, sha256Hex(String(code || '')), Date.now());
-    if (!i) {
-      joinLimit.hit(ctx.ip);
-      throw notFound('초대 코드가 맞지 않거나 기간이 지났어요.', 'invalid_code');
-    }
+    joinCodes.check(ctx.ip);
+    const i = joinCodes.student(code);
+    if (!i) joinCodes.invalid(ctx.ip);
     return i;
   }
 

@@ -13,7 +13,7 @@ export class CodesView {
       h(
         'div',
         { class: 'page-head' },
-        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '원장 가입 코드'), h('div', { class: 'subtitle' }, '코드를 만들어 원장님께 드리면, 통합 클라우드에서 ‘원장 가입 코드가 있어요’로 직접 가입해요.')),
+        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '원장 가입 코드'), h('div', { class: 'subtitle' }, '코드를 만들어 원장님께 드리면, 통합 클라우드에서 ‘가입 코드가 있어요’로 직접 가입해요.')),
         h('div', { class: 'right' }, btn('코드 만들기', { variant: 'primary', iconName: 'plus', onClick: () => this.create() })),
       ),
       this.table,

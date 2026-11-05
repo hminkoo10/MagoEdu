@@ -107,6 +107,56 @@ if (!process.versions.electron) {
       button('로그인').click(); await tick();
       ok(document.body.textContent.includes('학생 계정은 인터넷 브라우저에서 https://local.test 에 들어가서 써요.'));
     });
+    await run('로그인 링크: 웹은 세 줄·도움말 한 줄·PC에는 내려받기 없음', async () => {
+      state.phase = 'login'; state.user = null; state.launcher = { version: '1.0.0' };
+      const { store } = await import('./js/app.js');
+      await until(() => button('가입 코드가 있어요'));
+      equal(document.querySelectorAll('.auth-card > .auth-links').length, 3);
+      equal([...document.querySelector('.auth-support').children].map((el) => el.textContent), ['비밀번호를 잊었어요', '사용 설명서']);
+      ok(!button('원장 가입 코드가 있어요') && !button('학생 초대 코드가 있어요'));
+      state.web = false; store.state = state;
+      state.phase = 'setup'; onState(state); state.phase = 'login'; onState(state);
+      equal(document.querySelectorAll('.auth-card > .auth-links').length, 2);
+      ok(!document.querySelector('a[href="/download/launcher"]'));
+    });
+    await run('통합 코드: 원장 다음 단계·코드 변경 중 응답 무시·오류 문구', async () => {
+      state.phase = 'login'; state.user = null;
+      let resolve;
+      cloud.checkCode = (code) => { calls.push(['code', code]); return new Promise((r) => { resolve = r; }); };
+      await import('./js/app.js'); await until(() => button('가입 코드가 있어요'));
+      button('가입 코드가 있어요').click();
+      const code = document.querySelector('.auth-card input'); code.value = 'old'; button('다음').click();
+      code.value = 'new'; resolve({ role: 'director', academyName: '이전 학원' }); await tick();
+      equal(document.querySelector('.auth-head h1').textContent, '가입 코드 확인');
+      button('다음').click(); resolve({ role: 'director', academyName: '새 학원' }); await tick();
+      equal(document.querySelector('.auth-head h1').textContent, '원장 가입');
+      equal(document.querySelector('.auth-card input').value, '새 학원');
+      ok(button('가입하기'));
+      button('로그인으로 돌아가기').click();
+      cloud.checkCode = async () => { throw new Error('코드를 다시 확인해 주세요'); };
+      button('다음').click(); await tick();
+      equal(document.querySelector('.error-text').textContent, '코드를 다시 확인해 주세요');
+    });
+    await run('통합 코드: 학생은 확인 중복 없이 계정 입력·PC는 웹 초대 주소', async () => {
+      state.phase = 'login'; state.user = null;
+      cloud.checkCode = async () => ({ role: 'student', academyName: '마고학원', studentName: '김학생' });
+      cloud.checkStudentInvite = async () => { throw new Error('이미 확인한 코드를 다시 조회함'); };
+      cloud.joinStudent = async (body) => calls.push(['join', body]);
+      await import('./js/app.js'); await until(() => button('가입 코드가 있어요'));
+      button('가입 코드가 있어요').click(); document.querySelector('.auth-card input').value = 'invite/one'; button('다음').click();
+      await until(() => button('가입하기'));
+      equal(document.querySelector('.auth-head h1').textContent, '학생 계정 만들기');
+      ok(document.body.textContent.includes('마고학원 · 김학생'));
+      ok(!button('초대 확인'));
+      const inputs = document.querySelectorAll('.auth-card input');
+      inputs[0].value = 'student01'; inputs[1].value = inputs[2].value = 'secret12'; button('가입하기').click();
+      await until(() => calls.some((c) => c[0] === 'join'));
+      equal(calls.find((c) => c[0] === 'join')[1], { code: 'invite/one', username: 'student01', password: 'secret12' });
+      state.web = false; button('로그인으로 돌아가기').click();
+      button('가입 코드가 있어요').click(); document.querySelector('.auth-card input').value = 'invite/one'; button('다음').click();
+      await until(() => calls.some((c) => c[0] === 'external'));
+      equal(calls.at(-1), ['external', 'https://local.test/#/join?code=invite%2Fone']);
+    });
     await run('도움말: 역할별 메뉴 위치·외부 주소·현재 화면 유지', async () => {
       history.replaceState(null, '', '#/account');
       await import('./js/app.js');
@@ -135,7 +185,7 @@ if (!process.versions.electron) {
     await run('로그인 도움말: 앱·웹 주소 우선순위와 서버 설정 전 기본 주소', async () => {
       state.phase = 'login'; state.user = null;
       await import('./js/app.js');
-      await until(() => button('처음이세요? 사용 설명서 보기'));
+      await until(() => button('사용 설명서'));
       for (const web of [true, false]) {
         state.web = web;
         for (const [config, base] of [
@@ -144,7 +194,7 @@ if (!process.versions.electron) {
           [{ serverUrl: '', defaultServerUrl: '' }, 'https://mago.milky.kr'],
         ]) {
           state.config = config;
-          button('처음이세요? 사용 설명서 보기').click();
+          button('사용 설명서').click();
           equal(calls.at(-1), ['external', `${base}/help/`]);
         }
       }

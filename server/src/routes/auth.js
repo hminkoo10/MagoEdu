@@ -8,10 +8,9 @@ const { HttpError, bad, notFound, normalizeUsername, validatePassword, validateN
 const { hashPassword, verifyPassword, DUMMY_HASH, RateLimiter } = require('../security');
 
 function register(router, deps) {
-  const { db, svc } = deps;
+  const { db, svc, joinCodes } = deps;
   const loginLimit = new RateLimiter({ max: 8, windowMs: 10 * 60 * 1000 });
   const ipLimit = new RateLimiter({ max: 40, windowMs: 10 * 60 * 1000 });
-  const codeLimit = new RateLimiter({ max: 20, windowMs: 10 * 60 * 1000 });
 
   function limited(seconds) {
     const min = Math.max(1, Math.ceil(seconds / 60));
@@ -64,35 +63,21 @@ function register(router, deps) {
   });
 
   // ---------------- 가입 코드 ----------------
-  function findCode(code) {
-    const c = db.get('SELECT * FROM signup_codes WHERE code = ?', str(code, 40).toUpperCase());
-    if (!c || c.revoked) return { error: '가입 코드가 맞지 않아요.' };
-    if (c.expires_at && c.expires_at < Date.now()) return { error: '기간이 지난 가입 코드예요.' };
-    if (c.uses >= c.max_uses) return { error: '이미 다 사용한 가입 코드예요.' };
-    return { code: c };
-  }
-
   router.get('/api/auth/codes/:code', (ctx) => {
-    const wait = codeLimit.blocked(ctx.ip);
-    if (wait) throw limited(wait);
-    const found = findCode(ctx.params.code);
-    if (found.error) {
-      codeLimit.hit(ctx.ip);
-      throw notFound(found.error, 'invalid_code');
-    }
-    return { valid: true, role: found.code.role, academyName: found.code.academy_name || '' };
+    joinCodes.check(ctx.ip);
+    const director = joinCodes.director(ctx.params.code);
+    const student = joinCodes.student(ctx.params.code);
+    // 형식이 아니라 실제 유효성을 확인한다. 둘 다 유효하면 원장 코드 우선.
+    if (director) return { valid: true, role: director.role, academyName: director.academy_name || '' };
+    if (student) return { valid: true, role: 'student', academyName: student.academy_name, studentName: student.student_name };
+    joinCodes.invalid(ctx.ip);
   });
 
   router.post('/api/auth/signup', async (ctx) => {
     const body = await readJson(ctx.req);
-    const wait = codeLimit.blocked(ctx.ip);
-    if (wait) throw limited(wait);
-    const found = findCode(body.code);
-    if (found.error) {
-      codeLimit.hit(ctx.ip);
-      throw bad(found.error, 'invalid_code');
-    }
-    const code = found.code;
+    joinCodes.check(ctx.ip);
+    const code = joinCodes.director(body.code);
+    if (!code) joinCodes.invalid(ctx.ip, 400);
     const username = normalizeUsername(body.username);
     const password = validatePassword(body.password, username);
     const name = validateName(body.name);
@@ -104,7 +89,7 @@ function register(router, deps) {
     const user = db.tx(() => {
       // 다른 요청이 먼저 썼을 수 있으니 한 번 더 확인
       const fresh = db.get('SELECT uses, max_uses FROM signup_codes WHERE id = ?', code.id);
-      if (fresh.uses >= fresh.max_uses) throw bad('이미 다 사용한 가입 코드예요.', 'invalid_code');
+      if (fresh.uses >= fresh.max_uses) joinCodes.invalid(ctx.ip, 400);
       const academyId = db.run('INSERT INTO academies(name, subjects, created_at) VALUES (?, ?, ?)', academy, JSON.stringify(parseSubjects(code.subjects)), now).lastInsertRowid;
       const id = db.run(
         `INSERT INTO users(uid, username, name, role, academy_id, password_hash, created_by, created_at, updated_at, password_changed_at)

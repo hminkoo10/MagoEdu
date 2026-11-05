@@ -15,6 +15,7 @@ const { Catalog } = require('./catalog');
 const { createJobs } = require('./jobs');
 const { EventHub } = require('./events');
 const { createStudents } = require('./students');
+const { createJoinCodes } = require('./join-codes');
 
 const VERSION = require('../package.json').version;
 // 자동 배포 때 넣는 빌드 정보 (어느 커밋인지) — 배포 후 새 코드가 켜졌는지 확인하는 데 씀
@@ -98,6 +99,7 @@ function createCloudServer(config = loadConfig()) {
 
   const deps = {
     db,
+    joinCodes: createJoinCodes(db),
     svc,
     events,
     keys,

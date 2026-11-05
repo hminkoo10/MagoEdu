@@ -308,14 +308,20 @@ async function logoutFlow() {
 // ---------------------------------------------------------------- 로그인 전 화면
 function authFrame(...children) {
   const s = store.state;
+  const help = h('button', {
+    class: 'link',
+    onClick: () => cloud.openExternal(`${serverUrl()}/help/`).catch((e) => toast(e.message, 'error')),
+  }, '처음이세요? 사용 설명서 보기');
+  const support = children.find((el) => el?.classList?.contains('auth-support'));
+  if (support) {
+    help.textContent = '사용 설명서';
+    support.append(help);
+  }
   const card = h(
     'div',
     { class: 'auth-card' },
     ...children,
-    h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, h('button', {
-      class: 'link',
-      onClick: () => cloud.openExternal(`${serverUrl()}/help/`).catch((e) => toast(e.message, 'error')),
-    }, '처음이세요? 사용 설명서 보기')),
+    support ? null : h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, help),
     h('div', { class: 'auth-foot' }, `마고에듀 통합 클라우드 ${s.version} · 구현민 개발`),
   );
   const wrap = h('div', { class: 'auth' }, card);
@@ -382,9 +388,8 @@ function loginView() {
   })();
   const server = h('button', { class: 'link server-chip', title: s.config.serverUrl }, ic('server', 14), h('span', {}, host));
   server.addEventListener('click', () => mount(serverView({ back: () => render(true) })));
-  const signup = h('button', { class: 'link' }, '원장 가입 코드가 있어요');
+  const signup = h('button', { class: 'link' }, '가입 코드가 있어요');
   signup.addEventListener('click', () => mount(signupView()));
-  const studentJoin = s.web ? h('button', { class: 'link', onClick: () => { location.hash = '/join'; } }, '학생 초대 코드가 있어요') : null;
   // 웹: 서버 주소는 이 페이지 주소라 바꿀 수 없음, 대신 앱 내려받기
   const download =
     s.web && s.launcher
@@ -401,9 +406,8 @@ function loginView() {
     h('div', { style: { height: '20px' } }),
     go,
     s.web ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, signup) : h('div', { class: 'auth-links' }, signup, server),
-    studentJoin ? h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, studentJoin) : null,
     download,
-    h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, h('button', {
+    h('div', { class: 'auth-links auth-support' }, h('button', {
       class: 'link',
       onClick: () => dialog({
         title: '비밀번호를 잊었어요',
@@ -421,19 +425,20 @@ function loginView() {
   return view;
 }
 
-function joinView() {
+function joinView({ code, verified } = {}) {
   const query = new URLSearchParams(location.hash.split('?')[1] || '');
-  const view = new StudentJoinView({ cloud, code: query.get('code') || '', back: () => {
+  const view = new StudentJoinView({ cloud, code: code ?? query.get('code') ?? '', verified, back: () => {
     history.replaceState(null, '', '#/home');
     render(true);
   } });
-  return authFrame(authHead('학생 가입', '선생님께 받은 초대로 내 계정을 만들어요.'), view.el);
+  return authFrame(authHead('학생 계정 만들기', '선생님께 받은 초대로 내 계정을 만들어요.'), view.el);
 }
 
 function signupView() {
   let step = 1;
   let codeInfo = null;
-  const code = input({ cls: 'lg mono', placeholder: 'MAGO-XXXX-XXXX' });
+  const code = input({ cls: 'lg mono', placeholder: '받은 가입 코드', autocomplete: 'off' });
+  const head = authHead('가입 코드 확인', '받은 코드를 넣어 주세요.');
   const academy = input({ placeholder: '예: 마고수학학원' });
   const name = input({ placeholder: '예: 홍길동' });
   const username = input({ placeholder: '영어 소문자·숫자 3자 이상' });
@@ -452,10 +457,15 @@ function signupView() {
   const renderStep = () => {
     steps.children[1].classList.toggle('on', step === 2);
     if (step === 1) {
-      put(body, field('가입 코드', code, '운영자에게 받은 원장 가입 코드를 넣어 주세요.'));
+      head.querySelector('h1').textContent = '가입 코드 확인';
+      head.querySelector('p').textContent = '받은 코드를 넣어 주세요.';
+      put(body, field('가입 코드', code));
       nextLabel.textContent = '다음';
       setTimeout(() => code.focus(), 30);
     } else {
+      head.querySelector('h1').textContent = '원장 가입';
+      head.querySelector('p').textContent = '학원과 원장 계정을 만들어요.';
+      academy.disabled = false;
       if (codeInfo.academyName) {
         academy.value = codeInfo.academyName;
         academy.disabled = true;
@@ -478,7 +488,15 @@ function signupView() {
       showErr('');
       try {
         if (step === 1) {
-          codeInfo = await cloud.checkCode(code.value.trim());
+          const value = code.value.trim();
+          if (!value) throw new Error('코드를 다시 확인해 주세요');
+          codeInfo = await cloud.checkCode(value);
+          if (value !== code.value.trim()) return;
+          if (codeInfo.role === 'student') {
+            if (store.state.web) mount(joinView({ code: value, verified: codeInfo }));
+            else await cloud.openExternal(`${serverUrl()}/#/join?code=${encodeURIComponent(value)}`);
+            return;
+          }
           step = 2;
           renderStep();
           return;
@@ -500,7 +518,7 @@ function signupView() {
     } else render(true);
   });
   renderStep();
-  return authFrame(authHead('원장 가입', '가입하면 학원과 원장 계정이 만들어지고, 선생님 계정을 직접 만들 수 있어요.'), steps, body, err, h('div', { style: { height: '20px' } }), next, h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, back));
+  return authFrame(head, steps, body, err, h('div', { style: { height: '20px' } }), next, h('div', { class: 'auth-links', style: { justifyContent: 'center' } }, back));
 }
 
 // 처음 받은 비밀번호는 로그인하자마자 바꾸게 한다

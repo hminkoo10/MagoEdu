@@ -376,6 +376,8 @@ select.input {
 .auth-head h1 { font-size: 22px; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
 .auth-head p { margin: 6px 0 0; color: var(--grey600); font-size: 14px; }
 .auth-links { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; font-size: 13px; color: var(--grey500); gap: 10px; }
+.auth-links.auth-support { justify-content: center; flex-wrap: nowrap; font-size: 12px; }
+.auth-support .link { white-space: nowrap; }
 .server-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; }
 .server-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .auth-foot { text-align: center; margin-top: 22px; font-size: 12px; color: var(--grey400); }

@@ -86,7 +86,7 @@ export class StudentNaviView {
 }
 
 export class StudentJoinView {
-  constructor({ cloud, code = '', back }) {
+  constructor({ cloud, code = '', verified = null, back }) {
     const invite = input({ value: code, placeholder: '선생님께 받은 초대 코드', autocomplete: 'off' });
     const username = input({ placeholder: '영문 소문자·숫자·._- 3~32자', autocomplete: 'username' });
     const password = passwordInput({ placeholder: '6자 이상', autocomplete: 'new-password' });
@@ -97,6 +97,12 @@ export class StudentJoinView {
     const check = btn('초대 확인', { variant: 'soft' });
     const join = btn('가입하기', { variant: 'primary', size: 'lg', cls: 'block', disabled: true });
     let checkedCode = null;
+    const showAccount = (r, value) => {
+      checkedCode = value;
+      put(info, h('div', { class: 'note', style: { margin: '16px 0' } }, `${r.academyName} · ${r.studentName} 학생이 맞는지 확인해 주세요.`));
+      fields.style.display = '';
+      join.disabled = false;
+    };
     invite.addEventListener('input', () => { checkedCode = null; join.disabled = true; fields.style.display = 'none'; put(info); });
     const showError = (e) => { error.textContent = e.message; error.style.display = ''; };
     check.addEventListener('click', () => busy(check, async () => {
@@ -110,10 +116,7 @@ export class StudentJoinView {
         if (!value) throw new Error('초대 코드를 넣어 주세요.');
         const r = await cloud.checkStudentInvite(value);
         if (value !== invite.value.trim()) return;
-        checkedCode = value;
-        put(info, h('div', { class: 'note', style: { margin: '16px 0' } }, `${r.academyName} · ${r.studentName} 학생이 맞는지 확인해 주세요.`));
-        fields.style.display = '';
-        join.disabled = false;
+        showAccount(r, value);
       } catch (e) { showError(e); }
     }));
     join.addEventListener('click', () => busy(join, async () => {
@@ -128,8 +131,9 @@ export class StudentJoinView {
         toast('가입했어요. 내 오답노트에서 시작해요.', 'success');
       } catch (e) { showError(e); }
     }));
-    this.el = h('div', {}, field('학생 초대 코드', invite), check, info, fields, error, h('div', { style: { height: '20px' } }), join,
+    this.el = h('div', {}, verified ? null : [field('학생 초대 코드', invite), check], info, fields, error, h('div', { style: { height: '20px' } }), join,
       h('div', { class: 'auth-links' }, h('button', { class: 'link', onClick: back }, '로그인으로 돌아가기')));
-    if (code) check.click();
+    if (verified) showAccount(verified, code);
+    else if (code) check.click();
   }
 }
