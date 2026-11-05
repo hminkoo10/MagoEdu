@@ -189,11 +189,11 @@ export function toast(text, kind = 'info', ms = 2800) {
  * dialog({ title, sub, body, ok, cancel, danger, wide, onOk })
  * onOk 가 Error 를 던지면 대화상자 안에 보여 주고 닫지 않는다.
  */
-export function dialog({ title, sub, body, ok = '확인', cancel = '취소', danger = false, wide = false, onOk, footLeft, okDisabled = false }) {
+export function dialog({ title, sub, body, ok = '확인', cancel = '취소', danger = false, wide = false, onOk, footLeft, okDisabled = false, okIcon = null, cancelIcon = null }) {
   return new Promise((resolve) => {
     const err = h('div', { class: 'error-text', style: { display: 'none' } });
-    const okBtn = ok ? btn(ok, { variant: danger ? 'danger-solid' : 'primary', size: 'lg', disabled: okDisabled }) : null;
-    const cancelBtn = cancel ? btn(cancel, { size: 'lg' }) : null;
+    const okBtn = ok ? btn(ok, { variant: danger ? 'danger-solid' : 'primary', size: 'lg', disabled: okDisabled, iconName: okIcon }) : null;
+    const cancelBtn = cancel ? btn(cancel, { size: 'lg', iconName: cancelIcon }) : null;
     const closeBtn = btn('', { variant: 'subtle', size: 'sm', iconName: 'x', title: '닫기' });
     const box = h(
       'div',

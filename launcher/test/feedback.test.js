@@ -160,7 +160,7 @@ for (const fail of [false, true]) test(`자체 업데이트: 대기 중인 앱 �
   updater.checkForUpdates = async () => {};
   updater.quitAndInstall = () => { quitCount += 1; };
   const app = { isPackaged: true, getVersion: () => '1.0.0', emit() {} };
-  const self = setupSelfUpdate({ app, cloud: c, log: quiet, isWindowVisible: () => false, updater });
+  const self = setupSelfUpdate({ app, cloud: c, log: quiet, isWindowVisible: () => true, updater });
   const releases = [];
   c.installer.install = () => new Promise((resolve, reject) => releases.push({ resolve, reject }));
   const first = c.install('bell');
@@ -168,12 +168,12 @@ for (const fail of [false, true]) test(`자체 업데이트: 대기 중인 앱 �
   const second = c.install('bell');
   const result = fail ? assert.rejects(second, /테스트 실패/) : second;
   updater.emit('update-downloaded', { version: '1.1.0' });
-  assert.equal(self.install(), false);
+  assert.equal(self.install().status, 'deferred');
   assert.equal(quitCount, 0);
   releases.shift().resolve(c.installed.bell);
   await first;
   await until(() => releases.length === 1, 5000, '대기하던 설치 시작');
-  assert.equal(self.install(), false);
+  assert.equal(self.install().status, 'deferred');
   assert.equal(quitCount, 0);
   const last = releases.shift();
   if (fail) last.reject(new Error('테스트 실패'));

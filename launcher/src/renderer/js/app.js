@@ -9,6 +9,7 @@ import { AppsAdminView } from './views/apps-admin.js';
 import { AuditView } from './views/audit.js';
 import { ServerView } from './views/server.js';
 import { SettingsView } from './views/settings.js';
+import { updateInstallButton } from './update-install.js';
 import { StudentsView } from './views/students.js';
 import { AcademyAiView } from './views/academy-ai.js';
 import { StudentNotesView, StudentNaviView, StudentJoinView } from './views/student.js';
@@ -21,6 +22,10 @@ const root = document.getElementById('root');
 export const store = {
   state: null,
   listeners: new Set(),
+  setUpdate(update) {
+    this.state = { ...this.state, update };
+    shell?.update(this.state);
+  },
   subscribe(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -195,13 +200,12 @@ class Shell {
     const s = store.state;
     const u = s.user;
     const items = [];
-    if (s.update?.status === 'ready') {
-      const card = h('div', { class: 'update-card' }, ic('sparkles', 18), h('span', {}, `새 버전 ${s.update.version} 설치`));
-      card.addEventListener('click', async () => {
-        if (await dialog({ title: '통합 클라우드를 업데이트할까요?', sub: '잠깐 꺼졌다가 다시 켜져요. 켜져 있는 프로그램은 그대로 계속 돌아가요.', ok: '업데이트' })) {
-          await cloud.installUpdate();
-        }
-      });
+    if (['ready', 'installing', 'deferred'].includes(s.update?.status) || s.update?.canRetryInstall) {
+      const card = h('div', { class: 'update-card', role: 'status', 'aria-live': 'polite' },
+        h('span', {}, `새 버전 ${s.update.version || ''}`),
+        s.update.message ? h('span', { class: 'update-message' }, s.update.status === 'error' ? `업데이트를 설치하지 못했어요: ${s.update.message}` : s.update.message) : null,
+        updateInstallButton(cloud, store, { confirm: true }),
+      );
       items.push(card);
     }
     const out = btn('', { variant: 'subtle', size: 'sm', iconName: 'logout', title: '로그아웃' });
@@ -217,7 +221,7 @@ class Shell {
       h('div', { class: 'dev-credit' }, '구현민 개발'),
     );
     put(this.foot, ...items);
-    this._footKey = `${u.name}|${u.role}|${u.academy?.name}|${s.update?.status}`;
+    this._footKey = `${u.name}|${u.role}|${u.academy?.name}|${JSON.stringify(s.update)}`;
   }
 
   markNav(animate = true) {
@@ -285,7 +289,7 @@ class Shell {
       sEl.querySelector('.badge-dot')?.remove();
       if (s.update?.status === 'ready') sEl.append(h('span', { class: 'badge-dot' }));
     }
-    const key = `${s.user.name}|${s.user.role}|${s.user.academy?.name}|${s.update?.status}`;
+    const key = `${s.user.name}|${s.user.role}|${s.user.academy?.name}|${JSON.stringify(s.update)}`;
     if (key !== this._footKey) this.renderFoot();
     this.view?.update?.(s);
   }

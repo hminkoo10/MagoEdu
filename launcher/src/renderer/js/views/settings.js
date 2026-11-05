@@ -1,6 +1,7 @@
 // 설정: 이 컴퓨터, 자동 실행, 업데이트, 서버, 정보 (구현민 개발)
 import { h, ic, btn, busy, toast, dialog, field, input, toggle, pill, ago, put } from '../ui.js';
 import { openInApp } from './home.js';
+import { updateInstallButton } from '../update-install.js';
 
 function row(title, desc, right) {
   return h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, title), desc ? h('div', { class: 'row-desc' }, desc) : null), right);
@@ -28,7 +29,7 @@ export class SettingsView {
       config.deviceNamePending ? '컴퓨터 이름을 저장했어요. 연결되면 기기 목록에도 반영돼요.' : '컴퓨터 이름을 바꿨어요. 로그인한 기기 목록에도 반영했어요.'));
     const webUrl = /^https?:\/\//i.test(c.serverUrl || '') ? c.serverUrl : null;
 
-    this.updRow = h('div');
+    this.updRow = h('div', { class: 'update-settings', role: 'status', 'aria-live': 'polite' });
     this.el = h(
       'div',
       {},
@@ -143,19 +144,25 @@ export class SettingsView {
         break;
       case 'ready':
         desc = `${u.version} 설치 준비 완료 · 켜진 프로그램이 없고 창이 닫혀 있을 때 알아서 설치해요.`;
-        right = btn('지금 설치', { variant: 'primary', size: 'sm', onClick: () => this.cloud.installUpdate() });
+        right = updateInstallButton(this.cloud, this.store);
+        break;
+      case 'installing':
+      case 'deferred':
+        desc = u.message;
+        right = updateInstallButton(this.cloud, this.store);
         break;
       case 'latest':
         desc = `최신 버전이에요${u.checkedAt ? ` · ${ago(u.checkedAt)} 확인` : ''}`;
         break;
       case 'error':
-        desc = u.message || '업데이트를 확인하지 못했어요.';
+        desc = `${u.canRetryInstall ? '업데이트를 설치하지 못했어요' : '업데이트를 확인하지 못했어요'}: ${u.message || '잠시 후 다시 시도해 주세요.'}`;
+        if (u.canRetryInstall) right = updateInstallButton(this.cloud, this.store);
         break;
       default:
         desc = '아직 확인하지 않았어요';
     }
     if (!right && u.status !== 'disabled') {
-      right = btn('확인', { size: 'sm' });
+      right = btn('확인', { size: 'sm', iconName: 'refresh' });
       right.addEventListener('click', () => busy(right, () => this.cloud.checkUpdate()));
     }
     put(this.updRow, row(`통합 클라우드 ${s.version}`, desc, right || h('span')));
@@ -185,4 +192,3 @@ export class SettingsView {
     if (ok) this.cloud.quit();
   }
 }
-

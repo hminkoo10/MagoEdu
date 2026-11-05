@@ -32,7 +32,7 @@ test('앱 카드: 실행 중이면 업데이트보다 창 열기가 우선, 꺼�
   assert.deepEqual(calls, ['open:notes', 'open:notes', 'install:notes', 'install:new']);
 });
 
-function mainFixture() {
+function mainFixture({ isTest = true } = {}) {
   const calls = [];
   class Window extends EventEmitter {
     constructor() {
@@ -49,22 +49,27 @@ function mainFixture() {
     hide() { this.visible = false; calls.push(['hide']); this.emit('hide'); }
     focus() { this.emit('focus'); }
   }
+  const app = Object.assign(new EventEmitter(), {
+    setName() {}, getVersion: () => '1', whenReady: () => new Promise(() => {}), isPackaged: false,
+    requestSingleInstanceLock: () => true, getPath: () => 'test-data',
+  });
   const electron = {
-    app: { setName() {}, on() {}, getVersion: () => '1', whenReady: () => new Promise(() => {}), isPackaged: false },
+    app,
     BrowserWindow: Window,
     Menu: { buildFromTemplate: (items) => items },
   };
   const file = path.join(__dirname, '../src/main/main.js');
   const api = vm.runInNewContext(`${fs.readFileSync(file, 'utf8')}
-    ({ createWindow, showWindow, doLaunch, buildTrayMenu, setCloud: (c) => { cloud = c; } });`, {
+    ({ createWindow, showWindow, doLaunch, buildTrayMenu, getWindow: () => win, setCloud: (c) => { cloud = c; } });`, {
     require: (id) => {
       if (id === 'electron') return electron;
-      if (id === 'electron-log/main') return { initialize() {}, transports: { file: {} } };
+      if (id === 'electron-log/main') return { initialize() {}, warn() {}, transports: { file: {} } };
+      if (id === '../core/fsutil') return { writeJsonSync: (...args) => calls.push(['resume', ...args]) };
       if (id.startsWith('node:')) return require(id);
       return {};
     },
     __dirname: path.dirname(file),
-    process: { argv: [], env: { MAGOEDU_CLOUD_TEST: '1' }, platform: 'win32', on() {} },
+    process: { argv: [], env: { MAGOEDU_CLOUD_TEST: isTest ? '1' : '0' }, platform: 'win32', on() {} },
   });
   const cloud = {
     emitState: () => calls.push(['state']),
@@ -74,8 +79,29 @@ function mainFixture() {
   };
   api.setCloud(cloud);
   api.createWindow({ show: false });
-  return { api, calls, cloud };
+  return { api, calls, cloud, app };
 }
+
+test('업데이트 종료: 트레이 닫기 우회, 설치 실패 뒤 복원, 정상 종료는 막지 않음', () => {
+  const { api, cloud, app } = mainFixture({ isTest: false });
+  cloud.store = { config: { closeToTray: true } };
+  cloud.phase = 'ready';
+  let shutdown = false;
+  cloud.shutdown = () => { shutdown = true; };
+  const closeBlocked = () => {
+    let prevented = false;
+    api.getWindow().emit('close', { preventDefault() { prevented = true; } });
+    return prevented;
+  };
+  assert.equal(closeBlocked(), true);
+  app.emit('before-update-install');
+  assert.equal(closeBlocked(), false);
+  app.emit('update-install-failed');
+  assert.equal(closeBlocked(), true);
+  app.emit('before-quit');
+  assert.equal(closeBlocked(), false);
+  assert.equal(shutdown, true);
+});
 
 test('바로가기·트레이로 실행 중 앱을 열면 런처가 다시 포커스를 빼앗지 않음, 끄기는 별도 항목', async () => {
   const { api, calls } = mainFixture();

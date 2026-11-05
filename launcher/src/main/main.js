@@ -418,6 +418,9 @@ if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) 
       log.warn('[업데이트] 이어받을 상태를 적지 못했어요', err.message);
     }
   });
+  app.on('update-install-failed', () => {
+    quitting = false; // 설치가 시작되지 않았으면 다시 평소처럼 트레이로 닫기
+  });
   app.on('before-quit', () => {
     quitting = true;
     trayPopup?.destroy();
