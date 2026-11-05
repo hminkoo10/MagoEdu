@@ -55,10 +55,10 @@ if (!process.versions.electron) {
       await import('./js/app.js');
       await until(() => document.querySelector('.nav'));
       equal([...document.querySelectorAll('.nav-item span')].map((n) => n.textContent), ['내 오답노트', '마고 과목내비', '내 계정', '도움말']);
-      ok(document.querySelector('.page').textContent.includes('새 비밀번호를 정해 주세요'));
+      ok(document.querySelector('.page').textContent.includes('새 비밀번호 설정'));
       ok(!calls.length, '비밀번호 변경 전에는 목록을 요청하지 않아요');
       document.querySelector('[data-id="my-notes"]').click();
-      ok(document.querySelector('.page').textContent.includes('새 비밀번호를 정해 주세요'));
+      ok(document.querySelector('.page').textContent.includes('새 비밀번호 설정'));
       const inputs = document.querySelectorAll('.page input[type=password]');
       inputs[0].value = 'temporary'; inputs[1].value = inputs[2].value = 'new-pass';
       button('비밀번호 바꾸기', document.querySelector('.page')).click();
@@ -75,7 +75,7 @@ if (!process.versions.electron) {
       history.replaceState(null, '', '#/sso?app=mago-navi&state=local-state');
       await import('./js/app.js');
       await until(() => document.querySelector('.page'));
-      ok(document.querySelector('.page').textContent.includes('새 비밀번호를 정해 주세요'));
+      ok(document.querySelector('.page').textContent.includes('새 비밀번호 설정'));
       equal(calls, []);
       state.user.mustChangePassword = false; onState(state);
       await until(() => button('계속'));
@@ -106,7 +106,7 @@ if (!process.versions.electron) {
       await import('./js/app.js');
       await until(() => button('로그인'));
       button('로그인').click(); await tick();
-      ok(document.body.textContent.includes('학생 계정은 인터넷 브라우저에서 https://local.test 에 들어가서 써요.'));
+      ok(document.body.textContent.includes('학생 계정은 인터넷 브라우저에서 https://local.test 에 접속해 사용하세요.'));
     });
     await run('로그인 링크: 웹은 세 줄·도움말 한 줄·PC에는 내려받기 없음', async () => {
       state.phase = 'login'; state.user = null; state.launcher = { version: '1.0.0' };
@@ -350,7 +350,7 @@ if (!process.versions.electron) {
       const view = new StudentsView({ cloud, store: { state } }); mount(view); await until(() => view.loaded);
       ok(!view.bulk.disabled, '학생이 없어도 버튼은 눌려요');
       calls.length = 0;
-      view.bulk.click(); await until(() => document.body.textContent.includes('‘학생 추가’로 계정을 만들 학생을 등록해요'));
+      view.bulk.click(); await until(() => document.body.textContent.includes('‘학생 추가’로 계정을 만들 학생을 등록하세요'));
       ok(!calls.some((c) => c[1] === '/api/academy'), '만들 학생이 없으면 서버에 묻지 않아요');
       list = [{ id: 's1', name: '김학생', account: { username: 'mago2611001' } }, { id: 's2', name: '이학생', grade: '고1' }, { id: 's3', name: '박학생', grade: '고2' }, { id: 's4', name: '최학생', deletedAt: 1 }];
       await view.load(); await until(() => view.table.querySelector('tbody'));
@@ -392,7 +392,7 @@ if (!process.versions.electron) {
       equal(code, 'mago');
       ok(button('학원 코드 mago', view.el.querySelector('.page-head')));
       code = null; view.role = 'teacher'; await view.bulkAccounts();
-      ok(document.body.textContent.includes('학원 코드 설정은 원장님께 요청해요'));
+      ok(document.body.textContent.includes('학원 코드 설정은 원장님께 요청하세요'));
       ok(!calls.some((c) => c[0] === 'POST'));
     });
     await run('일괄 생성 400 academy_code_required도 현장에서 설정 후 재시도', async () => {
@@ -562,7 +562,7 @@ if (!process.versions.electron) {
       const view = await studentsPage({ role: 'teacher', code: null });
       const { pending } = addStudent(view, '아이디·임시 비밀번호'); button('추가', topDialog()).click(); await pending;
       ok(document.body.textContent.includes('학생은 추가했어요. 계정은 만들지 못했어요:'));
-      ok(document.body.textContent.includes('학원 코드 설정은 원장님께 요청해요'));
+      ok(document.body.textContent.includes('학원 코드 설정은 원장님께 요청하세요'));
       ok(!document.body.textContent.includes('명단에서 ‘계정 만들기’로 나중에 만들 수 있어요.'));
       ok(!calls.some((c) => c[1].includes('/bulk')));
       equal(calls.filter((c) => c[0] === 'POST').length, 1); ok(!topDialog());
@@ -654,7 +654,7 @@ if (!process.versions.electron) {
         const view = new AccountView({ cloud, store: { state } }); mount(view);
         if (['director', 'teacher'].includes(role)) {
           equal([...view.profile.querySelectorAll('.pill')].slice(1).map((p) => p.textContent), ['수학', '영어']);
-          ok(view.profile.textContent.includes('과목 변경은 운영자에게 문의해요.'));
+          ok(view.profile.textContent.includes('과목 변경은 운영자에게 문의하세요.'));
           equal(view.profile.querySelectorAll('input[type=checkbox]').length, 0);
           state.user = { ...state.user, academy: { ...state.user.academy, name: '바뀐 학원', subjects: [] } };
           view.update(state);

@@ -401,7 +401,7 @@ export class PeopleView {
     }
     const ok = await dialog({
       title: `${u.name} 계정을 삭제할까요?`,
-      sub: `개인 데이터 ${bytes(u.usageBytes)}도 영구 삭제돼요.\n${handover}아이디 ${u.username}을(를) 입력해요.`,
+      sub: `개인 데이터 ${bytes(u.usageBytes)}도 영구 삭제돼요.\n${handover}아이디 ${u.username}을(를) 입력하세요.`,
       body: pick ? h('div', {}, field('넘겨받을 사람', pick), field('아이디', typed)) : typed,
       ok: '삭제',
       danger: true,

@@ -20,7 +20,7 @@ export function updateInstallButton(cloud, store, { confirm = false, label = '�
       try {
         const result = await cloud.installUpdate();
         if (!['installing', 'deferred', 'error'].includes(result?.status)) {
-          throw new Error(result?.message || '설치를 시작하지 못했어요. 업데이트를 다시 확인해 주세요.');
+          throw new Error(result?.message || '설치를 시작하지 못했어요. 업데이트를 다시 확인하세요.');
         }
         store.setUpdate(result);
       } catch (err) {

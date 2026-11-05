@@ -15,7 +15,7 @@ export class AccountView {
     this.el = h(
       'div',
       {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, this.required ? '새 비밀번호를 정해 주세요' : '내 계정'), h('div', { class: 'subtitle' }, this.required ? '계속하려면 비밀번호를 바꿔야 해요.' : this.student ? '이름·담당 선생님 변경은 선생님께 요청해요.' : ''))),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, this.required ? '새 비밀번호 설정' : '내 계정'), h('div', { class: 'subtitle' }, this.required ? '계속하려면 비밀번호를 바꾸세요.' : this.student ? '이름·담당 선생님 변경은 선생님에게 요청하세요.' : ''))),
       h('div', { class: 'grid2' }, h('div', { class: 'stack' }, this.required ? null : this.profile, this.required ? null : this.usernameCard(), this.passwordCard()), this.student ? null : h('div', { class: 'stack' }, this.storage, this.devices)),
     );
     this.renderProfile(store.state.user);
@@ -66,7 +66,7 @@ export class AccountView {
                 ? SUBJECTS.filter(([code]) => (u.academy.subjects ?? ['math']).includes(code)).map(([, name]) => pill(name))
                 : [h('span', { class: 'subtle' }, '계약한 과목 없음')]),
             ),
-            h('div', { class: 'subtle', style: { marginTop: '6px', fontSize: '12px' } }, '과목 변경은 운영자에게 문의해요.'),
+            h('div', { class: 'subtle', style: { marginTop: '6px', fontSize: '12px' } }, '과목 변경은 운영자에게 문의하세요.'),
           ) : null,
         ),
       ),
@@ -95,7 +95,7 @@ export class AccountView {
       'div',
       { class: 'card' },
       h('h2', { class: 'card-title' }, ic('user', 18), '아이디 바꾸기'),
-      h('p', { class: 'card-desc' }, '데이터는 유지돼요. 다른 기기도 새 아이디로 로그인해요.'),
+      h('p', { class: 'card-desc' }, '데이터는 유지돼요. 다른 기기에서는 새 아이디로 로그인하세요.'),
       field('새 아이디', nu, '영어 소문자·숫자·._- 로 3~32자'),
       this.student ? null : field('지금 비밀번호', pw),
       h('div', { style: { marginTop: '16px', display: 'flex', justifyContent: 'flex-end' } }, go),

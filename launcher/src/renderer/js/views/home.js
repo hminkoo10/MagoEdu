@@ -84,7 +84,7 @@ export class HomeView {
       { class: 'card empty', style: { display: 'none' } },
       ic('box', 40, 1.6),
       h('div', { style: { fontWeight: 600, color: 'var(--grey700)', fontSize: '15px' } }, '쓸 수 있는 프로그램이 없어요'),
-      h('div', { class: 'muted', style: { marginTop: '4px' } }, '프로그램 사용은 원장님·운영자에게 문의해요.'),
+      h('div', { class: 'muted', style: { marginTop: '4px' } }, '프로그램 사용은 원장님·운영자에게 문의하세요.'),
     );
     this.el = h(
       'div',

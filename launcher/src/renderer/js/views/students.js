@@ -181,7 +181,7 @@ export class StudentsView {
   // 일괄 생성과 학생 추가가 같은 학원 코드 확인·설정 흐름을 쓴다.
   async ensureAcademyCode(qs, required = false) {
     if (!required && await this.academyCode(qs)) return true;
-    if (!['director', 'admin'].includes(this.role)) throw new Error('학원 코드 설정은 원장님께 요청해요.');
+    if (!['director', 'admin'].includes(this.role)) throw new Error('학원 코드 설정은 원장님께 요청하세요.');
     return this.editCode(qs);
   }
 
@@ -285,7 +285,7 @@ export class StudentsView {
         : trash
           ? '삭제한 학생이 없어요'
           : f.who === 'mine' && active.length
-            ? '내 담당 학생이 없어요. ‘전체’에서 확인해요.'
+            ? '내 담당 학생이 없어요. ‘전체’에서 확인하세요.'
             : '아직 학생이 없어요.';
       put(this.table, h('div', { class: 'empty' }, ic(trash ? 'trash' : 'graduationCap', 40, 1.6), text));
       return;
@@ -361,7 +361,7 @@ export class StudentsView {
     const list = this.visible();
     const studentIds = picked ? [...this.selected] : list.filter((s) => !s.account).map((s) => s.id);
     if (!studentIds.length) {
-      toast(list.length ? '지금 목록의 학생은 모두 계정이 있어요.' : '‘학생 추가’로 계정을 만들 학생을 등록해요.', 'warning', 4000);
+      toast(list.length ? '지금 목록의 학생은 모두 계정이 있어요.' : '‘학생 추가’로 계정을 만들 학생을 등록하세요.', 'warning', 4000);
       return;
     }
     try {
@@ -540,7 +540,7 @@ export class StudentsView {
       ok: s ? '저장' : '추가',
       onOk: async () => {
         const v = values();
-        if (!v.name) throw new Error('학생 이름을 입력해 주세요.');
+        if (!v.name) throw new Error('학생 이름을 입력하세요.');
         if (!base) {
           saved = (await this.cloud.api('POST', `/api/students${qs}`, v)).student;
           return;
@@ -561,7 +561,7 @@ export class StudentsView {
             this.load();
             if (base.deletedAt) throw new Error('그사이 다른 사람이 이 학생을 삭제했어요. ‘삭제한 학생’에서 되살린 뒤 고쳐 주세요.');
             fill(base);
-            throw new Error(`${base.updatedBy ? `${base.updatedBy.name}님이` : '다른 사람이'} 바꾼 내용을 불러왔어요. 확인 후 다시 저장해요.`);
+            throw new Error(`${base.updatedBy ? `${base.updatedBy.name}님이` : '다른 사람이'} 바꾼 내용을 불러왔어요. 확인 후 다시 저장하세요.`);
           }
           if (e.code === 'student_deleted' || e.code === 'no_student') this.load();
           throw e;

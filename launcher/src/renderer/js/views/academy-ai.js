@@ -27,7 +27,7 @@ function aiForm(cur) {
   const baseUrl = input({ value: cur?.baseUrl || '', placeholder: 'https://api.openai.com/v1' });
   const model = input({ value: cur?.model || '', placeholder: '비우면 프로그램 기본 모델' });
   const model2 = input({ value: cur?.model2 || '', placeholder: '비워도 돼요' });
-  const urlField = field('서비스 주소', baseUrl, 'OpenAI 호환 서비스만 변경해요. 키 없는 서버는 키를 비워요.');
+  const urlField = field('서비스 주소', baseUrl, 'OpenAI 호환 서비스만 변경하세요. 키 없는 서버는 키를 비워 두세요.');
   const sync = () => {
     const p = provider.value;
     // 같은 AI 종류면 키를 비워 둬도 서버에 있는 키를 그대로 씀
@@ -103,7 +103,7 @@ export class AcademyAiView {
         return;
       }
       if (!this.academy) {
-        this.fail('‘계정 관리 → 학원 관리’에서 학원을 만들어요.');
+        this.fail('‘계정 관리 → 학원 관리’에서 학원을 만드세요.');
         return;
       }
     }

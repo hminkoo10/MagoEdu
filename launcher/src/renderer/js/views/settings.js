@@ -156,7 +156,7 @@ export class SettingsView {
         desc = `최신 버전이에요${u.checkedAt ? ` · ${ago(u.checkedAt)} 확인` : ''}`;
         break;
       case 'error':
-        desc = `${u.canRetryInstall ? '업데이트를 설치하지 못했어요' : '업데이트를 확인하지 못했어요'}: ${u.message || '잠시 후 다시 시도해 주세요.'}`;
+        desc = `${u.canRetryInstall ? '업데이트를 설치하지 못했어요' : '업데이트를 확인하지 못했어요'}: ${u.message || '잠시 후 다시 시도하세요.'}`;
         if (u.canRetryInstall) right = updateInstallButton(this.cloud, this.store);
         break;
       default:
@@ -180,7 +180,7 @@ export class SettingsView {
     });
     await dialog({
       title: '서버 주소 바꾸기',
-      sub: '로그아웃돼요. 새 서버 계정으로 다시 로그인해요.',
+      sub: '로그아웃돼요. 새 서버 계정으로 다시 로그인하세요.',
       body: field('서버 주소', url),
       ok: '바꾸기',
       footLeft: reset,

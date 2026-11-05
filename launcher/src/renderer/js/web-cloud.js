@@ -12,7 +12,7 @@ const NOTICES_EVERY = 10 * 60 * 1000;
 const WAKE_GAP = 60 * 1000;
 const OPEN_WAIT = 1600;
 const AUTH_LOST = ['session_invalid', 'account_suspended', 'auth_required'];
-const OFFLINE = '서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.';
+const OFFLINE = '서버에 연결하지 못했어요. 인터넷 연결을 확인하세요.';
 const APP_ONLY = 'PC의 통합 클라우드 앱에서 할 수 있어요.';
 const APP_ONLY_METHODS = ['install', 'uninstall', 'stop', 'sync', 'syncAll', 'setAutoLaunch', 'setDesktopShortcut', 'legacyDetect', 'legacyImport', 'legacyDismiss', 'dataInfo', 'openData', 'checkUpdate', 'installUpdate', 'quit'];
 
@@ -263,7 +263,7 @@ class WebCloud {
       /* 본문 없음 */
     }
     const e = data?.error || {};
-    const err = cloudError(e.message || `서버와 연결이 잠시 원활하지 않아요. 잠시 뒤 다시 해 주세요. (오류 ${res.status})`, e.code || `http_${res.status}`, res.status, e);
+    const err = cloudError(e.message || `서버와 연결이 잠시 원활하지 않아요. 잠시 뒤 다시 시도하세요. (오류 ${res.status})`, e.code || `http_${res.status}`, res.status, e);
     // 지난 세션의 늦은 응답이 새 세션을 끊지 않게 같은 토큰일 때만
     if (res.status === 401 && token && token === this.token && AUTH_LOST.includes(err.code)) this._authLost(err);
     if (res.status === 403 && token && token === this.token) {
@@ -271,7 +271,7 @@ class WebCloud {
         this.user = { ...this.user, mustChangePassword: true };
         this._saveSession();
         this.emitState();
-        err.message = '먼저 새 비밀번호를 정해 주세요.';
+        err.message = '먼저 새 비밀번호를 정하세요.';
       } else if (err.code === 'student_forbidden') err.message = '학생 계정에서는 이 화면을 쓸 수 없어요.';
       else if (err.code === 'student_web_only') err.message = '학생 계정은 웹(mago.milky.kr)에서만 써요.';
     }
@@ -530,7 +530,7 @@ class WebCloud {
       ok = false;
     }
     ta.remove();
-    if (!ok) throw cloudError('복사하지 못했어요. 직접 골라서 복사해 주세요.');
+    if (!ok) throw cloudError('복사하지 못했어요. 직접 골라서 복사하세요.');
   }
 }
 

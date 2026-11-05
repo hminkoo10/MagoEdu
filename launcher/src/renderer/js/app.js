@@ -100,7 +100,7 @@ class Shell {
       'div',
       { class: 'offline-bar', style: { display: 'none' } },
       ic('cloudOff', 16),
-      web ? '인터넷 연결을 확인해요. 서버에 연결되지 않았어요.' : '인터넷 연결을 확인해요. 설치한 프로그램은 쓸 수 있어요.',
+      web ? '인터넷 연결을 확인하세요. 서버에 연결되지 않았어요.' : '인터넷 연결을 확인하세요. 설치한 프로그램은 쓸 수 있어요.',
     );
     this.pill = h('div', { class: 'nav-pill' });
     this.nav = h('nav', { class: 'nav' }, this.pill);
@@ -357,7 +357,7 @@ function serverView({ back } = {}) {
   go.addEventListener('click', submit);
   url.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
   return authFrame(
-    authHead('서버 연결', '운영자에게 받은 서버 주소를 입력해요.'),
+    authHead('서버 연결', '운영자에게 받은 서버 주소를 입력하세요.'),
     field('서버 주소', url),
     err,
     h('div', { style: { height: '20px' } }),
@@ -378,7 +378,7 @@ function loginView() {
       try {
         await cloud.login(user.value, pw.input.value);
       } catch (e) {
-        err.textContent = e.code === 'student_web_only' || /student_web_only/.test(errorText(e)) ? `학생 계정은 인터넷 브라우저에서 ${serverUrl()} 에 들어가서 써요.` : errorText(e);
+        err.textContent = e.code === 'student_web_only' || /student_web_only/.test(errorText(e)) ? `학생 계정은 인터넷 브라우저에서 ${serverUrl()} 에 접속해 사용하세요.` : errorText(e);
         err.style.display = '';
         pw.input.select();
       }
@@ -537,7 +537,7 @@ async function forcePasswordChange() {
   const pw = passwordInput({ placeholder: '6자 이상' });
   const pw2 = passwordInput({ placeholder: '한 번 더' });
   const done = await dialog({
-    title: '새 비밀번호를 정해 주세요',
+    title: '새 비밀번호 설정',
     sub: '',
     body: h('div', {}, field('지금 비밀번호', cur), field('새 비밀번호', pw), field('새 비밀번호 확인', pw2)),
     ok: '바꾸기',
@@ -610,7 +610,7 @@ function ssoView() {
   el.classList.add('sso');
   if (!sso.app) {
     go.style.display = 'none';
-    showErr('로그인 주소가 잘못됐어요. 웹 프로그램에서 다시 로그인해 주세요.');
+    showErr('로그인 주소가 잘못됐어요. 웹 프로그램에서 다시 로그인하세요.');
   } else if (sso.auto && !u.mustChangePassword) {
     setTimeout(submit, 0); // 처음 받은 비밀번호면 먼저 바꾸게 하고 ‘계속’을 누르게
   }

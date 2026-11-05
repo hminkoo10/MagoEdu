@@ -155,7 +155,7 @@ async function main() {
       }
     }
     await signOut(); await signIn('review-teacher');
-    const first = page.getByRole('dialog', { name: '새 비밀번호를 정해 주세요' }); await first.waitFor();
+    const first = page.getByRole('dialog', { name: '새 비밀번호 설정' }); await first.waitFor();
     await page.setViewportSize(sizes[0]);
     await first.getByPlaceholder('지금 비밀번호 (받은 비밀번호)').fill(password);
     await page.mouse.click(4, 4); await page.keyboard.press('Escape'); assert.ok(await first.isVisible());

@@ -89,7 +89,7 @@ async function exercise(rendererUrl) {
   button(settings()).click();
   respond(false);
   await settle();
-  assert(card().textContent.includes('설치를 시작하지 못했어요. 업데이트를 다시 확인해 주세요.'), '거절된 IPC 결과도 표시');
+  assert(card().textContent.includes('설치를 시작하지 못했어요. 업데이트를 다시 확인하세요.'), '거절된 IPC 결과도 표시');
   button(settings()).click();
   reject(new Error());
   await settle();

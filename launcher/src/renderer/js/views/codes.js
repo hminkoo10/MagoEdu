@@ -13,7 +13,7 @@ export class CodesView {
       h(
         'div',
         { class: 'page-head' },
-        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '원장 가입 코드'), h('div', { class: 'subtitle' }, '원장님이 ‘가입 코드가 있어요’에서 가입해요.')),
+        h('div', { class: 'tt' }, h('h1', { class: 'title' }, '원장 가입 코드'), h('div', { class: 'subtitle' }, '원장님이 ‘가입 코드가 있어요’에서 직접 가입해요.')),
         h('div', { class: 'right' }, btn('코드 만들기', { variant: 'primary', iconName: 'plus', onClick: () => this.create() })),
       ),
       this.table,
@@ -75,7 +75,7 @@ export class CodesView {
   }
 
   async create() {
-    const academy = input({ placeholder: '비우면 원장님이 가입할 때 입력' });
+    const academy = input({ placeholder: '비워 두면 가입할 때 입력' });
     const subjects = subjectChecks();
     const memo = input({ placeholder: '예: 마고수학학원 본원 원장님' });
     const uses = select(
@@ -107,7 +107,7 @@ export class CodesView {
       },
     });
     if (!ok || !made) return;
-    await secretDialog('가입 코드를 만들었어요', '코드와 서버 주소를 원장님께 전달해요.', made.code);
+    await secretDialog('가입 코드를 만들었어요', '코드와 서버 주소를 원장님께 전달하세요.', made.code);
     this.load();
   }
 }
