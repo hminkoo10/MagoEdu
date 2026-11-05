@@ -14,6 +14,14 @@ class Node {
     this.classList = { toggle: (name, on) => { const set = new Set(this.className.split(' ').filter(Boolean)); on ? set.add(name) : set.delete(name); this.className = [...set].join(' '); } };
   }
   get children() { return this.childNodes.filter((x) => x.tagName); }
+  matches(selector) { return selector.split(',').some((tag) => this.tagName === tag.trim().toUpperCase()); }
+  querySelector(selector) {
+    for (const child of this.children) {
+      const match = child.matches(selector) ? child : child.querySelector(selector);
+      if (match) return match;
+    }
+    return null;
+  }
   get textContent() { return this.text + this.childNodes.map((x) => x.textContent).join(''); }
   set textContent(value) { this.text = value; this.childNodes = []; }
   append(...nodes) { this.childNodes.push(...nodes); }
@@ -38,7 +46,7 @@ const fields = (s) => ({ school: s.name, schoolOffice: s.office, schoolCode: s.c
 function fixture(t, api = async () => ({ schools: hits }), dialog = async () => false) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const context = vm.createContext({ Node, document: { createElement: (tag) => new Node(tag), createTextNode: (text) => new Node('', text) }, setTimeout, clearTimeout, requestAnimationFrame() {} });
-  const ui = vm.runInContext(`${source('ui.js')}\n({ h, input, put, field, select, segmented, appLabel });`, context);
+  const ui = vm.runInContext(`${source('ui.js')}\n({ h, input, put, field, select, segmented, appLabel, errorText });`, context);
   const schoolSearch = vm.runInNewContext(`${source('school-search.js')}\nschoolSearch;`, { ...ui, setTimeout, clearTimeout });
   const StudentsView = vm.runInNewContext(`${source('views/students.js')}\nStudentsView;`, { ...ui, schoolSearch, dialog, toast() {} });
   const cloud = { api };

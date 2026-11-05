@@ -1,5 +1,5 @@
 // 프로그램 관리 (운영자): 목록, 배포 위치(GitHub), 보관 기간, 켜기/끄기, 새 프로그램 추가, 웹 프로그램 주소·앱 비밀값
-import { h, ic, btn, busy, toast, dialog, field, input, select, toggle, pill, bytes, ago, date, confirmDialog, reveal, put } from '../ui.js';
+import { errorText, h, ic, btn, busy, toast, dialog, field, input, select, toggle, pill, bytes, ago, date, confirmDialog, reveal, put } from '../ui.js';
 
 export class AppsAdminView {
   constructor({ cloud }) {
@@ -15,7 +15,7 @@ export class AppsAdminView {
           await this.cloud.refreshApps().catch(() => {});
           toast('새 버전을 확인했어요', 'success');
         } catch (e) {
-          toast(e.message, 'error');
+          toast(errorText(e), 'error');
         }
       }),
     );
@@ -39,7 +39,7 @@ export class AppsAdminView {
     try {
       this.render(await this.cloud.api('GET', '/api/admin/apps'));
     } catch (e) {
-      put(this.list, h('div', { class: 'card empty' }, e.message));
+      put(this.list, h('div', { class: 'card empty' }, errorText(e)));
     }
   }
 
@@ -55,7 +55,7 @@ export class AppsAdminView {
             toast(on ? `${a.name}을(를) 켰어요` : `${a.name}을(를) 목록에서 숨겼어요`, 'success');
             await this.cloud.refreshApps().catch(() => {});
           } catch (e) {
-            toast(e.message, 'error');
+            toast(errorText(e), 'error');
           }
         });
         const cold = toggle(a.coldStorage.enabled, (on) => this.saveCold(a, on, Number(days.value)));
@@ -75,7 +75,7 @@ export class AppsAdminView {
               h('div', { class: 'app-name', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, a.name, h('span', { class: 'subtle mono' }, a.id), a.enabled ? null : pill('숨김', 'grey')),
               h('div', { class: 'muted' }, src),
             ),
-            h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' } }, h('span', { class: 'muted' }, '목록에 보이기'), enabled, btn('', { variant: 'subtle', iconName: 'edit', title: '고치기', onClick: () => this.edit(a) })),
+            h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' } }, h('span', { class: 'muted' }, '목록에 보이기'), enabled, btn('고치기', { variant: 'subtle', iconName: 'edit', title: '고치기', onClick: () => this.edit(a) })),
           ),
           // 웹 프로그램은 배포 버전 대신 앱 비밀값 (웹 프로그램 서버가 로그인 코드를 바꿀 때 씀)
           web
@@ -140,7 +140,7 @@ export class AppsAdminView {
     try {
       secret = (await this.cloud.api('POST', `/api/admin/apps/${a.id}/secret`, {})).secret;
     } catch (e) {
-      toast(e.message, 'error');
+      toast(errorText(e), 'error');
       return;
     }
     this.load();
@@ -150,7 +150,7 @@ export class AppsAdminView {
         await this.cloud.copy(secret);
         toast('복사했어요', 'success', 1600);
       } catch (e) {
-        toast(e.message, 'error');
+        toast(errorText(e), 'error');
       }
     });
     await dialog({
@@ -168,7 +168,7 @@ export class AppsAdminView {
       a.coldStorage = { enabled, days };
       toast(enabled ? `${a.name}: ${days}일 동안 안 쓰면 서버에서 정리해요` : `${a.name}: 서버에서 정리하지 않아요`, 'success');
     } catch (e) {
-      toast(e.message, 'error');
+      toast(errorText(e), 'error');
     }
   }
 

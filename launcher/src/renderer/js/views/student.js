@@ -1,4 +1,4 @@
-import { h, ic, btn, busy, toast, field, input, passwordInput, pill, date, put } from '../ui.js';
+import { errorText, h, ic, btn, busy, toast, field, input, passwordInput, pill, date, put } from '../ui.js';
 import { downloadBlob } from '../student-accounts.js';
 
 // 학생은 웹 전용. 공개 아이콘 경로로 카탈로그의 원본을 쓰며 프로그램 목록 권한은 필요 없다.
@@ -14,7 +14,7 @@ export class StudentNotesView {
     const reload = btn('새로 고침', { iconName: 'rotate' });
     reload.addEventListener('click', () => busy(reload, () => this.load()));
     this.el = h('div', {},
-      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '내 오답노트'), h('div', { class: 'subtitle' }, '선생님이 내 이름으로 만든 오답노트를 PDF로 봐요. 답지는 선생님이 허락한 노트에만 들어 있어요.')), h('div', { class: 'right' }, reload)),
+      h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '내 오답노트'), h('div', { class: 'subtitle' }, '‘PDF 보기’로 노트를 열고, ‘PDF 받기’로 저장합니다. 답지는 선생님이 허용한 노트에만 포함됩니다.')), h('div', { class: 'right' }, reload)),
       this.list,
     );
     this.load();
@@ -39,7 +39,7 @@ export class StudentNotesView {
         })),
       ));
     } catch (e) {
-      if (seq === this.seq) put(this.list, h('div', { class: 'empty' }, e.message));
+      if (seq === this.seq) put(this.list, h('div', { class: 'empty' }, errorText(e)));
     }
   }
 
@@ -62,7 +62,7 @@ export class StudentNotesView {
       }
     } catch (e) {
       tab?.close();
-      toast(e.message, 'error');
+      toast(errorText(e), 'error');
     }
   }
 
@@ -73,7 +73,7 @@ export class StudentNotesView {
 export class StudentNaviView {
   constructor({ cloud, store }) {
     const user = store.state.user;
-    const open = btn('열기', { variant: 'primary', iconName: 'external', onClick: () => cloud.openExternal('https://magonavi.milky.kr').catch((e) => toast(e.message, 'error')) });
+    const open = btn('열기', { variant: 'primary', iconName: 'external', onClick: () => cloud.openExternal('https://magonavi.milky.kr').catch((e) => toast(errorText(e), 'error')) });
     this.el = h('div', {},
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '마고 과목내비'), h('div', { class: 'subtitle' }, '설치 없이 웹에서 내 과목과 진로를 살펴봐요.'))),
       h('div', { class: 'apps-grid' }, h('div', { class: 'app-card' },
@@ -104,7 +104,7 @@ export class StudentJoinView {
       join.disabled = false;
     };
     invite.addEventListener('input', () => { checkedCode = null; join.disabled = true; fields.style.display = 'none'; put(info); });
-    const showError = (e) => { error.textContent = e.message; error.style.display = ''; };
+    const showError = (e) => { error.textContent = errorText(e); error.style.display = ''; };
     check.addEventListener('click', () => busy(check, async () => {
       checkedCode = null;
       join.disabled = true;

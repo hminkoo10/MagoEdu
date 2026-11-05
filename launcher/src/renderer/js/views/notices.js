@@ -1,5 +1,5 @@
 // 공지사항: 모두 보기, 운영자는 전체·학원 공지, 원장은 자기 학원 공지를 올림
-import { h, ic, btn, toast, dialog, field, input, select, checkbox, pill, ago, date, confirmDialog, reveal, put } from '../ui.js';
+import { errorText, h, ic, btn, toast, dialog, field, input, select, checkbox, pill, ago, date, confirmDialog, reveal, put } from '../ui.js';
 
 // 공지 한도 (server/src/routes/admin.js 와 같게)
 const LIMIT = { title: 100, body: 2000, lines: 50 };
@@ -38,7 +38,7 @@ export class NoticesView {
         await this.cloud.noticesSeen();
       }
     } catch (e) {
-      put(this.list, h('div', { class: 'empty' }, e.message));
+      put(this.list, h('div', { class: 'empty' }, errorText(e)));
     }
   }
 
@@ -52,8 +52,8 @@ export class NoticesView {
         const acts = h('div', { style: { marginLeft: 'auto', display: 'flex', gap: '4px' } });
         if (n.editable) {
           acts.append(
-            btn('', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', onClick: () => this.edit(n) }),
-            btn('', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '지우기', onClick: () => this.remove(n) }),
+            btn('고치기', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', onClick: () => this.edit(n) }),
+            btn('지우기', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '지우기', onClick: () => this.remove(n) }),
           );
         }
         const expired = n.expiresAt && n.expiresAt < Date.now();
@@ -157,7 +157,7 @@ export class NoticesView {
       await this.load();
       await this.cloud.refreshNotices().catch(() => {});
     } catch (e) {
-      toast(e.message, 'error');
+      toast(errorText(e), 'error');
     }
   }
 }

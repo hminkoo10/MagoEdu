@@ -1,5 +1,5 @@
 // 서버 설정 (운영자): 기본 저장 공간, 인터넷 없이 쓸 수 있는 기간, 자동 로그아웃 기간, 현황
-import { h, ic, btn, busy, toast, field, input, bytes, date, confirmDialog, reveal, put } from '../ui.js';
+import { errorText, h, ic, btn, busy, toast, field, input, bytes, date, confirmDialog, reveal, put } from '../ui.js';
 
 export class ServerView {
   constructor({ cloud }) {
@@ -21,7 +21,7 @@ export class ServerView {
       this.renderStats(st);
       this.renderForm(se.settings);
     } catch (e) {
-      put(this.stats, h('div', { class: 'muted' }, e.message));
+      put(this.stats, h('div', { class: 'muted' }, errorText(e)));
     }
   }
 
@@ -48,9 +48,9 @@ export class ServerView {
         stat('운영자', `${s.users.admin}명`),
         stat('사용 중지', `${s.users.suspended}명`),
         stat('로그인한 기기', `${s.devices}대`),
-        stat('동기화 데이터', bytes(s.storage.bytes)),
+        stat('개인 보관 데이터', bytes(s.storage.bytes)),
         stat('학원 공간 데이터', bytes(s.storage.sharedBytes || 0)),
-        stat('실제 디스크', bytes(s.storage.diskBytes)),
+        stat('실제 저장 용량', bytes(s.storage.diskBytes)),
       ),
       h('div', { class: 'row', style: { marginTop: '10px', borderBottom: 0 } }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, '서버에서 정리한 파일'), h('div', { class: 'row-desc' }, `보관 기간이 지나 컴퓨터에만 남은 파일 ${s.storage.evictedFiles}개`)), run),
     );
@@ -76,7 +76,7 @@ export class ServerView {
           });
           toast('저장했어요', 'success');
         } catch (e) {
-          toast(e.message, 'error');
+          toast(errorText(e), 'error');
         }
       }),
     );

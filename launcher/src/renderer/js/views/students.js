@@ -1,7 +1,7 @@
 // 학생 명단: 담당 선생님이 바뀔 수 있어서 학원 사람(원장·선생님) 누구나 추가·수정·삭제·되살리기
 //   삭제한 학생은 정한 기간(기본 30일) 동안 ‘삭제한 학생’에 있다가, 그 학생의 자료와 함께 완전히 지워진다
 //   운영자: 학원을 골라서 본다
-import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, segmented, checkbox, toggle, pill, ago, date, secretDialog, reveal, put } from '../ui.js';
+import { errorText, h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, segmented, checkbox, toggle, pill, ago, date, secretDialog, reveal, put } from '../ui.js';
 import { editAcademyCode, showCredentials } from '../student-accounts.js';
 import { schoolSearch } from '../school-search.js';
 
@@ -64,9 +64,10 @@ export class StudentsView {
     this.count = h('span', { class: 'muted' });
     this.codeButton = ['director', 'admin'].includes(this.role) ? btn('학원 코드 정하기', {
       variant: 'white', disabled: this.isAdmin,
-      onClick: () => this.editCode(this.qs()).catch((e) => toast(e.message, 'error')),
+      onClick: () => this.editCode(this.qs()).catch((e) => toast(errorText(e), 'error')),
     }) : null;
     this.bulk = btn('계정 일괄 생성', { variant: 'soft', title: '학생을 고르면 고른 학생만, 안 고르면 지금 목록에서 계정이 없는 학생 모두에게 만들어요' });
+    this.bulkHint = h('p', { class: 'card-desc' }, '계정 일괄 생성: 선택한 학생의 로그인 아이디·임시 비밀번호를 만듭니다. 선택하지 않으면 현재 목록에서 계정이 없는 학생 모두에게 만듭니다.');
     this.bulk.addEventListener('click', async () => {
       await busy(this.bulk, () => this.bulkAccounts());
       this.updateSelection();
@@ -132,6 +133,7 @@ export class StudentsView {
         h('div', { class: 'right' }, this.codeButton, btn('학생 추가', { variant: 'primary', iconName: 'userPlus', onClick: () => this.edit(null) })),
       ),
       toolbar,
+      this.bulkHint,
       this.deletedNote,
       this.table,
     );
@@ -143,7 +145,7 @@ export class StudentsView {
       try {
         this.academy = await this.picker.ready;
       } catch (e) {
-        put(this.table, h('div', { class: 'empty' }, e.message));
+        put(this.table, h('div', { class: 'empty' }, errorText(e)));
         return;
       }
       if (!this.academy) {
@@ -221,7 +223,7 @@ export class StudentsView {
       if (seq !== this.seq) return;
       this.loaded = false;
       this.count.textContent = '';
-      put(this.table, h('div', { class: 'empty' }, e.message));
+      put(this.table, h('div', { class: 'empty' }, errorText(e)));
     } finally {
       // 코드를 못 불러왔으면 눌러서 다시 확인하게
       if (seq === this.seq && this.codeButton?.disabled) {
@@ -325,7 +327,7 @@ export class StudentsView {
           s.account ? h('div', {}, h('div', { class: 'mono selectable' }, s.account.username),
             h('div', { class: 'pills' },
               s.account.status === 'disabled' ? pill('꺼짐', 'grey') : pill('켜짐', 'green'),
-              s.account.mustChangePassword ? pill('비밀번호 바꿔야 해요', 'yellow') : null,
+              s.account.mustChangePassword ? pill('비밀번호 변경 전', 'yellow') : null,
             ),
           ) : h('span', { class: 'subtle' }, '없음'),
           btn(s.account ? '계정 관리' : '계정 만들기', { size: 'sm', variant: 'soft', onClick: () => this.account(s) }),
@@ -335,8 +337,8 @@ export class StudentsView {
       h(
         'td',
         { class: 'acts' },
-        btn('', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', cls: 'student-edit', onClick: () => this.edit(s) }),
-        btn('', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '삭제', cls: 'student-remove', onClick: () => this.remove(s) }),
+        btn('고치기', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '고치기', cls: 'student-edit', onClick: () => this.edit(s) }),
+        btn('삭제', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '삭제', cls: 'student-remove', onClick: () => this.remove(s) }),
       ),
     );
   }
@@ -344,6 +346,7 @@ export class StudentsView {
   // 버튼은 끄지 않음: 못 만들 때는 눌렀을 때 이유를 알려 줌 (삭제한 학생 탭에서는 숨김)
   updateSelection() {
     this.bulk.style.display = this.filter.who === 'deleted' ? 'none' : '';
+    this.bulkHint.style.display = this.bulk.style.display;
     this.bulk.textContent = this.selected.size ? `계정 일괄 생성 (${this.selected.size}명)` : '계정 일괄 생성';
   }
 
@@ -380,7 +383,7 @@ export class StudentsView {
       this.load();
       await showCredentials(result);
     } catch (e) {
-      toast(e.message, 'error');
+      toast(errorText(e), 'error');
     } finally {
       this.updateSelection();
     }
@@ -392,11 +395,11 @@ export class StudentsView {
     const copy = (label, text, message) => {
       const b = btn(label, { size: 'sm', variant: 'soft' });
       b.addEventListener('click', () => busy(b, async () => {
-        try { await this.cloud.copy(text); toast(message, 'success'); } catch (e) { toast(e.message, 'error'); }
+        try { await this.cloud.copy(text); toast(message, 'success'); } catch (e) { toast(errorText(e), 'error'); }
       }));
       return b;
     };
-    await dialog({ title: '학생 초대 코드를 만들었어요', wide: true, sub:`${date(r.expiresAt, true)}까지 한 번 쓸 수 있어요. 코드는 지금 한 번만 보여요.`,
+    await dialog({ title: '학생 초대 코드를 만들었어요', wide: true, sub:`${date(r.expiresAt, true)}까지 한 번 사용할 수 있습니다. 1. 가입 주소 복사 → 2. 학생에게 전달 → 3. 학생이 아이디·비밀번호를 정해 가입. 코드는 이 창에서만 확인할 수 있습니다.`,
       body: h('div', {}, h('div', { class: 'secret' }, h('span', { class: 'mono selectable' }, r.code), copy('코드 복사', r.code, '코드를 복사했어요')), h('p', { class: 'selectable', style: { overflowWrap: 'anywhere' } }, url.href)),
       footLeft: copy('가입 주소 복사', url.href, '가입 주소를 복사했어요'), ok: '닫기', cancel: null });
   }
@@ -412,7 +415,7 @@ export class StudentsView {
     const action = (label, fn, danger = false) => {
       const b = btn(label, { size: 'sm', variant: danger ? 'danger' : 'soft' });
       b.addEventListener('click', () => busy(b, async () => {
-        try { await fn(); } catch (e) { toast(e.message, 'error'); }
+        try { await fn(); } catch (e) { toast(errorText(e), 'error'); }
       }));
       return b;
     };
@@ -443,10 +446,10 @@ export class StudentsView {
     }, true);
     const shown = dialog({
       title: `${s.name} ${a ? '계정 관리' : '계정 만들기'}`,
-      sub: a ? '아이디·사용 여부·과목내비 AI를 바꿀 수 있어요.' : '직접 만들거나 초대 코드로 학생이 아이디·비밀번호를 정하게 해요.',
+      sub: a ? '아이디·사용 여부·과목내비 서비스 키를 바꿀 수 있습니다.' : '직접 만들거나 초대 코드로 학생이 아이디·비밀번호를 정하게 해요.',
       body: h('div', {}, field('아이디', username),
         a ? field('계정 켜기', toggle(active, (on) => { active = on; }), '끄면 학생이 로그인할 수 없어요.') : field('비밀번호', password),
-        a ? field('마고 과목내비 AI', ai, '담당 선생님 키는 명단의 담당 선생님이 등록한 키를 써요.') : null,
+        a ? field('마고 과목내비 서비스 키', ai, '담당 선생님 키는 명단의 담당 선생님이 등록한 키를 써요.') : null,
         a ? h('p', { class: 'muted' }, `마지막 로그인: ${a.lastLoginAt ? date(a.lastLoginAt, true) : '아직 없어요'}`) : null,
         h('div', { class: 'toolbar' }, ...(a ? [reset, remove] : [invite, revoke])),
       ),
@@ -580,7 +583,7 @@ export class StudentsView {
           await showCredentials(result);
         }
       } catch (e) {
-        toast(`학생은 추가했어요. 계정은 만들지 못했어요: ${e.message}`, 'error');
+        toast(`학생은 추가했어요. 계정은 만들지 못했어요: ${errorText(e)}`, 'error');
       } finally {
         await this.load();
       }
@@ -591,25 +594,28 @@ export class StudentsView {
   }
 
   async remove(s) {
+    const qs = this.qs();
     const ok = await dialog({
       title: `${s.name} 학생을 삭제할까요?`,
       sub: `삭제해도 ${this.purgeDays}일 안에는 누구나 ‘삭제한 학생’에서 되살릴 수 있어요. 그 뒤에는 이 학생의 자료(오답노트 등)도 함께 완전히 지워져요.`,
       ok: '삭제',
       danger: true,
-      onOk: () => this.cloud.api('DELETE', `/api/students/${encodeURIComponent(s.id)}${this.qs()}`),
+      onOk: () => this.cloud.api('DELETE', `/api/students/${encodeURIComponent(s.id)}${qs}`),
     });
     if (!ok) return;
-    toast(`${s.name} 학생을 삭제했어요`, 'success');
+    toast(`${s.name} 학생을 삭제했어요`, 'success', 12000, { label: '되돌리기', onClick: () => this.restore(s, qs) });
     this.load();
   }
 
-  async restore(s) {
+  async restore(s, qs = this.qs()) {
     try {
-      await this.cloud.api('POST', `/api/students/${encodeURIComponent(s.id)}/restore${this.qs()}`, {});
+      await this.cloud.api('POST', `/api/students/${encodeURIComponent(s.id)}/restore${qs}`, {});
       toast(`${s.name} 학생을 되살렸어요`, 'success');
-      await this.load();
+      if (qs === this.qs()) await this.load();
+      return true;
     } catch (e) {
-      toast(e.message, 'error');
+      toast(errorText(e), 'error');
+      return false;
     }
   }
 }

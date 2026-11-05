@@ -12,6 +12,7 @@ const { startAll } = require('./harness');
   const step = (m) => console.log(`- ${m}`);
   try {
     // 1) 서버 연결
+    await page.locator('.server-chip').click();
     await page.getByPlaceholder('예: http://192.168.0.10:8470').fill(t.server.base);
     await t.shot('01-server');
     await btn('연결').click();
@@ -32,13 +33,15 @@ const { startAll } = require('./harness');
     // 설치
     await page.locator('.app-card').filter({ hasText: '오답노트' }).getByRole('button', { name: '설치' }).click();
     await page.locator('.app-card').filter({ hasText: '오답노트' }).getByRole('button', { name: '열기' }).waitFor({ timeout: 20000 });
+    await page.locator('.app-card').filter({ hasText: '오답노트' }).getByRole('button', { name: '지금 맞추기', exact: true }).click();
+    await page.getByText('서버와 맞추기를 마쳤습니다', { exact: true }).waitFor();
     await t.shot('04-installed');
     step('설치');
     await page.locator('.app-card').filter({ hasText: '오답노트' }).getByRole('button', { name: '열기' }).click();
     await page.locator('.app-card').filter({ hasText: '오답노트' }).getByText('실행 중').waitFor({ timeout: 20000 });
     await t.shot('05-running');
     step('실행');
-    await page.locator('.app-card').filter({ hasText: '오답노트' }).getByText('동기화됨').waitFor({ timeout: 20000 });
+    await page.locator('.app-card').filter({ hasText: '오답노트' }).getByText('서버와 맞춤').waitFor({ timeout: 20000 });
     await page.locator('.app-card').filter({ hasText: '오답노트' }).locator('button[title="더 보기"]').click();
     await t.shot('06-app-menu');
     await page.keyboard.press('Escape');
@@ -95,7 +98,7 @@ const { startAll } = require('./harness');
     // 8) 로그아웃 → 원장 가입
     await page.locator('button[title="로그아웃"]').click();
     await page.locator('.dialog').getByRole('button', { name: '로그아웃', exact: true }).click();
-    await page.getByText('원장 가입 코드가 있어요').click();
+    await page.getByText('원장 가입 코드로 가입').click();
     await page.getByPlaceholder('MAGO-XXXX-XXXX').fill(code);
     await btn('다음').click();
     await page.getByPlaceholder('예: 홍길동').fill('김원장');

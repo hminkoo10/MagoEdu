@@ -2,7 +2,7 @@
 //   원장: 우리 학원 선생님 계정 만들기·지우기·비밀번호 초기화·사용 중지·프로그램 권한
 //   운영자: 모든 계정 (원장·선생님·운영자), 학원
 import { editAcademyCode } from '../student-accounts.js';
-import { appLabel, subjectChecks, subjectText } from '../ui.js';
+import { errorText, appLabel, subjectChecks, subjectText } from '../ui.js';
 import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, checkbox, toggle, segmented, pill, menu, bytes, ago, initial, ROLE, confirmDialog, secretDialog, reveal, put } from '../ui.js';
 
 export class PeopleView {
@@ -105,7 +105,7 @@ export class PeopleView {
       const r = await this.cloud.api('GET', `/api/users?${qs}`);
       this.render(r.users);
     } catch (e) {
-      put(this.table, h('div', { class: 'empty' }, e.message));
+      put(this.table, h('div', { class: 'empty' }, errorText(e)));
     }
   }
 
@@ -116,7 +116,7 @@ export class PeopleView {
       return;
     }
     const rows = users.map((u) => {
-      const more = btn('', { variant: 'subtle', size: 'sm', iconName: 'more', title: '관리' });
+      const more = btn('관리', { variant: 'subtle', size: 'sm', iconName: 'more', title: '관리' });
       more.addEventListener('click', () => this.openMenu(more, u));
       if (!u.manageable) more.style.visibility = 'hidden';
       const perm = u.allowedApps === null ? h('span', { class: 'subtle' }, '모든 프로그램') : u.allowedApps.length ? h('span', {}, u.allowedApps.map((id) => appNames[id] || id).join(', ')) : h('span', { class: 'subtle' }, '없음');
@@ -135,7 +135,7 @@ export class PeopleView {
         ),
         this.isAdmin ? h('td', {}, pill(ROLE[u.role], u.role === 'admin' ? 'dark' : u.role === 'director' ? '' : 'grey')) : null,
         this.isAdmin ? h('td', {}, u.academy?.name || h('span', { class: 'subtle' }, '-')) : null,
-        h('td', {}, u.status === 'active' ? (u.mustChangePassword ? pill('첫 로그인 전', 'yellow') : pill('사용 중', 'green')) : pill('사용 중지', 'red')),
+        h('td', {}, u.status === 'active' ? (u.mustChangePassword ? pill('비밀번호 변경 전', 'yellow') : pill('사용 중', 'green')) : pill('사용 중지', 'red')),
         h('td', {}, perm),
         h('td', { class: 'num' }, bytes(u.usageBytes), u.quotaBytes ? h('span', { class: 'subtle' }, ` / ${bytes(u.quotaBytes)}`) : null),
         h('td', { class: 'subtle' }, u.lastLoginAt ? ago(u.lastLoginAt) : '없음'),
@@ -230,7 +230,7 @@ export class PeopleView {
     let result = null;
     const ok = await dialog({
       title: this.isAdmin ? '계정 만들기' : '선생님 추가',
-      sub: this.isAdmin ? null : '선생님에게 아이디와 비밀번호를 알려 주세요. 처음 로그인하면 비밀번호를 새로 정해요.',
+      sub: this.isAdmin ? null : '1. 계정 만들기 → 2. 선생님에게 아이디·비밀번호 전달 → 3. 첫 로그인 때 비밀번호 변경',
       wide: true,
       body: h(
         'div',
@@ -238,7 +238,7 @@ export class PeopleView {
         role ? h('div', { class: 'form-row' }, field('종류', role), academyWrap) : null,
         academy ? newWrap : null,
         h('div', { class: 'form-row', style: { marginTop: '14px' } }, field('이름', name), field('아이디', username)),
-        field('비밀번호', pw, '6자 이상. 비워 두면 받아 적기 쉬운 비밀번호를 만들어 보여 드려요.'),
+        field('비밀번호', pw, '6자 이상. 비워 두면 임시 비밀번호를 자동으로 만듭니다.'),
         field('쓸 수 있는 프로그램', apps.el),
         this.isAdmin ? field('저장 공간 한도 (MB)', quota, '0 이면 제한 없음') : null,
         h('div', { style: { marginTop: '14px' } }, checkbox('처음 로그인할 때 비밀번호 바꾸게 하기', true, (v) => (mustChange = v))),
@@ -380,7 +380,7 @@ export class PeopleView {
       toast('다시 쓸 수 있게 했어요', 'success');
       this.load();
     } catch (e) {
-      toast(e.message, 'error');
+      toast(errorText(e), 'error');
     }
   }
 
@@ -439,7 +439,7 @@ export class PeopleView {
     const draw = () => {
       put(list, 
         ...this.academies.map((a) => {
-          const edit = btn('', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '이름 바꾸기' });
+          const edit = btn('이름 바꾸기', { variant: 'subtle', size: 'sm', iconName: 'edit', title: '이름 바꾸기' });
           edit.addEventListener('click', async () => {
             const name = input({ value: a.name });
             const ok = await dialog({ title: '학원 이름 바꾸기', body: field('학원 이름', name), ok: '저장', onOk: () => this.cloud.api('PATCH', `/api/academies/${a.id}`, { name: name.value }) });
@@ -448,7 +448,7 @@ export class PeopleView {
               draw();
             }
           });
-          const quota = btn('', { variant: 'subtle', size: 'sm', iconName: 'cloud', title: '학원 공간 용량' });
+          const quota = btn('학원 공간 용량', { variant: 'subtle', size: 'sm', iconName: 'cloud', title: '학원 공간 용량' });
           quota.addEventListener('click', async () => {
             const q = input({ type: 'number', min: '0', value: a.quotaMb ?? '', placeholder: '비우면 기본값' });
             const ok = await dialog({
@@ -463,17 +463,18 @@ export class PeopleView {
               draw();
             }
           });
-          const del = btn('', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '지우기', disabled: a.directors + a.teachers > 0 });
+          const del = btn('지우기', { variant: 'subtle', size: 'sm', iconName: 'trash', title: '지우기', disabled: a.directors + a.teachers > 0 });
           del.addEventListener('click', async () => {
+            if (!(await confirmDialog(`${a.name} 학원을 삭제할까요?`, '학원과 학원에 보관한 자료를 삭제합니다. 삭제한 학원은 되돌릴 수 없습니다.', '삭제', true))) return;
             try {
               await this.cloud.api('DELETE', `/api/academies/${a.id}`);
               await this.loadAcademies();
               draw();
             } catch (e) {
-              toast(e.message, 'error');
+              toast(errorText(e), 'error');
             }
           });
-          const code = btn('학원 코드', { variant: 'subtle', size: 'sm', onClick: () => editAcademyCode(this.cloud, `?academy=${encodeURIComponent(a.id)}`).catch((e) => toast(e.message, 'error')) });
+          const code = btn('학원 코드', { variant: 'subtle', size: 'sm', onClick: () => editAcademyCode(this.cloud, `?academy=${encodeURIComponent(a.id)}`).catch((e) => toast(errorText(e), 'error')) });
           const subjects = btn('과목', { variant: 'subtle', size: 'sm' });
           subjects.addEventListener('click', async () => {
             const checks = subjectChecks(a.subjects);
@@ -510,7 +511,7 @@ export class PeopleView {
           await this.loadAcademies();
           draw();
         } catch (e) {
-          toast(e.message, 'error');
+          toast(errorText(e), 'error');
         }
       }),
     );

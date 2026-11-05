@@ -332,7 +332,8 @@ select.input {
 .app-task { display: flex; flex-direction: column; gap: 6px; }
 .app-task .t { font-size: 12.5px; color: var(--grey600); display: flex; justify-content: space-between; }
 .app-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: auto; flex-wrap: wrap; } /* 버튼이 많아 줄이 넘어가도 오른쪽에 */
-.app-foot .sync { flex: 1; min-width: 0; font-size: 12.5px; color: var(--grey500); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-foot .sync { flex: 1 1 100%; min-width: 0; font-size: 12.5px; color: var(--grey600); display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.app-foot .sync:empty { display: none; }
 .app-foot .sync .ic { color: var(--grey400); }
 .app-foot .sync.warn { color: var(--warning); }
 .app-foot .sync.warn .ic { color: var(--warning); }
@@ -434,6 +435,15 @@ select.input {
   background: rgba(51, 61, 75, .96); color: #fff; font-weight: 500; animation: toast-in .26s var(--ease) both;
 }
 .toast.out { animation: toast-out .2s ease-in both; }
+.toast { pointer-events: auto; flex-wrap: wrap; }
+.toast > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast .btn { color: #fff; flex: none; }
+.toast .btn:hover { background: var(--grey700); }
+.advanced-settings > summary { display: list-item; cursor: pointer; color: var(--grey700); }
+.advanced-settings > summary:focus-visible { outline: 2px solid var(--accent); }
+.advanced-settings[open] > summary { margin-bottom: 14px; }
+.dialog .row { flex-wrap: wrap; }
+.dialog .row .grow { flex: 1 1 180px; }
 .toast .ic { flex: none; }
 .toast.success .ic { color: #4CD3A0; }
 .toast.error .ic { color: #FF7A85; }
@@ -458,7 +468,12 @@ select.input {
 
 .boot { height: 100%; display: grid; place-items: center; }
 
+.field .hint, .card-desc, .row-desc, .subtle, .nav-section, .auth-foot, .dev-credit, .table th, .app-ver, .notice-meta, .notice-count, .notice-strip .t2, .empty { color: var(--grey600); }
+
 /* ------------------------------------------------------------ 태블릿·휴대폰 (PC 앱 창은 980px 이상이라 바뀌지 않음) */
+@media (min-width: 961px) and (max-width: 1100px) {
+  .students-table .acts { white-space: normal; }
+}
 @media (max-width: 960px) {
   #root { height: 100dvh; }
   .main, .page { min-height: 0; }
@@ -541,8 +556,6 @@ select.input {
   .student-account .account-cell { width: 100%; justify-content: space-between; }
   .students-table .acts { order: 3; }
   .students-table .acts .btn { width: auto; padding: 8px 12px; }
-  .student-edit::after { content: '고치기'; }
-  .student-remove::after { content: '삭제'; }
   .notes-table .note-name { display: block; }
   .auth { padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom)); }
 }

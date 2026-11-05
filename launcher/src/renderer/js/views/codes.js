@@ -1,5 +1,5 @@
 // 원장 가입 코드 (운영자): 코드를 만들어 원장님께 주면, 원장님이 직접 가입해 학원과 계정을 만든다
-import { h, ic, btn, toast, dialog, field, input, select, pill, date, ago, confirmDialog, secretDialog, reveal, put, subjectChecks, subjectText } from '../ui.js';
+import { errorText, h, ic, btn, toast, dialog, field, input, select, pill, date, ago, confirmDialog, secretDialog, reveal, put, subjectChecks, subjectText } from '../ui.js';
 
 const STATE = { active: ['쓸 수 있음', 'green'], used: ['다 씀', 'grey'], expired: ['기간 끝남', 'yellow'], revoked: ['취소함', 'red'] };
 
@@ -26,7 +26,7 @@ export class CodesView {
       const r = await this.cloud.api('GET', '/api/codes');
       this.render(r.codes);
     } catch (e) {
-      put(this.table, h('div', { class: 'empty' }, e.message));
+      put(this.table, h('div', { class: 'empty' }, errorText(e)));
     }
   }
 
@@ -36,7 +36,7 @@ export class CodesView {
       return;
     }
     const rows = codes.map((c) => {
-      const copy = btn('', { variant: 'subtle', size: 'sm', iconName: 'copy', title: '복사' });
+      const copy = btn('복사', { variant: 'subtle', size: 'sm', iconName: 'copy', title: '복사' });
       copy.addEventListener('click', async () => {
         await this.cloud.copy(c.code);
         toast('코드를 복사했어요', 'success', 1600);

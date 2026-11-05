@@ -1,5 +1,5 @@
 // 활동 기록 (운영자): 누가 언제 계정을 만들고 지웠는지, 코드를 만들었는지 등
-import { h, ic, btn, busy, input, select, pill, date, bytes, reveal, put, subjectText } from '../ui.js';
+import { errorText, h, ic, btn, busy, input, select, pill, date, bytes, reveal, put, subjectText } from '../ui.js';
 
 const LABEL = {
   login: ['로그인', 'grey'],
@@ -104,7 +104,7 @@ export class AuditView {
       this.moreBtn.style.display = r.more ? '' : 'none';
       this.render();
     } catch (e) {
-      put(this.table, h('div', { class: 'empty' }, e.message));
+      put(this.table, h('div', { class: 'empty' }, errorText(e)));
     }
   }
 
@@ -127,7 +127,7 @@ export class AuditView {
       );
     });
     put(this.table, 
-      h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...['때', '활동', '한 사람', '대상', '내용', 'IP'].map((t) => h('th', {}, t)))), h('tbody', {}, ...rows)),
+      h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...['일시', '활동', '담당자', '대상', '내용', '접속 IP'].map((t) => h('th', {}, t)))), h('tbody', {}, ...rows)),
     );
     reveal(this.table.querySelector('tbody'));
   }

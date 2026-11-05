@@ -167,7 +167,7 @@ if (!process.versions.electron) {
           state.user.role = role;
           onState(state);
           const help = document.querySelector('[data-id="help"]');
-          equal(help.title, '사용 설명서를 브라우저에서 열어요');
+          equal(help.title, '사용 설명서를 브라우저에서 열기');
           equal(help.querySelectorAll('svg').length, 2);
           ok(help.querySelector('circle'));
           if (role === 'student') equal(help.previousElementSibling.dataset.id, 'account');
@@ -200,7 +200,7 @@ if (!process.versions.electron) {
       }
       state.phase = 'setup'; onState(state);
       ok(document.body.textContent.includes('서버 연결'));
-      button('처음이세요? 사용 설명서 보기').click();
+      button('사용 설명서 보기').click();
       equal(calls.at(-1), ['external', 'https://mago.milky.kr/help/']);
     });
     await run('비밀번호 안내: 역할별 세 줄·확인으로 닫기', async () => {
@@ -304,7 +304,7 @@ if (!process.versions.electron) {
       const students = [{ id: 's/1', name: '김학생', account: null }, { id: 's2', name: '이학생', account: { username: 'old', status: 'disabled', mustChangePassword: true, aiMode: 'academy' } }];
       cloud.api = async (m, p, b) => { calls.push([m, p, b]); return p === '/api/students' ? { students, purgeDays: 30 } : { members: [] }; };
       const view = new StudentsView({ cloud, store: { state } }); mount(view); await until(() => view.loaded);
-      ok(view.el.textContent.includes('꺼짐') && view.el.textContent.includes('비밀번호 바꿔야 해요'));
+      ok(view.el.textContent.includes('꺼짐') && view.el.textContent.includes('비밀번호 변경 전'));
       let promise = view.account(students[0]);
       topDialog().querySelector('input').value = 'newstudent'; topDialog().querySelector('input[type=password]').value = 'pass1234';
       button('직접 만들기', topDialog()).click(); await promise;
@@ -422,7 +422,7 @@ if (!process.versions.electron) {
       const view = new StudentsView({ cloud, store: { state } }); mount(view); await until(() => view.loaded);
       const pending = view.account({ id: 's1', name: '김학생' });
       button('초대 코드 만들기', topDialog()).click(); button('만들기', topDialog()).click();
-      await until(() => topDialog()?.textContent.includes('지금 한 번만 보여요'));
+      await until(() => topDialog()?.textContent.includes('코드는 이 창에서만 확인할 수 있습니다.'));
       button('가입 주소 복사', topDialog()).click(); button('코드 복사', topDialog()).click(); await tick();
       ok(calls.some((c) => c[0] === 'copy' && c[1] === 'https://local.test/#/join?code=invite%2Fone'));
       ok(topDialog().textContent.includes('까지 한 번'));
@@ -768,6 +768,130 @@ if (!process.versions.electron) {
       const view = new AuditView({ cloud }); mount(view); await until(() => view.table.querySelector('tbody'));
       ok(view.table.textContent.includes('계약 과목 바꿈'));
       ok(view.table.textContent.includes('수학 · 영어 (전: 수학)'));
+    });
+    await run('입력 대화창: 바깥 클릭·Esc 보호, 취소·확인은 유지', async () => {
+      const { dialog, input } = await import('./js/ui.js');
+      const text = input({ value: '작성 중인 내용' });
+      const pending = dialog({ title: '입력 보호', body: text });
+      const dim = text.closest('.dim');
+      dim.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      ok(!dim.classList.contains('out'), '바깥 클릭으로 입력창이 닫히면 안 됨');
+      text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      ok(!dim.classList.contains('out'), 'Esc로 입력창이 닫히면 안 됨');
+      equal(text.value, '작성 중인 내용');
+      button('취소', topDialog()).click(); equal(await pending, null);
+      const plain = dialog({ title: '확인만' });
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      equal(await plain, null);
+    });
+    await run('오류 알림: 짧은 시간 지정에도 10초 이상, 직접 닫기', async () => {
+      const { toast } = await import('./js/ui.js');
+      const timers = []; const original = window.setTimeout;
+      window.setTimeout = (fn, ms) => { timers.push(ms); return 1; };
+      try {
+        toast('시험 오류', 'error', 1600);
+        ok(timers.some((ms) => ms >= 10000), '오류를 읽을 시간 필요');
+        const item = document.querySelector('.toast.error');
+        ok(item.getAttribute('role') === 'alert');
+        button('닫기', item).click();
+        ok(item.classList.contains('out'));
+      } finally { window.setTimeout = original; }
+    });
+    await run('프로그램 카드: 빈 더보기 숨김, 설치 후 지금 맞추기', async () => {
+      const { HomeView } = await import('./js/views/home.js');
+      state.web = false; state.user.role = 'director';
+      state.apps = [{ id: 'notes', name: '오답노트', release: { version: '1', size: 0 } }];
+      cloud.sync = async (id) => { calls.push(['sync', id]); return true; };
+      const view = new HomeView({ cloud, store: { state }, go() {} }); mount(view);
+      const card = view.cards.get('notes');
+      equal(card.more.style.display, 'none');
+      state.apps[0].installed = { version: '1' }; view.update(state);
+      ok(card.more.style.display !== 'none');
+      const sync = button('지금 맞추기', card.el); ok(sync); sync.click();
+      await until(() => calls.some((c) => c[0] === 'sync'));
+      equal(calls[0], ['sync', 'notes']);
+      ok(button('열기', card.el));
+    });
+    await run('학원 삭제: 확인 전·취소 시 요청 없음, 확인 후 한 번 삭제', async () => {
+      const { PeopleView } = await import('./js/views/people.js');
+      state.user.role = 'admin';
+      cloud.api = async (m, p, b) => {
+        calls.push([m, p, b]);
+        return p === '/api/academies' ? { academies: [{ id: 7, name: '시험 학원', subjects: ['math'], directors: 0, teachers: 0 }] } : { users: [] };
+      };
+      const view = new PeopleView({ cloud, store: { state } }); mount(view);
+      await view.loadAcademies(); view.manageAcademies(); await until(() => topDialog());
+      topDialog().querySelector('button[title="지우기"]').click(); await tick();
+      equal(calls.filter((c) => c[0] === 'DELETE').length, 0);
+      ok(topDialog().querySelector('.dialog-title').textContent.includes('삭제'));
+      button('취소', topDialog()).click(); await tick();
+      equal(calls.filter((c) => c[0] === 'DELETE').length, 0);
+      topDialog().querySelector('button[title="지우기"]').click(); await tick();
+      button('삭제', topDialog()).click(); await until(() => calls.some((c) => c[0] === 'DELETE'));
+      equal(calls.filter((c) => c[0] === 'DELETE').length, 1);
+    });
+    await run('학원 설정: 고급은 접힘, 숨긴 값·빈 키 보존, 새 키 저장', async () => {
+      const { AcademyAiView } = await import('./js/views/academy-ai.js');
+      state.user.role = 'director';
+      const config = { provider: 'openai', model: 'existing-model', model2: 'fallback-model', baseUrl: 'https://local.test/v1', rpm: 17, keyHint: '••••1234' };
+      cloud.api = async (m, p, body) => { calls.push([m, p, body]); return { default: config, apps: {}, programs: [] }; };
+      const view = new AcademyAiView({ cloud, store: { state } }); mount(view);
+      await until(() => view.main.querySelector('details'));
+      ok(!view.main.querySelector('details').open); ok(!view.apps.open);
+      button('저장', view.main).click(); await until(() => calls.some((c) => c[0] === 'PUT'));
+      equal(calls.find((c) => c[0] === 'PUT')[2], { app: '', config: { provider: 'openai', model: 'existing-model', model2: 'fallback-model', baseUrl: 'https://local.test/v1', rpm: 17 } });
+      view.main.querySelector('input[type=password]').value = 'replacement-key';
+      button('저장', view.main).click(); await until(() => calls.filter((c) => c[0] === 'PUT').length === 2);
+      equal(calls.filter((c) => c[0] === 'PUT').at(-1)[2].config.apiKey, 'replacement-key');
+    });
+    await run('첫 로그인: 바깥·Esc로 로그아웃 안 함, 명시적 로그아웃만', async () => {
+      state.user.role = 'teacher'; state.user.mustChangePassword = true;
+      cloud.logout = async () => { calls.push(['logout']); };
+      await import('./js/app.js'); await until(() => topDialog());
+      const dim = topDialog().closest('.dim');
+      const pw = topDialog().querySelector('input'); pw.value = '입력 중';
+      dim.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      pw.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick();
+      equal(calls.filter((c) => c[0] === 'logout').length, 0); equal(pw.value, '입력 중');
+      button('로그아웃', topDialog()).click(); await until(() => calls.some((c) => c[0] === 'logout'));
+      equal(calls.filter((c) => c[0] === 'logout').length, 1);
+    });
+    await run('오류 코드: 다음 행동 표시, 한글 상세와 오류 코드 보존', async () => {
+      const { errorText, dialog } = await import('./js/ui.js');
+      ok(errorText(new Error('(account_exists)')).includes('계정 관리'));
+      ok(errorText({ message: '이미 학생 계정이 있어요.', code: 'account_exists' }).includes('(account_exists)'));
+      equal(errorText(new Error('학생 이름을 입력해 주세요.')), '학생 이름을 입력해 주세요.');
+      ok(errorText(new Error('unknown_code')).includes('운영자'));
+      dialog({ title: '오류', onOk: () => { throw new Error('(account_exists)'); } });
+      button('확인', topDialog()).click(); await tick();
+      ok(topDialog().querySelector('.error-text').textContent.includes('계정 관리'));
+    });
+    await run('학생 삭제 되돌리기: 확인·복구 요청, 학원을 바꿔도 원래 학원에 복구', async () => {
+      const { StudentsView } = await import('./js/views/students.js');
+      const view = Object.create(StudentsView.prototype);
+      view.academy = '7'; view.purgeDays = 30; view.load = async () => {};
+      view.cloud = { api: async (...args) => { calls.push(args); return true; } };
+      const pending = view.remove({ id: 'student/1', name: '시험 학생' });
+      equal(calls.length, 0); button('삭제', topDialog()).click(); await pending;
+      equal(calls[0], ['DELETE', '/api/students/student%2F1?academy=7']);
+      view.academy = '8'; button('되돌리기', document.querySelector('.toast')).click();
+      await until(() => calls.length === 2);
+      equal(calls[1], ['POST', '/api/students/student%2F1/restore?academy=7', {}]);
+    });
+    await run('PC 서버 다시 연결: 성공 후 로그인으로 복귀, 실패 시 입력 유지', async () => {
+      state.web = false; state.phase = 'login'; state.user = null;
+      cloud.setServer = async (url) => { state.config.serverUrl = url; onState(state); };
+      await import('./js/app.js'); await until(() => document.querySelector('.server-chip'));
+      document.querySelector('.server-chip').click();
+      document.querySelector('input').value = 'http://127.0.0.1:8491';
+      button('연결').click(); await until(() => document.querySelector('input[placeholder="아이디"]'));
+      equal(document.querySelector('.server-chip').title, 'http://127.0.0.1:8491');
+      document.querySelector('.server-chip').click();
+      cloud.setServer = async () => { throw new Error('서버 주소를 확인해 주세요.'); };
+      document.querySelector('input').value = 'http://127.0.0.1:8492';
+      button('연결').click(); await until(() => document.querySelector('.error-text').textContent);
+      equal(document.querySelector('input').value, 'http://127.0.0.1:8492');
+      ok(document.querySelector('.error-text').textContent.includes('서버 주소'));
     });
     console.log('STUDENT_TESTS=' + JSON.stringify(results));
     win.destroy();

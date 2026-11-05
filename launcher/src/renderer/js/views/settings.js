@@ -1,5 +1,5 @@
 // 설정: 이 컴퓨터, 자동 실행, 업데이트, 서버, 정보 (구현민 개발)
-import { h, ic, btn, busy, toast, dialog, field, input, toggle, pill, ago, put } from '../ui.js';
+import { errorText, h, ic, btn, busy, toast, dialog, field, input, toggle, pill, ago, put } from '../ui.js';
 import { openInApp } from './home.js';
 import { updateInstallButton } from '../update-install.js';
 import { releaseNotesButton } from '../release-notes.js';
@@ -23,7 +23,7 @@ export class SettingsView {
       cloud
         .setConfig(patch)
         .then((config) => msg && toast(typeof msg === 'function' ? msg(config) : msg, 'success'))
-        .catch((e) => toast(e.message, 'error'));
+        .catch((e) => toast(errorText(e), 'error'));
 
     const devName = input({ value: c.deviceName, maxlength: 80, style: 'width: 220px' });
     devName.addEventListener('change', () => set({ deviceName: devName.value.trim() || this.store.state.config.deviceName }, (config) =>
@@ -46,8 +46,8 @@ export class SettingsView {
             { class: 'card' },
             h('h2', { class: 'card-title' }, '이 컴퓨터'),
             row('컴퓨터 이름', '‘로그인한 기기’ 목록에 보이는 이름이에요.', devName),
-            row('컴퓨터를 켜면 자동으로 실행', '트레이에서 조용히 켜져서 동기화하고, ‘윈도우 시작 시 실행’으로 정한 프로그램(예: 타종)을 켜요.', toggle(c.autoStart, (v) => set({ autoStart: v }, v ? '자동 실행을 켰어요' : '자동 실행을 껐어요'))),
-            row('창을 닫아도 트레이에서 계속', '끄면 창을 닫을 때 통합 클라우드도 꺼져요.', toggle(c.closeToTray, (v) => set({ closeToTray: v }))),
+            row('컴퓨터를 켜면 자동으로 실행', '창을 띄우지 않고 데이터를 서버와 맞춥니다. ‘윈도우 시작 시 실행’으로 정한 프로그램도 켭니다.', toggle(c.autoStart, (v) => set({ autoStart: v }, v ? '자동 실행을 켰어요' : '자동 실행을 껐어요'))),
+            row('창을 닫아도 계속 실행', '켜면 작업 표시줄 오른쪽 아이콘으로 남습니다. 끄면 창을 닫을 때 통합 클라우드도 종료됩니다.', toggle(c.closeToTray, (v) => set({ closeToTray: v }))),
             row('프로그램 자동 업데이트', '새 버전이 나오면 알아서 받아요. 켜져 있는 프로그램은 다음에 켤 때 바뀌어요.', toggle(c.autoUpdateApps, (v) => set({ autoUpdateApps: v }))),
           ),
           h(
@@ -69,7 +69,7 @@ export class SettingsView {
             h('h2', { class: 'card-title' }, '정보'),
             row('프로그램', '마고에듀 통합 클라우드', h('span', { class: 'muted' }, `버전 ${s.version}`)),
             row('만든 사람', null, h('span', { style: { fontWeight: 600 } }, '구현민')),
-            row('통합 클라우드 끄기', '켜져 있는 프로그램은 계속 돌아가요. 동기화는 다시 켜면 이어서 해요.', btn('끄기', { size: 'sm', variant: 'danger', onClick: () => this.quit() })),
+            row('통합 클라우드 끄기', '켜져 있는 프로그램은 계속 실행됩니다. 서버와 맞추기는 통합 클라우드를 다시 켜면 이어집니다.', btn('끄기', { size: 'sm', variant: 'danger', onClick: () => this.quit() })),
           ),
         ),
       ),
@@ -81,7 +81,7 @@ export class SettingsView {
   webView(s) {
     const l = s.launcher;
     const download = l ? h('a', { class: 'btn sm', href: '/download/launcher' }, ic('download', 16), '내려받기') : btn('내려받기', { size: 'sm', iconName: 'download', disabled: true });
-    const open = s.client?.canOpenApp ? btn('열기', { size: 'sm', onClick: () => openInApp(this.cloud, this.store).catch((e) => toast(e.message, 'error')) }) : null;
+    const open = s.client?.canOpenApp ? btn('열기', { size: 'sm', onClick: () => openInApp(this.cloud, this.store).catch((e) => toast(errorText(e), 'error')) }) : null;
     return h(
       'div',
       {},

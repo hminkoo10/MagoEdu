@@ -1,5 +1,5 @@
 // 프로그램 화면: 설치·열기·업데이트·삭제, 동기화 상태 (Creative Cloud 처럼)
-import { h, ic, btn, busy, toast, dialog, notify, menu, checkbox, bytes, ago, ROLE, put } from '../ui.js';
+import { errorText, h, ic, btn, busy, toast, dialog, notify, menu, checkbox, bytes, ago, ROLE, put } from '../ui.js';
 
 const TASK_LABEL = { install: '설치하는 중', update: '업데이트하는 중', uninstall: '삭제하는 중', launch: '켜는 중', legacy: '가져오는 중' };
 
@@ -65,15 +65,17 @@ export class HomeView {
     const s = store.state;
     this.web = !!s.web;
     this.sub = h('div', { class: 'subtitle' });
-    const syncAll = this.web ? null : btn('모두 동기화', { variant: 'white', iconName: 'refresh' });
+    const syncAll = this.web ? null : btn('모두 서버와 맞추기', { variant: 'white', iconName: 'refresh' });
     syncAll?.addEventListener('click', () =>
       busy(syncAll, async () => {
-        await cloud.syncAll();
-        toast('동기화했어요', 'success', 1800);
+        try {
+          await cloud.syncAll();
+          toast('서버와 맞추기를 마쳤습니다', 'success', 1800);
+        } catch (e) { toast(errorText(e), 'error'); }
       }),
     );
-    const reload = btn('', { variant: 'white', iconName: 'rotate', title: '목록 새로 고침' });
-    reload.addEventListener('click', () => busy(reload, () => cloud.refreshApps().catch((e) => toast(e.message, 'error'))));
+    const reload = btn('새로 고침', { variant: 'white', iconName: 'rotate', title: '목록 새로 고침' });
+    reload.addEventListener('click', () => busy(reload, () => cloud.refreshApps().catch((e) => toast(errorText(e), 'error'))));
     this.notice = h('div');
     this.webNote = this.web ? this.makeWebNote(s) : null;
     this.grid = h('div', { class: 'apps-grid' });
@@ -90,6 +92,7 @@ export class HomeView {
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '프로그램'), this.sub), h('div', { class: 'right' }, reload, syncAll)),
       this.notice,
       this.webNote,
+      h('p', { class: 'card-desc' }, this.web ? '1. PC 프로그램은 통합 클라우드 앱 설치 → 2. PC에 설치 → 3. PC에서 실행. 웹 프로그램은 ‘열기’로 바로 사용합니다.' : '1. 사용할 프로그램 설치 → 2. 열기. 다른 컴퓨터의 자료가 안 보이면 ‘지금 맞추기’를 누르세요.'),
       this.grid,
       this.empty,
     );
@@ -101,11 +104,11 @@ export class HomeView {
       const text =
         s.client?.os === 'android'
           ? 'PC 프로그램은 Windows PC의 통합 클라우드 앱에서 쓸 수 있어요. 안드로이드용 프로그램은 여기서 바로 내려받을 수 있어요.'
-          : '프로그램은 Windows PC의 통합 클라우드 앱에서 쓸 수 있어요. 여기서는 공지·계정·관리 기능을 쓸 수 있어요.';
+          : 'PC용 프로그램은 Windows PC의 통합 클라우드 앱에서 사용합니다. 웹 프로그램은 ‘열기’로 바로 사용하고, 공지·계정·관리 기능도 여기서 이용할 수 있습니다.';
       return h('div', { class: 'note', style: { marginBottom: '16px' } }, ic('info', 18), h('span', {}, text));
     }
     const open = btn('통합 클라우드 열기', { variant: 'primary', size: 'sm', iconName: 'cloud' });
-    open.addEventListener('click', () => openInApp(this.cloud, this.store).catch((e) => toast(e.message, 'error')));
+    open.addEventListener('click', () => openInApp(this.cloud, this.store).catch((e) => toast(errorText(e), 'error')));
     const download = s.launcher ? h('a', { class: 'btn white sm', href: '/download/launcher' }, ic('download', 16), '앱 내려받기') : null;
     return h(
       'div',
@@ -114,7 +117,7 @@ export class HomeView {
       h(
         'div',
         { style: { flex: 1, minWidth: 0 } },
-        h('div', {}, '프로그램 설치·실행과 데이터 동기화는 PC의 통합 클라우드 앱에서 해요. ‘PC에 설치’·‘PC에서 실행’을 누르면 이 PC의 통합 클라우드 앱이 열려서 설치하거나 실행해요.'),
+        h('div', {}, '프로그램 설치·실행과 서버 데이터 맞추기는 PC의 통합 클라우드 앱에서 합니다. ‘PC에 설치’·‘PC에서 실행’을 누르면 이 PC의 통합 클라우드 앱이 열려서 설치하거나 실행해요.'),
         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' } }, open, download),
       ),
     );
@@ -123,7 +126,7 @@ export class HomeView {
   update(s) {
     const u = s.user;
     const who = u.name === ROLE[u.role] ? u.name : `${u.name} ${ROLE[u.role]}`;
-    this.sub.textContent = `안녕하세요, ${who}${who.endsWith('님') ? '' : '님'}${u.academy ? ` · ${u.academy.name}` : ''}`;
+    this.sub.textContent = `${who}${who.endsWith('님') ? '' : '님'}${u.academy ? ` · ${u.academy.name}` : ''}`;
     this.renderNotice(s);
     const ids = new Set(s.apps.map((a) => a.id));
     for (const [id, c] of this.cards) {
@@ -184,17 +187,25 @@ export class HomeView {
     c.second = btn('', { variant: 'soft' }); // 웹: ‘PC에 설치’
     c.second.style.display = 'none';
     c.more = btn('', { iconName: 'more', title: '더 보기' });
+    c.match = btn('지금 맞추기', { size: 'sm', iconName: 'refresh', title: '서버와 데이터 맞추기' });
+    c.match.style.display = 'none';
     c.el = h(
       'div',
       { class: 'app-card' },
       h('div', { class: 'app-head' }, c.icon, h('div', { style: { minWidth: 0 } }, c.name, c.ver)),
       c.desc,
       c.task,
-      h('div', { class: 'app-foot' }, c.sync, c.more, c.second, c.primary),
+      h('div', { class: 'app-foot' }, c.sync, c.match, c.more, c.second, c.primary),
     );
     c.primary.addEventListener('click', () => this.primary(c.app));
-    c.second.addEventListener('click', () => openInApp(this.cloud, this.store, c.app.id, 'install').catch((e) => toast(e.message, 'error')));
+    c.second.addEventListener('click', () => openInApp(this.cloud, this.store, c.app.id, 'install').catch((e) => toast(errorText(e), 'error')));
     c.more.addEventListener('click', () => this.openMenu(c.more, c.app));
+    c.match.addEventListener('click', () => busy(c.match, async () => {
+      try {
+        const result = await this.cloud.sync(c.app.id);
+        if (result) toast('서버와 맞추기를 마쳤습니다', 'success');
+      } catch (e) { toast(errorText(e), 'error'); }
+    }));
     return c;
   }
 
@@ -214,6 +225,8 @@ export class HomeView {
     }
     c.name.textContent = a.name;
     c.desc.textContent = a.description || '';
+    c.match.style.display = !this.web && a.installed && !['android', 'web'].includes(a.platform) ? '' : 'none';
+    c.match.disabled = !!a.task || a.sync?.status === 'syncing';
     if (a.platform === 'android') return this.fillPhoneCard(c, a);
     if (a.platform === 'web') return this.fillLinkCard(c, a);
     if (this.web) return this.fillWebCard(c, a);
@@ -278,25 +291,25 @@ export class HomeView {
     let syncEl = [];
     let warn = false;
     if (!a.installed) syncEl = [];
-    else if (!sy) syncEl = [ic('cloud', 15), '아직 동기화 전'];
-    else if (sy.status === 'syncing') syncEl = [h('span', { class: 'spinner', style: { width: '13px', height: '13px', borderWidth: '2px' } }), '동기화 중'];
-    else if (sy.status === 'offline') syncEl = [ic('cloudOff', 15), '연결되면 동기화해요'];
+    else if (!sy) syncEl = [ic('cloud', 15), '아직 서버와 맞추기 전'];
+    else if (sy.status === 'syncing') syncEl = [h('span', { class: 'spinner', style: { width: '13px', height: '13px', borderWidth: '2px' } }), '서버와 맞추는 중'];
+    else if (sy.status === 'offline') syncEl = [ic('cloudOff', 15), '연결되면 자동으로 맞춥니다'];
     else if (sy.status === 'error') {
       warn = true;
-      syncEl = [ic('alert', 15), '동기화 실패'];
+      syncEl = [ic('alert', 15), '서버와 맞추기 실패'];
     } else if (sy.quotaExceeded) {
       warn = true;
       syncEl = [ic('warning', 15), '서버 용량이 꽉 찼어요'];
     } else if (sy.localOnly?.files) {
       warn = true;
       syncEl = [ic('drive', 15), `이 컴퓨터에만 있는 데이터 ${sy.localOnly.groups || sy.localOnly.files}개`];
-    } else syncEl = [ic('cloudCheck', 15), `동기화됨 · ${ago(sy.at)}`];
+    } else syncEl = [ic('cloudCheck', 15), `서버와 맞춤 · ${ago(sy.at)}`];
     c.sync.className = `sync ${warn ? 'warn' : ''}`;
     c.sync.title = sy?.localOnly?.files
       ? `오래 쓰지 않아 서버 보관 기간(${a.coldStorage?.days || 30}일)이 지난 데이터예요. 이 컴퓨터에는 그대로 있고, 다시 쓰면 서버에 다시 올라가요.`
       : sy?.error || '';
     put(c.sync, ...syncEl);
-    c.more.style.display = a.installed || a.release ? '' : 'none';
+    c.more.style.display = a.installed || a.running || a.release?.notes ? '' : 'none';
   }
 
   // 웹: 이 PC 에 무엇이 설치돼 있는지는 모르니, Windows PC 면 통합 클라우드 앱에 ‘PC에 설치’·‘PC에서 실행’을 부탁한다
@@ -397,7 +410,7 @@ export class HomeView {
         await this.cloud.copy(site);
         toast('주소를 복사했어요', 'success', 1600);
       } catch (e) {
-        toast(e.message, 'error');
+        toast(errorText(e), 'error');
       }
     });
     const here = btn('이 기기에서 받기', { variant: 'subtle', iconName: 'download', title: '지금 이 기기로 APK 파일을 받아요' });
@@ -421,7 +434,7 @@ export class HomeView {
           await this.downloadHere(a);
           close?.click();
         } catch (e) {
-          toast(e.message, 'error');
+          toast(errorText(e), 'error');
         }
       }),
     );
@@ -453,7 +466,7 @@ export class HomeView {
       }
       await this.launch(a);
     } catch (e) {
-      toast(e.message, 'error');
+      toast(errorText(e), 'error');
     }
   }
 
@@ -469,12 +482,11 @@ export class HomeView {
     const items = [];
     if (a.platform === 'android' && a.release) {
       // 기기를 잘못 알아봐도(태블릿 등) 언제든 이 기기에서 받을 수 있게
-      items.push({ icon: 'download', label: '이 기기에서 받기', onClick: () => this.downloadHere(a).catch((e) => toast(e.message, 'error')) });
+      items.push({ icon: 'download', label: '이 기기에서 받기', onClick: () => this.downloadHere(a).catch((e) => toast(errorText(e), 'error')) });
       if (this.onPhone()) items.push({ icon: 'phone', label: '다른 휴대폰에서 받는 방법', onClick: () => this.phoneGuide(a) });
     }
     if (a.installed) {
       items.push(
-        { icon: 'refresh', label: '지금 동기화', onClick: () => this.cloud.sync(a.id).then((r) => r && toast('동기화했어요', 'success', 1600)) },
         { icon: 'folder', label: '데이터 폴더 열기', onClick: () => this.cloud.openData(a.id, 'sync') },
       );
       if (a.sync?.conflicts?.length) items.push({ icon: 'copy', label: '따로 보관한 파일 보기', onClick: () => this.cloud.openData(a.id, 'conflicts') });
@@ -487,7 +499,7 @@ export class HomeView {
             if (!list.length) return notify('예전 데이터를 찾지 못했어요', '이 컴퓨터에는 따로 설치해서 쓰던 데이터가 없어요.');
             await askLegacy(this.cloud, a.id, list, this.store);
           } catch (e) {
-            toast(e.message, 'error');
+            toast(errorText(e), 'error');
           }
         },
       });
@@ -517,14 +529,14 @@ export class HomeView {
               await this.cloud.setDesktopShortcut(a.id, !a.desktopShortcut);
               toast(!a.desktopShortcut ? `바탕 화면에 ${a.name} 바로 가기를 만들었어요` : `바탕 화면의 ${a.name} 바로 가기를 지웠어요`, 'success');
             } catch (e) {
-              toast(e.message, 'error');
+              toast(errorText(e), 'error');
             }
           },
         });
       }
     }
     if (a.release?.notes) {
-      items.push({ icon: 'sparkles', label: `${a.release.version} 새로워진 점`, onClick: () => notify(`${a.name} ${a.release.version}`, a.release.notes.replace(/^#+\s*/gm, '').replace(/\*\*/g, '')) });
+      items.push({ icon: 'history', label: `${a.release.version} 새로워진 점`, onClick: () => notify(`${a.name} ${a.release.version}`, a.release.notes.replace(/^#+\s*/gm, '').replace(/\*\*/g, '')) });
     }
     if (a.running) items.push({ icon: 'stop', label: '끄기', onClick: () => this.stopApp(a) });
     if (a.installed) items.push('-', { icon: 'trash', label: '삭제', danger: true, onClick: () => this.uninstall(a) });

@@ -1,5 +1,5 @@
 // 내 계정: 아이디·비밀번호·이름 바꾸기, 저장 공간, 로그인한 기기
-import { appLabel, SUBJECTS } from '../ui.js';
+import { errorText, appLabel, SUBJECTS } from '../ui.js';
 import { h, ic, btn, busy, toast, field, input, passwordInput, checkbox, pill, bytes, ago, initial, ROLE, confirmDialog, reveal, put } from '../ui.js';
 
 export class AccountView {
@@ -44,7 +44,7 @@ export class AccountView {
           await this.cloud.changeName(nameInput.value);
           toast('이름을 바꿨어요', 'success');
         } catch (e) {
-          toast(e.message, 'error');
+          toast(errorText(e), 'error');
         }
       }),
     );
@@ -87,7 +87,7 @@ export class AccountView {
           nu.value = '';
           pw.input.value = '';
         } catch (e) {
-          toast(e.message, 'error');
+          toast(errorText(e), 'error');
         }
       }),
     );
@@ -117,7 +117,7 @@ export class AccountView {
           for (const x of [cur, pw, pw2]) x.input.value = '';
           if (!this.student) this.loadDevices();
         } catch (e) {
-          toast(e.message, 'error');
+          toast(errorText(e), 'error');
         }
       }),
     );
@@ -181,7 +181,7 @@ export class AccountView {
         ...acaRows,
       );
     } catch (e) {
-      put(this.storage, h('h2', { class: 'card-title' }, '서버 저장 공간'), h('div', { class: 'muted' }, e.message));
+      put(this.storage, h('h2', { class: 'card-title' }, '서버 저장 공간'), h('div', { class: 'muted' }, errorText(e)));
     }
   }
 
@@ -223,7 +223,7 @@ export class AccountView {
       reveal(this.devices);
     } catch (e) {
       if (request !== this._devicesRequest) return;
-      put(this.devices, h('h2', { class: 'card-title' }, '로그인한 기기'), h('div', { class: 'muted' }, e.message));
+      put(this.devices, h('h2', { class: 'card-title' }, '로그인한 기기'), h('div', { class: 'muted' }, errorText(e)));
     }
   }
 }

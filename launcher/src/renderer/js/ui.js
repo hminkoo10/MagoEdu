@@ -40,7 +40,7 @@ export function ic(name, size = 20, stroke = 2) {
 }
 
 export function btn(label, { variant = '', size = '', iconName = null, onClick, title, disabled, type = 'button', cls = '' } = {}) {
-  const b = h('button', { type, class: `btn ${variant} ${size} ${!label && iconName ? 'icon' : ''} ${cls}`.trim(), title, disabled });
+  const b = h('button', { type, class: `btn ${variant} ${size} ${!label && iconName ? 'icon' : ''} ${cls}`.trim(), title, 'aria-label': !label ? title : undefined, disabled });
   if (iconName) b.append(ic(iconName, size === 'sm' ? 16 : 18));
   if (label) b.append(document.createTextNode(label));
   if (onClick) b.addEventListener('click', onClick);
@@ -119,8 +119,15 @@ export function segmented(options, value, onChange, { onPage = false } = {}) {
 }
 
 export function field(label, control, hint) {
-  return h('div', { class: 'field' }, label ? h('label', {}, label) : null, control, hint ? h('div', { class: 'hint' }, hint) : null);
+  const inp = control.matches('input, textarea, select') ? control : control.querySelector('input, textarea, select');
+  const labelEl = label ? h('label', {}, label) : null;
+  if (labelEl && inp) {
+    inp.id ||= `field-${++fieldId}`;
+    labelEl.htmlFor = inp.id;
+  }
+  return h('div', { class: 'field' }, labelEl, control, hint ? h('div', { class: 'hint' }, hint) : null);
 }
+let fieldId = 0;
 
 // 이름이 같은 웹·PC 앱도 권한/용량 목록에서 구분한다. 실제 카탈로그 이름은 바꾸지 않음.
 export function appLabel(app) {
@@ -135,11 +142,12 @@ export function passwordInput(props = {}) {
   const inp = input({ type: 'password', ...props });
   const eye = btn('', { variant: 'subtle', size: 'sm', iconName: 'eye', title: '비밀번호 보기' });
   eye.classList.add('eye');
-  eye.tabIndex = -1;
   eye.addEventListener('click', () => {
     const show = inp.type === 'password';
     inp.type = show ? 'text' : 'password';
     eye.replaceChildren(ic(show ? 'eyeOff' : 'eye', 16));
+    eye.title = eye.title.replace(/보기|숨기기/, show ? '숨기기' : '보기');
+    eye.setAttribute('aria-label', eye.title);
   });
   const wrap = h('div', { class: 'input-wrap' }, inp, eye);
   wrap.input = inp;
@@ -168,20 +176,58 @@ export function reveal(container) {
 }
 
 // ---------------------------------------------------------------- 토스트
+const ERROR_TEXT = {
+  account_exists: '명단의 ‘계정 관리’를 이용해 주세요. 이미 계정이 있습니다.',
+  username_taken: '다른 아이디를 입력해 주세요. 이미 사용 중인 아이디입니다.',
+  academy_code_required: '먼저 ‘학원 코드 정하기’를 눌러 주세요. 선생님은 원장님께 요청해 주세요.',
+  academy_code_taken: '다른 학원 코드를 입력해 주세요. 이미 사용 중입니다.',
+  student_deleted: '‘삭제한 학생’에서 되살린 뒤 다시 시도해 주세요.',
+  no_student: '학생 명단을 새로 확인해 주세요. 학생을 찾을 수 없습니다.',
+  no_account: '먼저 학생 계정을 만들어 주세요.',
+  invalid_code: '코드를 다시 확인해 주세요. 사용할 수 없거나 기간이 지난 코드입니다.',
+  rate_limited: '잠시 기다린 뒤 다시 시도해 주세요. 요청이 많습니다.',
+  session_invalid: '다시 로그인해 주세요. 로그인 상태가 만료되었습니다.',
+  auth_required: '로그인한 뒤 다시 시도해 주세요.',
+  offline: '인터넷 연결을 확인한 뒤 다시 시도해 주세요.',
+};
+
+/** API·저장 값은 그대로 두고 화면에 표시할 오류만 풀어 쓴다. */
+export function errorText(error) {
+  const message = String(error?.message ?? error ?? '');
+  const code = error?.code || message.match(/\b[a-z]+(?:_[a-z]+)+\b/)?.[0];
+  if (ERROR_TEXT[code]) return `${ERROR_TEXT[code]} (${code})`;
+  if (!message || !/[가-힣]/.test(message)) return `다시 시도해 주세요. 계속 안 되면 원장님이나 운영자에게 아래 내용을 알려 주세요.${message ? ` (${message})` : ''}`;
+  return message;
+}
+
 let toastBox = null;
-export function toast(text, kind = 'info', ms = 2800) {
+export function toast(text, kind = 'info', ms = 2800, action = null) {
   if (!toastBox) {
     toastBox = h('div', { class: 'toasts' });
     document.body.append(toastBox);
   }
   const names = { success: 'circleCheck', error: 'alert', warning: 'warning', info: 'info' };
-  const t = h('div', { class: `toast ${kind}` }, ic(names[kind] || 'info', 18), h('span', {}, text));
-  toastBox.append(t);
-  while (toastBox.children.length > 3) toastBox.firstChild.remove();
-  setTimeout(() => {
+  const t = h('div', { class: `toast ${kind}`, role: kind === 'error' ? 'alert' : 'status', 'data-keep': kind === 'error' || !!action }, ic(names[kind] || 'info', 18), h('span', {}, kind === 'error' && !/[가-힣]/.test(text) ? errorText(text) : text));
+  const dismiss = () => {
     t.classList.add('out');
     setTimeout(() => t.remove(), 220);
-  }, ms);
+  };
+  if (action) {
+    const undo = btn(action.label, { size: 'sm', variant: 'subtle' });
+    undo.addEventListener('click', () => busy(undo, async () => {
+      try { if (await action.onClick() !== false) dismiss(); }
+      catch (e) { toast(errorText(e), 'error'); }
+    }));
+    t.append(undo);
+  }
+  if (kind === 'error' || action) t.append(btn('닫기', { size: 'sm', variant: 'subtle', onClick: dismiss }));
+  toastBox.append(t);
+  while (toastBox.children.length > 3) {
+    const oldest = toastBox.querySelector('.toast:not([data-keep])');
+    if (!oldest) break;
+    oldest.remove();
+  }
+  setTimeout(dismiss, kind === 'error' || action ? Math.max(ms, 12000) : ms);
 }
 
 // ---------------------------------------------------------------- 대화상자
@@ -197,7 +243,7 @@ export function dialog({ title, sub, body, ok = '확인', cancel = '취소', dan
     const closeBtn = btn('', { variant: 'subtle', size: 'sm', iconName: 'x', title: '닫기' });
     const box = h(
       'div',
-      { class: `dialog ${wide ? 'wide' : ''}`, role: 'dialog' },
+      { class: `dialog ${wide ? 'wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
       h('div', { class: 'dialog-head' }, h('div', { class: 'tt' }, h('h2', { class: 'dialog-title' }, title), sub ? h('div', { class: 'dialog-sub' }, sub) : null), closeBtn),
       body || null,
       err,
@@ -221,20 +267,21 @@ export function dialog({ title, sub, body, ok = '확인', cancel = '취소', dan
         if (v === false) return;
         close(v === undefined ? true : v);
       } catch (e) {
-        err.textContent = e.message;
+        err.textContent = errorText(e);
         err.style.display = '';
       }
     };
     const onKey = (e) => {
       if ([...document.querySelectorAll('.dim:not(.out)')].at(-1) !== dim) return;
-      if (e.key === 'Escape') close(null);
-      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'BUTTON') accept();
+      if (e.key === 'Escape' && canDismiss()) close(null);
+      if (e.key === 'Enter' && !['TEXTAREA', 'BUTTON', 'SUMMARY'].includes(e.target.tagName)) accept();
     };
+    const canDismiss = () => !box.querySelector('input, textarea, select, [contenteditable="true"], .secret, .selectable');
     okBtn?.addEventListener('click', accept);
     cancelBtn?.addEventListener('click', () => close(null));
     closeBtn.addEventListener('click', () => close(null));
     dim.addEventListener('mousedown', (e) => {
-      if (e.target === dim) close(null);
+      if (e.target === dim && canDismiss()) close(null);
     });
     document.addEventListener('keydown', onKey);
     document.body.append(dim);

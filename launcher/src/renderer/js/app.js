@@ -1,5 +1,5 @@
 // 마고에듀 통합 클라우드 화면 - 구현민 개발
-import { h, ic, btn, busy, field, input, passwordInput, toast, dialog, notify, reveal, initial, ROLE, put, useCloud } from './ui.js';
+import { errorText, h, ic, btn, busy, field, input, passwordInput, toast, dialog, notify, reveal, initial, ROLE, put, useCloud } from './ui.js';
 import { HomeView, askLegacy } from './views/home.js';
 import { NoticesView } from './views/notices.js';
 import { AccountView } from './views/account.js';
@@ -38,7 +38,7 @@ function serverUrl() {
 }
 
 function navFor(user) {
-  const help = { id: 'help', icon: 'help', label: '도움말', title: '사용 설명서를 브라우저에서 열어요' };
+  const help = { id: 'help', icon: 'help', label: '도움말', title: '사용 설명서를 브라우저에서 열기' };
   if (user.role === 'student') return [
     { id: 'my-notes', icon: 'list', label: '내 오답노트' },
     { id: 'student-navi', icon: 'graduationCap', label: '마고 과목내비' },
@@ -52,13 +52,13 @@ function navFor(user) {
   ];
   if (user.academy && user.role !== 'admin') items.push({ id: 'students', icon: 'graduationCap', label: '학생 명단' });
   if (user.role === 'director') items.push({ id: 'teachers', icon: 'users', label: '선생님 관리' });
-  if (user.role === 'director' && user.academy) items.push({ id: 'academy-ai', icon: 'bot', label: '학원 AI' });
+  if (user.role === 'director' && user.academy) items.push({ id: 'academy-ai', icon: 'key', label: '학원 AI' });
   if (user.role === 'admin') {
     items.push(
       { section: '운영' },
       { id: 'people', icon: 'users', label: '계정 관리' },
       { id: 'students', icon: 'graduationCap', label: '학생 명단' },
-      { id: 'academy-ai', icon: 'bot', label: '학원 AI' },
+      { id: 'academy-ai', icon: 'key', label: '학원 AI' },
       { id: 'codes', icon: 'ticket', label: '원장 가입 코드' },
       { id: 'apps-admin', icon: 'box', label: '프로그램 관리' },
       { id: 'audit', icon: 'activity', label: '활동 기록' },
@@ -100,7 +100,7 @@ class Shell {
       'div',
       { class: 'offline-bar', style: { display: 'none' } },
       ic('cloudOff', 16),
-      web ? '서버에 연결되지 않았어요. 인터넷 연결을 확인해 주세요.' : '서버에 연결되지 않았어요. 설치한 프로그램은 그대로 쓸 수 있고, 연결되면 알아서 동기화해요.',
+      web ? '인터넷 연결을 확인해 주세요. 서버에 연결되지 않았습니다.' : '서버에 연결되지 않았습니다. 설치한 프로그램은 사용할 수 있고, 연결되면 데이터를 서버와 자동으로 맞춥니다.',
     );
     this.pill = h('div', { class: 'nav-pill' });
     this.nav = h('nav', { class: 'nav' }, this.pill);
@@ -180,7 +180,7 @@ class Shell {
         if (it.id === 'help') {
           const page = { director: 'director.html', teacher: 'teacher.html', student: 'student.html', admin: 'index.html' }[store.state.user.role] || 'index.html';
           if (this.el.classList.contains('nav-open')) this.toggleNav(false);
-          cloud.openExternal(`${serverUrl()}/help/${page}`).catch((e) => toast(e.message, 'error'));
+          cloud.openExternal(`${serverUrl()}/help/${page}`).catch((e) => toast(errorText(e), 'error'));
           return;
         }
         this.go(it.id);
@@ -346,9 +346,11 @@ function serverView({ back } = {}) {
       err.style.display = 'none';
       try {
         await cloud.setServer(url.value);
+        store.state = await cloud.getState();
+        render(true); // 로그인→서버 연결→로그인은 phase가 같아도 화면을 돌아가게 함
         toast('서버에 연결했어요', 'success');
       } catch (e) {
-        err.textContent = e.message;
+        err.textContent = errorText(e);
         err.style.display = '';
       }
     });
@@ -366,8 +368,8 @@ function serverView({ back } = {}) {
 
 function loginView() {
   const s = store.state;
-  const user = input({ cls: 'lg', placeholder: '아이디', value: s.config.lastUsername || '', autocomplete: 'username' });
-  const pw = passwordInput({ cls: 'lg', placeholder: '비밀번호', autocomplete: 'current-password' });
+  const user = input({ cls: 'lg', placeholder: '아이디', 'aria-label': '아이디', value: s.config.lastUsername || '', autocomplete: 'username' });
+  const pw = passwordInput({ cls: 'lg', placeholder: '비밀번호', 'aria-label': '비밀번호', autocomplete: 'current-password' });
   const err = h('div', { class: 'error-text', style: { display: 'none' } });
   const go = btn('로그인', { variant: 'primary', size: 'lg', cls: 'block' });
   const submit = () =>
@@ -376,7 +378,7 @@ function loginView() {
       try {
         await cloud.login(user.value, pw.input.value);
       } catch (e) {
-        err.textContent = e.code === 'student_web_only' || /student_web_only/.test(e.message) ? `학생 계정은 인터넷 브라우저에서 ${serverUrl()} 에 들어가서 써요.` : e.message;
+        err.textContent = e.code === 'student_web_only' || /student_web_only/.test(errorText(e)) ? `학생 계정은 인터넷 브라우저에서 ${serverUrl()} 에 들어가서 써요.` : errorText(e);
         err.style.display = '';
         pw.input.select();
       }
@@ -508,9 +510,9 @@ function signupView() {
         }
         if (pw.input.value !== pw2.input.value) throw new Error('비밀번호가 서로 달라요.');
         await cloud.signup({ code: code.value.trim(), academyName: academy.value, name: name.value, username: username.value, password: pw.input.value });
-        toast('가입했어요. 환영해요!', 'success');
+        toast('가입을 완료했습니다', 'success');
       } catch (e) {
-        showErr(e.message);
+        showErr(errorText(e));
       }
     });
   next.addEventListener('click', submit);
@@ -536,7 +538,7 @@ async function forcePasswordChange() {
   const pw2 = passwordInput({ placeholder: '한 번 더' });
   const done = await dialog({
     title: '새 비밀번호를 정해 주세요',
-    sub: '처음 받은 비밀번호나 초기화된 비밀번호는 바로 바꿔야 해요.',
+    sub: '1. 받은 비밀번호 입력 → 2. 새 비밀번호를 두 번 입력 → 3. 바꾸기',
     body: h('div', {}, field('지금 비밀번호', cur), field('새 비밀번호', pw), field('새 비밀번호 확인', pw2)),
     ok: '바꾸기',
     cancel: '로그아웃',
@@ -588,7 +590,7 @@ function ssoView() {
         location.replace(r.redirect);
         await new Promise(() => {}); // 웹 프로그램으로 넘어갈 때까지 돌아가는 표시 그대로
       } catch (e) {
-        showErr(e.message);
+        showErr(errorText(e));
       }
     });
   go.addEventListener('click', submit);
@@ -737,4 +739,4 @@ async function start() {
 }
 
 window.addEventListener('error', (e) => console.error(e.error || e.message));
-start().catch((e) => notify('화면을 여는 중 문제가 생겼어요', e.message));
+start().catch((e) => notify('화면을 여는 중 문제가 생겼어요', errorText(e)));
