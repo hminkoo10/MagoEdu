@@ -220,43 +220,67 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
   }
 
   // ---------------- 완전 삭제 (주기 작업) ----------------
-  function purgeExpired(now = Date.now()) {
-    const due = db.all('SELECT * FROM students WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < ?', now - purgeDays * DAY);
-    let files = 0;
-    for (const s of due) {
-      const touched = new Map(); // 프로그램 → 마지막 seq
-      db.tx(() => {
-        db.run('UPDATE students SET purged_at = ? WHERE id = ?', now, s.id);
-        db.run("DELETE FROM users WHERE student_id = ? AND role = 'student'", s.id);
-        db.run('DELETE FROM student_invites WHERE student_id = ?', s.id);
-        // students/<ID>/... 아래 전부 + 예전 오답노트의 학생 파일 students/<ID>.json
-        const rows = db.all(
-          "SELECT id, app_id FROM shared_files WHERE academy_id = ? AND deleted = 0 AND ((path >= ? AND path < ?) OR path = ?)",
-          s.academy_id,
-          `students/${s.id}/`,
-          `students/${s.id}0`, // '/' 다음 글자
-          `students/${s.id}.json`,
-        );
-        for (const f of rows) {
-          const seq = nextSeq();
-          db.run(
-            "UPDATE shared_files SET rev = rev + 1, seq = ?, sha256 = NULL, size = 0, deleted = 1, device_id = NULL, updated_by = NULL, updated_at = ? WHERE id = ?",
-            seq,
-            now,
-            f.id,
-          );
-          touched.set(f.app_id, seq);
-          files += 1;
+  function purgeTargets(aca, ids) {
+    const rows = ids == null
+      ? db.all('SELECT * FROM students WHERE academy_id = ? AND deleted_at IS NOT NULL AND purged_at IS NULL', aca)
+      : [...new Set(ids)].map((id) => row(aca, id));
+    if (rows.some((s) => !s.deleted_at)) throw bad('먼저 학생을 삭제하세요.', 'student_active');
+    return rows;
+  }
+
+  function purgeFiles(s) {
+    return db.all("SELECT * FROM shared_files WHERE academy_id = ? AND ((path >= ? AND path < ?) OR path = ?)",
+      s.academy_id, `students/${s.id}/`, `students/${s.id}0`, `students/${s.id}.json`);
+  }
+
+  function purgePreview(aca, ids) {
+    const rows = purgeTargets(aca, ids);
+    let files = 0, accounts = 0;
+    for (const s of rows) {
+      files += purgeFiles(s).filter((f) => !f.deleted).length;
+      for (const u of db.all('SELECT * FROM users WHERE student_id = ? AND academy_id = ?', s.id, aca)) {
+        accounts += 1;
+        files += db.get('SELECT COUNT(*) AS n FROM files WHERE user_id = ? AND deleted = 0', u.id).n;
+        const prefix = `members/${u.uid}/`;
+        files += db.get('SELECT COUNT(*) AS n FROM shared_files WHERE academy_id = ? AND deleted = 0 AND substr(path, 1, ?) = ?', aca, prefix.length, prefix).n;
+      }
+    }
+    return { students: rows.length, accounts, files };
+  }
+
+  function purge(aca, ids, ctx = { actorLabel: '서버' }, manual = true, now = Date.now()) {
+    const { userFiles, deleteUser } = require('./hard-delete');
+    const rows = purgeTargets(aca, ids), candidates = [], touched = new Map();
+    const counts = purgePreview(aca, ids);
+    db.tx(() => {
+      for (const s of rows) {
+        const single = purgePreview(aca, [s.id]);
+        for (const u of db.all('SELECT * FROM users WHERE student_id = ? AND academy_id = ?', s.id, aca)) {
+          candidates.push(...userFiles(db, u));
+          for (const [app, seq] of deleteUser(db, u, nextSeq)) touched.set(app, seq);
         }
-      });
-      for (const [appId, seq] of touched) events?.publishAcademy(s.academy_id, appId, seq, null);
-      svc.audit({ actorLabel: '서버' }, 'student.purge', s.name, { id: s.id, files: [...touched.keys()] }, s.academy_id);
-      notify(s.academy_id, 'students');
-    }
-    if (due.length) {
-      log.info(`[학생 명단] 지운 지 ${purgeDays}일 지난 학생 ${due.length}명(자료 ${files}개)을 완전히 지웠어요.`);
-      blobs.scheduleGc();
-    }
+        db.run('DELETE FROM student_invites WHERE student_id = ? AND academy_id = ?', s.id, aca);
+        for (const f of purgeFiles(s)) {
+          candidates.push(f);
+          const seq = nextSeq();
+          db.run('UPDATE shared_files SET rev = rev + 1, seq = ?, sha256 = NULL, size = 0, mtime = NULL, deleted = 1, device_id = NULL, updated_by = NULL, updated_at = ? WHERE id = ?', seq, now, f.id);
+          touched.set(f.app_id, seq);
+        }
+        db.run("DELETE FROM shared_items WHERE academy_id = ? AND (item = ? OR substr(item, 1, ?) = ?)", aca, `students/${s.id}`, `students/${s.id}/`.length, `students/${s.id}/`);
+        db.run("UPDATE students SET name = '', school = '', school_office = '', school_code = '', grade = '', memo = '', teacher_uid = NULL, created_by = NULL, updated_by = NULL, deleted_by = NULL, created_at = 0, updated_at = 0, deleted_at = NULL, rev = 0, purged_at = ? WHERE id = ? AND academy_id = ?", now, s.id, aca);
+        svc.audit(ctx, 'student.purge', s.name, { id: s.id, manual, ...single }, aca);
+      }
+    });
+    const blobsRemoved = blobs.removeUnreferenced(candidates);
+    for (const [appId, seq] of touched) events?.publishAcademy(aca, appId, seq, null);
+    if (rows.length) notify(aca, 'students');
+    return { ...counts, blobs: blobsRemoved };
+  }
+
+  function purgeExpired(now = Date.now()) {
+    const due = db.all('SELECT id, academy_id FROM students WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < ?', now - purgeDays * DAY);
+    let files = 0;
+    for (const s of due) files += purge(s.academy_id, [s.id], undefined, false, now).files;
     return { students: due.length, files };
   }
 
@@ -502,6 +526,8 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
     restore,
     publicStudent,
     purgeExpired,
+    purge,
+    purgePreview,
     importLegacy,
     onSharedPut,
     moveLegacyNotes,

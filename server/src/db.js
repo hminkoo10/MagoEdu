@@ -353,6 +353,11 @@ const MIGRATIONS = [
   WHERE id IN ('mago-navi', 'mago-navi-pc')
     AND icon_url = 'https://raw.githubusercontent.com/hminkoo10/mago-navi/main/public/icon-512.png';
   `,
+  // 11: Keep only scoped sync tombstones, not student personal information.
+  `UPDATE students SET name = '', school = '', school_office = '', school_code = '', grade = '', memo = '',
+    teacher_uid = NULL, created_by = NULL, updated_by = NULL, deleted_by = NULL,
+    created_at = 0, updated_at = 0, deleted_at = NULL, rev = 0 WHERE purged_at IS NOT NULL;`,
+
 ];
 
 function openDb(file) {

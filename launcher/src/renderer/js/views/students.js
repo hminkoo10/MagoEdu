@@ -72,6 +72,9 @@ export class StudentsView {
       await busy(this.bulk, () => this.bulkAccounts());
       this.updateSelection();
     });
+    this.canPurge = ['director', 'admin'].includes(this.role);
+    this.purgeButton = this.canPurge ? btn('삭제', { iconName: 'trash', variant: 'danger', onClick: () => this.purgeDeleted(false) }) : null;
+    this.purgeAllButton = this.canPurge ? btn('모두 삭제', { iconName: 'trash', variant: 'danger', onClick: () => this.purgeDeleted(true) }) : null;
     this.deletedNote = h('div', { class: 'note', style: { marginBottom: '14px', display: 'none' } }, ic('info', 18), h('span'));
     this.gradeSel = select([['', '모든 학년']], '', { cls: 'page', style: 'width: 140px' });
     this.gradeSel.addEventListener('change', () => {
@@ -114,6 +117,7 @@ export class StudentsView {
       this.gradeSel,
       search,
       this.bulk,
+      ...(this.canPurge ? [this.purgeButton, this.purgeAllButton] : []),
       h('div', { class: 'spacer' }),
       this.count,
     );
@@ -295,7 +299,7 @@ export class StudentsView {
       this.render();
     });
     all.querySelector('input').indeterminate = list.some((s) => this.selected.has(s.id)) && !list.every((s) => this.selected.has(s.id));
-    const head = trash ? ['이름', '학교·학년', '삭제한 사람', '남은 기간', ''] : [all, '이름', '학교·학년', '담당 선생님', '계정', '마지막 수정', ''];
+    const head = trash ? [...(this.canPurge ? [all] : []), '이름', '학교·학년', '삭제한 사람', '남은 기간', ''] : [all, '이름', '학교·학년', '담당 선생님', '계정', '마지막 수정', ''];
     put(
       this.table,
       h('table', { class: 'table students-table' }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), h('tbody', {}, ...list.map((s) => (trash ? this.deletedRow(s) : this.row(s))))),
@@ -345,6 +349,11 @@ export class StudentsView {
 
   // 버튼은 끄지 않음: 못 만들 때는 눌렀을 때 이유를 알려 줌 (삭제한 학생 탭에서는 숨김)
   updateSelection() {
+    if (this.canPurge) {
+      for (const b of [this.purgeButton, this.purgeAllButton]) b.style.display = this.filter.who === 'deleted' ? '' : 'none';
+      this.purgeButton.disabled = !this.students.some((s) => s.deletedAt && this.selected.has(s.id));
+      this.purgeAllButton.disabled = !this.students.some((s) => s.deletedAt);
+    }
     this.bulk.style.display = this.filter.who === 'deleted' ? 'none' : '';
     this.bulkHint.style.display = this.bulk.style.display;
     this.bulk.textContent = this.selected.size ? `계정 일괄 생성 (${this.selected.size}명)` : '계정 일괄 생성';
@@ -474,9 +483,15 @@ export class StudentsView {
     const left = Math.max(0, Math.ceil((s.purgeAt - Date.now()) / DAY));
     const back = btn('되살리기', { variant: 'soft', size: 'sm', iconName: 'undo' });
     back.addEventListener('click', () => busy(back, () => this.restore(s)));
+    const pick = this.canPurge ? checkbox('', this.selected.has(s.id), (on) => {
+      on ? this.selected.add(s.id) : this.selected.delete(s.id);
+      this.render();
+    }) : null;
+    pick?.querySelector('input').setAttribute('aria-label', `${s.name} 선택`);
     return h(
       'tr',
       {},
+      ...(pick ? [h('td', {}, pick)] : []),
       h('td', { class: 'student-name' }, h('div', { style: { fontWeight: 600 } }, s.name)),
       h('td', {}, schoolGrade(s) || h('span', { class: 'subtle' }, '-')),
       h('td', { class: 'subtle' }, [s.deletedBy?.name, ago(s.deletedAt)].filter(Boolean).join(' · ')),
@@ -605,6 +620,21 @@ export class StudentsView {
     if (!ok) return;
     toast(`${s.name} 학생을 삭제했어요`, 'success', 12000, { label: '되돌리기', onClick: () => this.restore(s, qs) });
     this.load();
+  }
+
+  async purgeDeleted(all) {
+    const qs = this.qs();
+    const body = all ? { all: true } : { ids: this.students.filter((s) => s.deletedAt && this.selected.has(s.id)).map((s) => s.id) };
+    try {
+      const count = await this.cloud.api('POST', `/api/students/purge-preview${qs}`, body);
+      const sub = `학생 ${count.students}명과 자료 ${count.files}개를 지워요. 되돌릴 수 없어요.`;
+      if (!(await dialog({ title: '완전히 삭제할까요?', sub, ok: '삭제', okIcon: 'trash', cancelIcon: 'x', danger: true }))) return;
+      if (all && !(await dialog({ title: '모두 삭제할까요?', sub, ok: '모두 삭제', okIcon: 'trash', cancelIcon: 'x', danger: true }))) return;
+      await this.cloud.api('POST', `/api/students/purge${qs}`, body);
+      this.selected.clear();
+      await this.load();
+      toast('완전히 삭제했어요', 'success');
+    } catch (e) { toast(errorText(e), 'error'); }
   }
 
   async restore(s, qs = this.qs()) {

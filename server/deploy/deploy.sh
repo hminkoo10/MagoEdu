@@ -18,7 +18,7 @@ SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 DEPLOY_BIN="${DEPLOY_BIN:-/usr/local/sbin/magoedu-cloud-deploy}"
 LOCK_FILE="${LOCK_FILE:-/run/lock/magoedu-cloud-deploy.lock}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-40}"
-KEEP_BACKUPS="${KEEP_BACKUPS:-10}"
+KEEP_BACKUPS="${KEEP_BACKUPS:-3}"
 
 say() { echo "[배포] $*"; }
 fail() { echo "[배포] 실패: $*" >&2; exit 1; }

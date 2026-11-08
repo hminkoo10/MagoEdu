@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { startServer, ADMIN_PASSWORD } = require('./helpers');
 
-test('계정 삭제: 학원 공간 자료를 원장에게 넘기고, 원장에게 같은 경로가 있으면 원래 자리에 둠', async (t) => {
+test('계정 삭제: 학원 공간 자료를 원장에게 넘기고, 원장에게 같은 경로가 있으면 지움', async (t) => {
   const s = await startServer();
   t.after(() => s.close());
   const rq = s.request;
@@ -72,8 +72,6 @@ test('계정 삭제: 학원 공간 자료를 원장에게 넘기고, 원장에�
       'books/b1/book.json',
       mine(d2, 'books/x1/book.json'),
       mine(d2, 'transcripts/b1.json'),
-      mine(u1, 'profile.json'), // 그 사람 이름이라 옮기지 않음 (넘겨받은 원장 이름이 바뀌지 않게)
-      mine(u1, 'transcripts/b1.json'), // 원장에게 이미 있어서 원래 자리에 (원장은 볼 수 있음)
       mine(u2, 'books/y1/book.json'),
     ];
     assert.deepEqual(await live(dirA2), expected.sort());
@@ -98,6 +96,7 @@ test('계정 삭제: 학원 공간 자료를 원장에게 넘기고, 원장에�
     const audit = (await rq('GET', '/api/audit?action=user.delete', { token: admin })).data.entries[0];
     assert.equal(audit.detail.to, 'A부원장 (dira2)');
     assert.equal(audit.detail.files, 1);
+    assert.equal(audit.detail.removedFiles, 2);
   });
 
   await t.test('원장을 고르지 않으면 지우는 원장에게', async () => {

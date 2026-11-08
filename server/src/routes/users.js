@@ -279,7 +279,7 @@ function register(router, deps) {
 
   // ---------------- 계정 삭제 ----------------
   // 학원 공간에 남긴 것(members/<계정>/ 파일, 주인인 묶음, 담당 학생)은 같은 학원 원장에게 넘긴다.
-  // 개인 공간 파일은 함께 지운다. 넘겨받을 원장이 없으면 학원 공간 것은 그대로 둔다 (예전처럼)
+  // 개인 공간과 인계되지 않은 개인 폴더 파일은 바로 지운다.
 
   /** 넘겨받을 수 있는 사람: 같은 학원 원장 (학원이 있는 운영자도, 원장 다음에) */
   function receivers(target) {
@@ -376,6 +376,34 @@ function register(router, deps) {
     };
   });
 
+  const { userFiles, deleteUser } = require('../hard-delete');
+  const userDeleteCounts = (u, to) => {
+    const prefix = `members/${u.uid}/`;
+    const member = db.all('SELECT path FROM shared_files WHERE academy_id = ? AND deleted = 0 AND substr(path, 1, ?) = ?', u.academy_id, prefix.length, prefix);
+
+    return { accounts: 1, files: db.get('SELECT COUNT(*) AS n FROM files WHERE user_id = ? AND deleted = 0', u.id).n
+      + member.filter((f) => !to || !f.path.slice(prefix.length).includes('/') || db.get('SELECT 1 FROM shared_files WHERE academy_id = ? AND path = ? AND deleted = 0', u.academy_id, `members/${to.uid}/${f.path.slice(prefix.length)}`)).length };
+  };
+  router.get('/api/users/:id/delete-preview', (ctx) => {
+    const actor = svc.requireRole(ctx, 'admin', 'director');
+    const target = svc.userByUid(ctx.params.id);
+    svc.assertManage(actor, target);
+    return userDeleteCounts(target, pickReceiver(actor, target, str(ctx.query.get('to'), 64)));
+  });
+  function academyDeleteCounts(id) {
+    // 운영자 계정은 학원만 빠지고 남는다 (학원 없이 쓰는 계정)
+    return { accounts: db.get("SELECT COUNT(*) AS n FROM users WHERE academy_id = ? AND role != 'admin'", id).n,
+      students: db.get('SELECT COUNT(*) AS n FROM students WHERE academy_id = ? AND purged_at IS NULL', id).n,
+      files: db.get(`SELECT COUNT(*) AS n FROM (SELECT id FROM shared_files WHERE academy_id = ? AND deleted = 0
+        UNION ALL SELECT id FROM files WHERE user_id IN (SELECT id FROM users WHERE academy_id = ? AND role != 'admin') AND deleted = 0)`, id, id).n };
+  }
+  router.get('/api/academies/:id/delete-preview', (ctx) => {
+    svc.requireRole(ctx, 'admin');
+    const id = Number(ctx.params.id);
+    if (!db.get('SELECT 1 FROM academies WHERE id = ?', id)) throw notFound('학원을 찾을 수 없어요.');
+    return academyDeleteCounts(id);
+  });
+
   router.delete('/api/users/:id', (ctx) => {
     const actor = svc.requireRole(ctx, 'admin', 'director');
     const target = svc.userByUid(ctx.params.id);
@@ -385,17 +413,22 @@ function register(router, deps) {
     }
     const to = pickReceiver(actor, target, str(ctx.query.get('to'), 64));
     let handed = null;
+    let removedShared = new Map();
+    const candidates = userFiles(db, target);
+    const counts = userDeleteCounts(target, to);
     db.tx(() => {
       if (to) handed = handOver(target, to, actor);
-      db.run('DELETE FROM users WHERE id = ?', target.id); // 세션·파일 기록은 함께 지워짐
+      removedShared = deleteUser(db, target, deps.nextSeq);
     });
+    for (const [appId, seq] of removedShared) deps.events.publishAcademy(target.academy_id, appId, seq, null);
     if (handed) {
       for (const [appId, seq] of handed.touched) deps.events.publishAcademy(target.academy_id, appId, seq, null);
       if (handed.out.students) deps.events.publishAcademyInfo(target.academy_id, 'students');
     }
-    deps.blobs.scheduleGc();
+    if (target.academy_id) deps.events.publishAcademyInfo(target.academy_id, 'students');
+    const blobs = deps.blobs.removeUnreferenced(candidates);
     const moved = handed && Object.values(handed.out).some(Boolean);
-    const detail = { role: target.role, ...(moved && { to: label(to), ...handed.out }) };
+    const detail = { role: target.role, ...(moved && { to: label(to), ...handed.out }), removedFiles: counts.files, blobs };
     svc.audit(ctx, 'user.delete', label(target), detail, target.academy_id);
     return { ok: true, handedTo: to ? { id: to.uid, name: to.name, ...handed.out } : null };
   });
@@ -475,11 +508,16 @@ function register(router, deps) {
     const id = Number(ctx.params.id);
     const a = db.get('SELECT * FROM academies WHERE id = ?', id);
     if (!a) throw notFound('학원을 찾을 수 없어요.');
-    if (db.get('SELECT COUNT(*) AS n FROM users WHERE academy_id = ?', id).n > 0) {
-      throw bad('이 학원에 계정이 남아 있어요. 계정을 먼저 옮기거나 지워 주세요.');
-    }
-    db.run('DELETE FROM academies WHERE id = ?', id);
-    svc.audit(ctx, 'academy.delete', a.name, null, id);
+    const counts = academyDeleteCounts(id);
+    const users = db.all("SELECT * FROM users WHERE academy_id = ? AND role != 'admin'", id);
+    const candidates = [...db.all('SELECT sha256 FROM shared_files WHERE academy_id = ?', id), ...users.flatMap((u) => userFiles(db, u))];
+    db.tx(() => {
+      for (const u of users) deleteUser(db, u, deps.nextSeq);
+      db.run('DELETE FROM audit WHERE academy_id = ?', id);
+      db.run('DELETE FROM academies WHERE id = ?', id);
+    });
+    const blobs = deps.blobs.removeUnreferenced(candidates);
+    svc.audit({ ...ctx, auth: { ...ctx.auth, user: { ...ctx.auth.user, academy_id: null } } }, 'academy.delete', a.name, { id, ...counts, blobs });
     return { ok: true };
   });
 

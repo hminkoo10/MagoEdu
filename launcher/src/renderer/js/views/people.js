@@ -386,6 +386,7 @@ export class PeopleView {
 
   async remove(u) {
     const typed = input({ placeholder: u.username });
+    let count = await this.cloud.api('GET', `/api/users/${u.id}/delete-preview`).catch(() => null);
     // 학원 공간에 남긴 것(개인 폴더 파일, 만든 공유 자료, 담당 학생)은 원장에게 넘김 (예전 서버면 묻지 않음)
     const ho = await this.cloud.api('GET', `/api/users/${u.id}/handover`).catch(() => null);
     const what = ho
@@ -395,14 +396,22 @@ export class PeopleView {
     let handover = '';
     if (what.length) {
       const one = ho.to.find((r) => r.id === ho.defaultTo);
-      if (!one) handover = `학원 공간에 남긴 것(${what.join(', ')})은 넘겨받을 원장이 없어 그대로 남아요.\n`;
+      const gone = what.filter((w) => !w.startsWith('담당 학생'));
+      if (!one) handover = gone.length ? `학원 공간에 남긴 것(${gone.join(', ')})은 넘겨받을 원장이 없어 함께 지워요.\n` : '';
       else if (pick) handover = `학원 공간에 남긴 것(${what.join(', ')})은 아래에서 고른 사람에게 넘겨요.\n`;
       else handover = `학원 공간에 남긴 것(${what.join(', ')})은 ${one.name} ${ROLE[one.role]}에게 넘겨요.\n`;
     }
+    const countText = h('p', { class: 'muted' }, count ? `계정 ${count.accounts}명과 자료 ${count.files}개를 지워요. 되돌릴 수 없어요.` : '되돌릴 수 없어요.');
+    if (pick && count) pick.addEventListener('change', async () => {
+      try {
+        count = await this.cloud.api('GET', `/api/users/${u.id}/delete-preview?to=${encodeURIComponent(pick.value)}`);
+        countText.textContent = `계정 ${count.accounts}명과 자료 ${count.files}개를 지워요. 되돌릴 수 없어요.`;
+      } catch (e) { toast(errorText(e), 'error'); }
+    });
     const ok = await dialog({
       title: `${u.name} 계정을 삭제할까요?`,
-      sub: `개인 데이터 ${bytes(u.usageBytes)}도 영구 삭제돼요.\n${handover}아이디 ${u.username}을(를) 입력하세요.`,
-      body: pick ? h('div', {}, field('넘겨받을 사람', pick), field('아이디', typed)) : typed,
+      sub: `${handover}아이디 ${u.username}을(를) 입력하세요.`,
+      body: h('div', {}, countText, pick ? field('넘겨받을 사람', pick) : null, field('아이디', typed)),
       ok: '삭제',
       danger: true,
       onOk: async () => {
@@ -463,10 +472,13 @@ export class PeopleView {
               draw();
             }
           });
-          const del = btn('지우기', { variant: 'subtle', size: 'sm', iconName: 'trash', disabled: a.directors + a.teachers > 0 });
+          const del = btn('지우기', { variant: 'subtle', size: 'sm', iconName: 'trash' });
           del.addEventListener('click', async () => {
-            if (!(await confirmDialog(`${a.name} 학원을 삭제할까요?`, '학원과 보관 자료가 영구 삭제돼요.', '삭제', true))) return;
             try {
+              const count = await this.cloud.api('GET', `/api/academies/${a.id}/delete-preview`);
+              const sub = `계정 ${count.accounts}명, 학생 ${count.students}명과 자료 ${count.files}개를 지워요. 되돌릴 수 없어요.`;
+              if (!(await dialog({ title: '완전히 삭제할까요?', sub, ok: '삭제', okIcon: 'trash', cancelIcon: 'x', danger: true }))) return;
+              if (!(await dialog({ title: `${a.name} 학원을 삭제할까요?`, sub, ok: '학원 삭제', okIcon: 'trash', cancelIcon: 'x', danger: true }))) return;
               await this.cloud.api('DELETE', `/api/academies/${a.id}`);
               await this.loadAcademies();
               draw();

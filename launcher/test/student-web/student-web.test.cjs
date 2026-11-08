@@ -813,23 +813,31 @@ if (!process.versions.electron) {
       equal(calls[0], ['sync', 'notes']);
       ok(button('열기', card.el));
     });
-    await run('학원 삭제: 확인 전·취소 시 요청 없음, 확인 후 한 번 삭제', async () => {
+    await run('학원 삭제: 수를 보여 주고 두 번 확인, 어느 쪽이든 취소하면 요청 없음', async () => {
       const { PeopleView } = await import('./js/views/people.js');
       state.user.role = 'admin';
       cloud.api = async (m, p, b) => {
         calls.push([m, p, b]);
-        return p === '/api/academies' ? { academies: [{ id: 7, name: '시험 학원', subjects: ['math'], directors: 0, teachers: 0 }] } : { users: [] };
+        if (p === '/api/academies/7/delete-preview') return { accounts: 2, students: 5, files: 30 };
+        return p === '/api/academies' ? { academies: [{ id: 7, name: '시험 학원', subjects: ['math'], directors: 1, teachers: 1 }] } : { users: [] };
       };
       const view = new PeopleView({ cloud, store: { state } }); mount(view);
       await view.loadAcademies(); view.manageAcademies(); await until(() => topDialog());
-      button('지우기', topDialog()).click(); await tick();
-      equal(calls.filter((c) => c[0] === 'DELETE').length, 0);
-      ok(topDialog().querySelector('.dialog-title').textContent.includes('삭제'));
-      button('취소', topDialog()).click(); await tick();
-      equal(calls.filter((c) => c[0] === 'DELETE').length, 0);
-      button('지우기', topDialog()).click(); await tick();
-      button('삭제', topDialog()).click(); await until(() => calls.some((c) => c[0] === 'DELETE'));
-      equal(calls.filter((c) => c[0] === 'DELETE').length, 1);
+      const list = topDialog();
+      const deletes = () => calls.filter((c) => c[0] === 'DELETE').length;
+      const confirmOpen = () => topDialog() !== list && topDialog();
+      button('지우기', list).click(); await until(confirmOpen);
+      ok(topDialog().textContent.includes('계정 2명, 학생 5명과 자료 30개를 지워요. 되돌릴 수 없어요.'));
+      button('취소', topDialog()).click(); await until(() => topDialog() === list);
+      equal(deletes(), 0);
+      button('지우기', list).click(); await until(confirmOpen);
+      button('삭제', topDialog()).click(); await until(() => confirmOpen() && topDialog().textContent.includes('학원을 삭제할까요?'));
+      button('취소', topDialog()).click(); await until(() => topDialog() === list);
+      equal(deletes(), 0);
+      button('지우기', list).click(); await until(confirmOpen);
+      button('삭제', topDialog()).click(); await until(() => confirmOpen() && topDialog().textContent.includes('학원을 삭제할까요?'));
+      button('학원 삭제', topDialog()).click(); await until(() => deletes() > 0);
+      equal(deletes(), 1);
     });
     await run('학원 설정: 고급은 접힘, 숨긴 값·빈 키 보존, 새 키 저장', async () => {
       const { AcademyAiView } = await import('./js/views/academy-ai.js');

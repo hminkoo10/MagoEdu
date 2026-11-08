@@ -26,7 +26,6 @@ const { trayMenuItems } = require('./tray-menu-model');
 const { createTrayPopup } = require('./tray-popup');
 
 const TITLE = '마고에듀 통합 클라우드';
-const DEVELOPER = '구현민';
 const ROOT = path.join(__dirname, '..', '..');
 const startHidden = process.argv.includes('--hidden');
 const uninstalling = process.argv.includes('--uninstall-cleanup'); // 제거 프로그램이 부름 (uninstall.js)
@@ -64,7 +63,7 @@ function createWindow({ show }) {
     minWidth: 980,
     minHeight: 640,
     show: false,
-    title: `${TITLE} ${app.getVersion()} - ${DEVELOPER} 개발`,
+    title: `${TITLE} ${app.getVersion()}`,
     backgroundColor: '#F2F4F6',
     icon: iconPath() || undefined,
     autoHideMenuBar: true,

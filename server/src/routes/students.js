@@ -56,6 +56,20 @@ function register(router, deps) {
     return out;
   });
 
+  function purgeIds(body) {
+    if (body.all === true) return null;
+    if (!Array.isArray(body.ids) || !body.ids.length || body.ids.some((id) => typeof id !== 'string')) throw bad('삭제할 학생을 고르세요.');
+    return body.ids;
+  }
+  router.post('/api/students/purge-preview', async (ctx) => {
+    const { aca } = manager(ctx);
+    return students.purgePreview(aca, purgeIds(await readJson(ctx.req)));
+  });
+  router.post('/api/students/purge', async (ctx) => {
+    const { aca } = manager(ctx);
+    return students.purge(aca, purgeIds(await readJson(ctx.req)), ctx);
+  });
+
   router.post('/api/students', async (ctx) => {
     const { user, aca } = who(ctx);
     const r = students.create(user, aca, await readJson(ctx.req));

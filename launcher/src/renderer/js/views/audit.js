@@ -25,6 +25,7 @@ const LABEL = {
   'academy.update': ['학원 이름 바꿈', 'grey'],
   'academy.subjects': ['계약 과목 바꿈', 'yellow'],
   'academy.delete': ['학원 지움', 'red'],
+  'student.purge': ['학생 완전 삭제', 'red'],
   'app.create': ['프로그램 추가', 'green'],
   'app.update': ['프로그램 고침', 'grey'],
   'app.delete': ['프로그램 지움', 'red'],
@@ -39,6 +40,8 @@ function detailText(e) {
   if (e.action === 'academy.subjects') return `${subjectText(d.subjects)} (전: ${subjectText(d.before)})`;
   if (e.action === 'storage.cold_evict' || e.action === 'storage.cold_run') return `${d.groups || 0}묶음 · 파일 ${d.files || 0}개 · ${bytes(d.bytes || 0)}`;
   if (e.action === 'user.delete' && d.to) return `학원 공간 자료는 ${d.to}에게 넘김 (파일 ${d.files || 0}개)`;
+  if (e.action === 'student.purge') return [d.manual ? '바로 삭제' : '보관 기간 지남', Number.isInteger(d.files) && `자료 ${d.files}개`].filter(Boolean).join(' · ');
+  if (e.action === 'academy.delete' && d.accounts != null) return `계정 ${d.accounts}명 · 학생 ${d.students || 0}명 · 자료 ${d.files || 0}개`;
   if (e.action === 'user.create' && d.role) return { admin: '운영자', director: '원장', teacher: '선생님' }[d.role] || '';
   if (d.reason) return `이유: ${d.reason}`;
   if (d.academy) return d.academy;

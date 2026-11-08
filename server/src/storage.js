@@ -92,6 +92,18 @@ class BlobStore {
     return fs.createReadStream(this.pathFor(sha));
   }
 
+  /** 지운 줄이 쓰던 내용 중 다른 어디서도 쓰지 않는 것만 바로 지운다 */
+  removeUnreferenced(rows) {
+    let removed = 0;
+    for (const sha of new Set(rows.map((r) => r.sha256).filter(Boolean))) {
+      if (this.pending.has(sha)) { this.scheduleGc(); continue; }
+      if (this.db.get(`SELECT 1 FROM files WHERE sha256 = ? AND deleted = 0 AND evicted = 0
+        UNION ALL SELECT 1 FROM shared_files WHERE sha256 = ? AND deleted = 0 LIMIT 1`, sha, sha)) continue;
+      if (this.has(sha)) { fs.rmSync(this.pathFor(sha), { force: true }); removed += 1; }
+    }
+    return removed;
+  }
+
   /** 어떤 파일도 쓰지 않는 내용을 지운다 */
   gc() {
     const used = new Set(
