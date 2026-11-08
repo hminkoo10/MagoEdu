@@ -469,10 +469,13 @@ function signupView() {
       nextLabel.textContent = '다음';
       setTimeout(() => code.focus(), 30);
     } else {
-      head.querySelector('h1').textContent = '원장 가입';
+      const teacher = codeInfo.role === 'teacher';
+      head.querySelector('h1').textContent = teacher ? '선생님 가입' : '원장 가입';
       head.querySelector('p').textContent = '새 학원이 만들어져요.';
-      head.querySelector('p').style.display = '';
-      academy.disabled = false;
+      head.querySelector('p').style.display = teacher ? 'none' : '';
+      name.disabled = teacher;
+      name.value = teacher ? codeInfo.teacherName : name.value;
+      academy.disabled = teacher;
       if (codeInfo.academyName) {
         academy.value = codeInfo.academyName;
         academy.disabled = true;
@@ -509,7 +512,7 @@ function signupView() {
           return;
         }
         if (pw.input.value !== pw2.input.value) throw new Error('비밀번호가 서로 달라요.');
-        await cloud.signup({ code: code.value.trim(), academyName: academy.value, name: name.value, username: username.value, password: pw.input.value });
+        await cloud.signup({ code: code.value.trim(), ...(codeInfo.role === 'teacher' ? {} : { academyName: academy.value, name: name.value }), username: username.value, password: pw.input.value });
         toast('가입했어요', 'success');
       } catch (e) {
         showErr(errorText(e));

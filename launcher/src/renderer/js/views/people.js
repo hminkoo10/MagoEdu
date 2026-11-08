@@ -3,7 +3,7 @@
 //   운영자: 모든 계정 (원장·선생님·운영자), 학원
 import { editAcademyCode } from '../student-accounts.js';
 import { errorText, appLabel, subjectChecks, subjectText } from '../ui.js';
-import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, checkbox, toggle, segmented, pill, menu, bytes, ago, initial, ROLE, confirmDialog, secretDialog, reveal, put } from '../ui.js';
+import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, select, checkbox, toggle, segmented, pill, menu, bytes, ago, date, initial, ROLE, confirmDialog, secretDialog, reveal, put } from '../ui.js';
 
 export class PeopleView {
   constructor({ cloud, store, mode }) {
@@ -103,6 +103,9 @@ export class PeopleView {
     if (this.filter.academy) qs.set('academy', this.filter.academy);
     try {
       const r = await this.cloud.api('GET', `/api/users?${qs}`);
+      const pending = !this.filter.role || this.filter.role === 'teacher'
+        ? (await this.cloud.api('GET', `/api/teacher-invites?${qs}`).catch(() => ({ invites: [] }))).invites : [];
+      this.invites = pending.filter((i) => !this.filter.q || i.name.includes(this.filter.q));
       this.render(r.users);
     } catch (e) {
       put(this.table, h('div', { class: 'empty' }, errorText(e)));
@@ -111,7 +114,7 @@ export class PeopleView {
 
   render(users) {
     const appNames = Object.fromEntries(this.apps().map((a) => [a.id, appLabel(a)]));
-    if (!users.length) {
+    if (!users.length && !this.invites?.length) {
       put(this.table, h('div', { class: 'empty' }, ic('users', 40, 1.6), this.isAdmin ? '계정이 없어요' : '아직 선생님 계정이 없어요.'));
       return;
     }
@@ -142,6 +145,15 @@ export class PeopleView {
         h('td', { class: 'acts' }, more),
       );
     });
+    for (const i of this.invites || []) {
+      const renew = btn('코드 다시 만들기', { variant: 'subtle', size: 'sm', iconName: 'refresh', onClick: () => this.renewInvite(i) });
+      const revoke = btn('초대 취소', { variant: 'subtle', size: 'sm', iconName: 'trash', onClick: () => this.revokeInvite(i) });
+      rows.push(h('tr', {}, h('td', {}, h('div', { style: { fontWeight: 600 } }, i.name), h('div', { class: 'subtle' }, i.expired ? '기간 지남' : `${date(i.expiresAt, true)}까지`)),
+        this.isAdmin ? h('td', {}, pill('선생님', 'grey')) : null,
+        this.isAdmin ? h('td', {}, this.academies.find((a) => a.id === i.academyId)?.name || '-') : null,
+        h('td', {}, pill('초대 중', 'yellow')), h('td', {}, i.allowedApps === null ? '모든 프로그램' : i.allowedApps.map((id) => appNames[id] || id).join(', ') || '없음'),
+        h('td', {}, '-'), h('td', {}, '-'), h('td', { class: 'acts' }, renew, revoke)));
+    }
     const head = ['이름', this.isAdmin ? '종류' : null, this.isAdmin ? '학원' : null, '상태', '프로그램', '서버 사용량', '마지막 로그인', ''].filter((x) => x !== null);
     put(this.table, 
       h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...head.map((t, i) => h('th', { class: i === head.length - 3 ? 'num' : '' }, t)))), h('tbody', {}, ...rows)),
@@ -196,6 +208,31 @@ export class PeopleView {
     return { el: h('div', {}, allToggle, box), value: () => (all && myAll ? null : apps.map((a) => a.id).filter((id) => set.has(id))) };
   }
 
+  async showInvite(r) {
+    const copy = btn('코드 복사', { size: 'sm', variant: 'soft', iconName: 'copy', onClick: async () => {
+      try { await this.cloud.copy(r.code); toast('코드를 복사했어요', 'success'); } catch (e) { toast(errorText(e), 'error'); }
+    } });
+    await dialog({ title: '선생님 초대 코드를 만들었어요', wide: true,
+      sub: `${date(r.expiresAt, true)}까지 1회 사용. 코드는 이 창에서만 보여요.`,
+      body: h('div', {}, h('div', { class: 'secret' }, h('span', { class: 'mono selectable' }, r.code), copy), h('p', {}, '로그인 화면의 ‘가입 코드가 있어요’에 넣으면 돼요.')),
+      ok: '닫기', cancel: null });
+  }
+
+  async renewInvite(i) {
+    if (!(await dialog({ title: `${i.name} 초대 코드를 다시 만들까요?`, sub: '이전 코드는 더 쓸 수 없어요.', ok: '다시 만들기', okIcon: 'refresh', cancelIcon: 'x' }))) return;
+    try {
+      const result = await this.cloud.api('POST', `/api/teacher-invites/${i.id}/renew`, {});
+      await this.showInvite(result);
+      await this.load();
+    } catch (e) { toast(errorText(e), 'error'); }
+  }
+
+  async revokeInvite(i) {
+    if (!(await dialog({ title: `${i.name} 초대를 취소할까요?`, sub: '이 코드는 더 쓸 수 없어요.', ok: '초대 취소', okIcon: 'trash', cancelIcon: 'x', danger: true }))) return;
+    try { await this.cloud.api('DELETE', `/api/teacher-invites/${i.id}`); await this.load(); }
+    catch (e) { toast(errorText(e), 'error'); }
+  }
+
   async create() {
     const name = input({ placeholder: '예: 홍길동' });
     const username = input({ placeholder: '영어 소문자·숫자 3자 이상' });
@@ -217,7 +254,20 @@ export class PeopleView {
     const newWrap = h('div', {}, field('새 학원 이름', newAcademy), field('계약 과목', subjects.el));
     const academyWrap = academy ? field('학원', academy) : null;
     const quota = input({ type: 'number', min: '0', placeholder: '비우면 기본값' });
+    const quotaField = this.isAdmin ? field('저장 공간 한도 (MB)', quota, '0 이면 제한 없음') : null;
+    let accountMode = 'invite';
+    const usernameField = field('아이디', username);
+    const passwordField = field('비밀번호', pw, '6자 이상. 비우면 자동으로 만들어요.');
+    const mustChangeField = h('div', { style: { marginTop: '14px' } }, checkbox('처음 로그인할 때 비밀번호 바꾸게 하기', true, (v) => (mustChange = v)));
+    const choices = field('계정', segmented([['invite', '초대 코드'], ['temp', '아이디·임시 비밀번호']], 'invite', (v) => { accountMode = v; sync(); }), '선생님이 7일 안에 직접 아이디·비밀번호를 정해요.');
+    const hint = choices.querySelector('.hint');
+    const canInvite = () => !this.isAdmin || (role.value === 'teacher' && academy.value !== '__new');
     const sync = () => {
+      choices.style.display = canInvite() ? '' : 'none';
+      const inviting = canInvite() && accountMode === 'invite';
+      for (const el of [usernameField, passwordField, mustChangeField]) el.style.display = inviting ? 'none' : '';
+      if (quotaField) quotaField.style.display = inviting ? 'none' : '';
+      hint.textContent = accountMode === 'invite' ? '선생님이 7일 안에 직접 아이디·비밀번호를 정해요.' : '임시 비밀번호는 한 번만 보여요.';
       if (!academy) return;
       const isAdminRole = role.value === 'admin';
       academyWrap.style.display = isAdminRole ? 'none' : '';
@@ -237,14 +287,19 @@ export class PeopleView {
         {},
         role ? h('div', { class: 'form-row' }, field('종류', role), academyWrap) : null,
         academy ? newWrap : null,
-        h('div', { class: 'form-row', style: { marginTop: '14px' } }, field('이름', name), field('아이디', username)),
-        field('비밀번호', pw, '6자 이상. 비우면 자동으로 만들어요.'),
+        choices,
+        h('div', { class: 'form-row', style: { marginTop: '14px' } }, field('이름', name), usernameField),
+        passwordField,
         field('쓸 수 있는 프로그램', apps.el),
-        this.isAdmin ? field('저장 공간 한도 (MB)', quota, '0 이면 제한 없음') : null,
-        h('div', { style: { marginTop: '14px' } }, checkbox('처음 로그인할 때 비밀번호 바꾸게 하기', true, (v) => (mustChange = v))),
+        quotaField,
+        mustChangeField,
       ),
       ok: '만들기',
       onOk: async () => {
+        if (canInvite() && accountMode === 'invite') {
+          result = await this.cloud.api('POST', '/api/teacher-invites', { name: name.value, allowedApps: apps.value(), ...(this.isAdmin ? { academyId: Number(academy.value) } : {}) });
+          return;
+        }
         const body = { name: name.value, username: username.value, allowedApps: apps.value(), mustChangePassword: mustChange };
         if (pw.input.value) body.password = pw.input.value;
         if (this.isAdmin) {
@@ -261,6 +316,7 @@ export class PeopleView {
       },
     });
     if (!ok || !result) return;
+    if (result.code) { await this.showInvite(result); await this.load(); return; }
     toast(`${result.user.name} 계정을 만들었어요`, 'success');
     if (result.password) await secretDialog('계정을 만들었어요', `아이디 ${result.user.username} · 닫으면 다시 볼 수 없어요.`, result.password);
     await this.loadAcademies();

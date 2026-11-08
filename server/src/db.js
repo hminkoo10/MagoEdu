@@ -358,6 +358,18 @@ const MIGRATIONS = [
     teacher_uid = NULL, created_by = NULL, updated_by = NULL, deleted_by = NULL,
     created_at = 0, updated_at = 0, deleted_at = NULL, rev = 0 WHERE purged_at IS NOT NULL;`,
 
+  // 12: Single-use teacher invitations; only the code hash is retained.
+  `CREATE TABLE teacher_invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code_hash TEXT NOT NULL UNIQUE,
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    allowed_apps TEXT,
+    created_by INTEGER,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX teacher_invites_creator ON teacher_invites(created_by);`,
 ];
 
 function openDb(file) {

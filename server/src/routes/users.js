@@ -16,6 +16,8 @@ const {
   parseSubjects,
   randomPassword,
   randomCode,
+  randomToken,
+  sha256Hex,
   intOr,
   str,
   DAY,
@@ -51,6 +53,55 @@ function register(router, deps) {
   }
 
   // ---------------- 계정 목록 ----------------
+  function inviteById(ctx, actor) {
+    const row = db.get('SELECT * FROM teacher_invites WHERE id = ?', Number(ctx.params.id));
+    if (!row || (actor.role === 'director' && row.academy_id !== actor.academy_id)) throw notFound();
+    return row;
+  }
+  function publicInvite(row) {
+    return { id: row.id, academyId: row.academy_id, name: row.name,
+      allowedApps: row.allowed_apps === null ? null : JSON.parse(row.allowed_apps),
+      createdBy: db.get('SELECT name FROM users WHERE id = ?', row.created_by)?.name || '',
+      createdAt: row.created_at, expiresAt: row.expires_at, expired: row.expires_at <= Date.now() };
+  }
+  router.post('/api/teacher-invites', async (ctx) => {
+    const actor = svc.requireRole(ctx, 'admin', 'director');
+    const body = await readJson(ctx.req);
+    const academyId = actor.role === 'director' ? actor.academy_id : Number(ctx.query.get('academy') || body.academyId);
+    if (!academyId || !db.get('SELECT 1 FROM academies WHERE id = ?', academyId)) throw bad('학원을 고르세요.', 'invalid_academy');
+    const name = validateName(body.name);
+    const allowed = body.allowedApps === undefined ? null : parseAllowedApps(body.allowedApps);
+    checkGrantable(actor, allowed);
+    const code = randomToken(24), now = Date.now(), expiresAt = now + 7 * DAY;
+    const id = db.run(`INSERT INTO teacher_invites(code_hash, academy_id, name, allowed_apps, created_by, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`, sha256Hex(code), academyId, name, allowed === null ? null : JSON.stringify(allowed), actor.id, now, expiresAt).lastInsertRowid;
+    svc.audit(ctx, 'teacher.invite.create', name, null, academyId);
+    return { invite: publicInvite(db.get('SELECT * FROM teacher_invites WHERE id = ?', id)), code, expiresAt };
+  });
+  router.get('/api/teacher-invites', (ctx) => {
+    const actor = svc.requireRole(ctx, 'admin', 'director');
+    const academy = actor.role === 'director' ? actor.academy_id : ctx.query.get('academy');
+    const rows = academy ? db.all('SELECT * FROM teacher_invites WHERE academy_id = ? ORDER BY created_at DESC', Number(academy))
+      : actor.role === 'admin' ? db.all('SELECT * FROM teacher_invites ORDER BY created_at DESC') : [];
+    return { invites: rows.map(publicInvite) };
+  });
+  router.post('/api/teacher-invites/:id/renew', (ctx) => {
+    const actor = svc.requireRole(ctx, 'admin', 'director');
+    const row = inviteById(ctx, actor);
+    checkGrantable(actor, row.allowed_apps === null ? null : JSON.parse(row.allowed_apps));
+    const code = randomToken(24), expiresAt = Date.now() + 7 * DAY;
+    db.run('UPDATE teacher_invites SET code_hash = ?, expires_at = ? WHERE id = ?', sha256Hex(code), expiresAt, row.id);
+    svc.audit(ctx, 'teacher.invite.renew', row.name, null, row.academy_id);
+    return { code, expiresAt };
+  });
+  router.delete('/api/teacher-invites/:id', (ctx) => {
+    const actor = svc.requireRole(ctx, 'admin', 'director');
+    const row = inviteById(ctx, actor);
+    db.run('DELETE FROM teacher_invites WHERE id = ?', row.id);
+    svc.audit(ctx, 'teacher.invite.revoke', row.name, null, row.academy_id);
+    return { ok: true };
+  });
+
   router.get('/api/users', (ctx) => {
     const actor = svc.requireRole(ctx, 'admin', 'director');
     const q = str(ctx.query.get('q'), 40);

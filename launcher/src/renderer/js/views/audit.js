@@ -2,6 +2,10 @@
 import { errorText, h, ic, btn, busy, input, select, pill, date, bytes, reveal, put, subjectText } from '../ui.js';
 
 const LABEL = {
+  'teacher.invite.create': ['선생님 초대 만듦', 'green'],
+  'teacher.invite.renew': ['선생님 초대 다시 만듦', ''],
+  'teacher.invite.revoke': ['선생님 초대 취소', 'red'],
+  'teacher.join': ['선생님 가입', 'green'],
   login: ['로그인', 'grey'],
   'login.failed': ['로그인 실패', 'yellow'],
   signup: ['원장 가입', ''],

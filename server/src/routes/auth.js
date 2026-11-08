@@ -70,6 +70,8 @@ function register(router, deps) {
     // 형식이 아니라 실제 유효성을 확인한다. 둘 다 유효하면 원장 코드 우선.
     if (director) return { valid: true, role: director.role, academyName: director.academy_name || '' };
     if (student) return { valid: true, role: 'student', academyName: student.academy_name, studentName: student.student_name };
+    const teacher = joinCodes.teacher(ctx.params.code);
+    if (teacher) return { valid: true, role: 'teacher', academyName: teacher.academy_name, teacherName: teacher.name };
     joinCodes.invalid(ctx.ip);
   });
 
@@ -77,7 +79,26 @@ function register(router, deps) {
     const body = await readJson(ctx.req);
     joinCodes.check(ctx.ip);
     const code = joinCodes.director(body.code);
-    if (!code) joinCodes.invalid(ctx.ip, 400);
+    if (!code) {
+      const invite = joinCodes.teacher(body.code);
+      if (!invite) joinCodes.invalid(ctx.ip, 400);
+      const username = normalizeUsername(body.username);
+      const password = validatePassword(body.password, username);
+      if (db.get('SELECT 1 FROM users WHERE username = ?', username)) throw bad('이미 있는 아이디예요.', 'username_taken');
+      const now = Date.now();
+      const user = db.tx(() => {
+        const fresh = joinCodes.teacher(body.code);
+        if (!fresh || fresh.id !== invite.id) joinCodes.invalid(ctx.ip, 400);
+        const id = db.run(`INSERT INTO users(uid, username, name, role, academy_id, password_hash, must_change_password,
+          allowed_apps, created_by, created_at, updated_at, password_changed_at) VALUES (?, ?, ?, 'teacher', ?, ?, 0, ?, ?, ?, ?, ?)`,
+        crypto.randomUUID(), username, fresh.name, fresh.academy_id, hashPassword(password), fresh.allowed_apps, fresh.created_by, now, now, now).lastInsertRowid;
+        db.run('DELETE FROM teacher_invites WHERE id = ?', fresh.id);
+        return db.get('SELECT * FROM users WHERE id = ?', id);
+      });
+      ctx.auth = { user };
+      svc.audit(ctx, 'teacher.join', user.name, null, user.academy_id);
+      return loginResponse(ctx, user, svc.createSession(user, body.device, ctx.ip));
+    }
     const username = normalizeUsername(body.username);
     const password = validatePassword(body.password, username);
     const name = validateName(body.name);

@@ -19,6 +19,11 @@ function createJoinCodes(db) {
       const c = db.get('SELECT * FROM signup_codes WHERE code = ?', String(code || '').trim().toUpperCase());
       return c && !c.revoked && (!c.expires_at || c.expires_at >= Date.now()) && c.uses < c.max_uses ? c : null;
     },
+    teacher(code) {
+      return db.get(`SELECT i.*, a.name AS academy_name FROM teacher_invites i
+        JOIN academies a ON a.id = i.academy_id WHERE i.code_hash = ? AND i.expires_at > ?`,
+      sha256Hex(String(code || '').trim()), Date.now());
+    },
     student(code) {
       return db.get(`SELECT i.*, a.name AS academy_name, s.name AS student_name FROM student_invites i
         JOIN academies a ON a.id = i.academy_id JOIN students s ON s.id = i.student_id AND s.academy_id = i.academy_id
