@@ -1094,7 +1094,7 @@ if (!process.versions.electron) {
       await until(() => button('비밀번호 바꾸기'));
       ok(document.body.textContent.includes('연결된 자녀가 없어요'));
       equal(view.el.querySelectorAll('section.card').length, 4);
-      ok(view.el.textContent.includes('학원 확인 전'));
+      ok(view.el.textContent.includes('확인 문자 전'));
       button('열기').click();
       await until(() => calls.some((c) => c[0] === 'external' && c[1] === 'https://example.invalid'));
       equal([...document.querySelectorAll('button')].filter((b) => b.textContent === '철회').length, 1);

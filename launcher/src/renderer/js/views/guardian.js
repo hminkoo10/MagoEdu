@@ -70,7 +70,7 @@ export class GuardianJoinView {
           });
           put(form,
             h('h2', { class: 'card-title' }, '보호자 동의'),
-            h('p', { class: 'muted' }, `동의문 날짜: ${checked.consentVersion}. 동의 내용은 학원 확인 전으로 표시됩니다.`),
+            h('p', { class: 'muted' }, `동의문 날짜: ${checked.consentVersion}. 동의한 뒤 보호자 휴대폰으로 확인 문자가 가면 확인이 끝나요.`),
             ...Object.entries(labels).map(([item, label]) => {
               const choice = checkbox(label, false, () => {});
               boxes[item] = choice.querySelector('input');
@@ -172,7 +172,7 @@ export class GuardianView {
         } catch (e) { toast(errorText(e), 'error'); }
       }),
     });
-    const status = consent.withdrawn_at ? '철회함' : consent.verified ? '확인됨' : '학원 확인 전';
+    const status = consent.withdrawn_at ? '철회함' : consent.verified ? '확인됨' : '확인 문자 전';
     return h('div', { class: 'note' }, h('p', {}, labels[consent.item]),
       h('p', { class: 'muted' }, `동의문 날짜: ${consent.version} · ${status}`),
       consent.item !== 'collect' && !consent.withdrawn_at ? withdraw : null);
