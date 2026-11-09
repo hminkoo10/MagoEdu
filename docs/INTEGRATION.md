@@ -312,7 +312,8 @@ PC 에서 웹 프로그램을 창으로 여는 프로그램(예: 마고 과목�
 
 | 메서드·경로 | 역할 | 입력 / 응답 |
 | --- | --- | --- |
-| GET G | 원장·담당 선생님·운영자 | `{guardians: [...]}` |
+| GET G | 원장·담당 선생님·운영자 | `{guardians: [...]}`. 각 보호자에 기존 동의 API와 같은 `consents` 배열(`verified` 포함) |
+| GET /api/guardians/consent-summary | 원장·담당 선생님·운영자 | `{students:[{studentId,collectVerified}]}` |
 | POST G | 원장·운영자 | `{name,relation,phone,notify:boolean,isPrimary:boolean}` → `{guardian}` |
 | PATCH G/:gid | 원장·운영자 | `{rev,...변경 항목}` → `{guardian}`; 충돌 409 |
 | DELETE G/:gid | 원장·운영자 | 연락처와 해당 초대·동의 삭제 → `{ok:true}` |
@@ -324,6 +325,8 @@ PC 에서 웹 프로그램을 창으로 여는 프로그램(예: 마고 과목�
 | POST G/:gid/consents/:cid/withdraw | 원장·운영자 | 선택 동의 철회 → `{ok:true}` |
 | GET /api/guardian-accounts | 원장·운영자 | `{accounts:[{id:uid,username,name,childLinks}]}`; 자녀 없는 계정 포함 |
 | DELETE /api/guardian-accounts/:uid | 원장·운영자 | 계정·세션 삭제, 연락처 연결 해제 → `{ok:true}` |
+
+동의 요약은 삭제·purge 학생 제외. 원장은 학원 전체, 선생님은 자기 담당 학생만, 운영자는 `?academy=` 필수. 유효한 수집 동의(미철회, 종이 또는 문자 확인 완료)가 하나라도 있으면 `collectVerified: true`. 학생 수와 무관한 고정 쿼리 수로 조회합니다. 목록·요약 모두 원장·선생님 앱 세션 허용, 보호자 세션 차단.
 
 대표 보호자는 학생당 최대 한 명. 대표 변경 시 이전 대표의 rev도 증가합니다.
 생성·수정 API에서 user_id를 직접 지정할 수 없습니다. 계정 연결은 초대로만 합니다.

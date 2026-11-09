@@ -236,7 +236,10 @@ test('보호자 권한: 등록 라우트 전수 기본차단 + SSO opt-in·앱 �
   const directorAppToken = s.app.deps.svc.createSession(directorUser, { platform: 'web-app' }, '127.0.0.1', { appId: 'guardian-app' });
   const teacherUser = s.db.get("SELECT * FROM users WHERE username='teacher-a'");
   const teacherAppToken = s.app.deps.svc.createSession(teacherUser, { platform: 'web-app' }, '127.0.0.1', { appId: 'guardian-app' });
-  ok(await s.rq('GET', s.root, { token: directorAppToken }));
+  for (const token of [directorAppToken, teacherAppToken]) {
+    assert.equal(ok(await s.rq('GET', '/api/guardians/consent-summary', { token })).students.length, 1);
+    assert.ok(Array.isArray(ok(await s.rq('GET', s.root, { token })).guardians[0].consents));
+  }
   assert.equal(ok(await s.rq('GET', s.root, { token: teacherAppToken })).guardians[0].phone, '010-1234-5678');
   assert.equal((await s.rq('PATCH', s.root + '/' + s.g.id, { token: teacherAppToken, body: { rev: 2, name: '금지' } })).status, 403);
   ok(await s.rq('PATCH', s.root + '/' + s.g.id, { token: directorAppToken, body: { rev: 2, name: '앱에서 수정' } }));
@@ -251,4 +254,30 @@ test('보호자 권한: 등록 라우트 전수 기본차단 + SSO opt-in·앱 �
   for (const table of ['guardians', 'guardian_invites', 'guardian_consents'])
     assert.equal(s.db.get(`SELECT COUNT(*) AS n FROM ${table}`).n, 0);
   assert.deepEqual(ok(await s.rq('GET', '/api/me', { token })).user.children, []);
+});
+
+test('목록 동의 포함과 학원·담당별 수집동의 요약', async (t) => {
+  const s = await setup(t);
+  const path = '/api/guardians/consent-summary';
+  const unassigned = ok(await s.rq('POST', '/api/students', { token: s.dir, body: { name: '미담당' } })).student;
+  const summary = async (token, suffix = '') => ok(await s.rq('GET', path + suffix, { token })).students;
+  assert.deepEqual(await summary(s.teach), [{ studentId: s.student.id, collectVerified: false }]);
+  assert.equal((await summary(s.dir)).length, 2);
+  assert.equal((await summary(s.other)).length, 0);
+  assert.equal((await s.rq('GET', path, { token: s.admin })).status, 400);
+  assert.equal((await summary(s.admin, '?academy=' + s.db.get("SELECT academy_id FROM users WHERE username='director-a'").academy_id)).length, 2);
+  const joined = ok(await s.join((await s.invite()).code));
+  assert.equal((await summary(s.dir)).find(x => x.studentId === s.student.id).collectVerified, false);
+  const online = s.db.get("SELECT * FROM guardian_consents WHERE item='collect'");
+  confirmConsentSms(s.db, online.id);
+  assert.equal((await summary(s.dir)).find(x => x.studentId === s.student.id).collectVerified, true);
+  const listed = ok(await s.rq('GET', s.root, { token: s.dir })).guardians[0].consents;
+  assert.deepEqual(listed, ok(await s.rq('GET', s.root + '/' + s.g.id + '/consents', { token: s.dir })).consents);
+  s.db.run('UPDATE guardian_consents SET withdrawn_at=1 WHERE id=?', online.id);
+  assert.equal((await summary(s.dir)).find(x => x.studentId === s.student.id).collectVerified, false);
+  ok(await s.rq('POST', s.root + '/' + s.g.id + '/consents', { token: s.dir, body: { item: 'collect', version: 'paper' } }));
+  assert.equal((await summary(s.dir)).find(x => x.studentId === s.student.id).collectVerified, true);
+  assert.equal((await s.rq('GET', path, { token: joined.token })).status, 403);
+  ok(await s.rq('DELETE', '/api/students/' + unassigned.id, { token: s.dir }));
+  assert.equal((await summary(s.dir)).length, 1);
 });

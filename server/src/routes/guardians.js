@@ -83,10 +83,24 @@ function register(router, deps) {
     ];
   }
 
+  router.get('/api/guardians/consent-summary', (ctx) => {
+    const { aca, user } = who(ctx);
+    const rows = db.all(`SELECT s.id AS studentId, EXISTS (
+      SELECT 1 FROM guardian_consents c JOIN guardians g ON g.id=c.guardian_id
+      AND g.student_id=s.id AND g.academy_id=s.academy_id
+      WHERE c.student_id=s.id AND c.academy_id=s.academy_id AND c.item='collect'
+      AND c.withdrawn_at IS NULL AND (c.method='paper' OR c.sms_confirmed_at IS NOT NULL)
+    ) AS collectVerified FROM students s
+    WHERE s.academy_id=? AND s.deleted_at IS NULL AND s.purged_at IS NULL
+    AND (? != 'teacher' OR s.teacher_uid=?)`, aca, user.role, user.uid);
+    return { students: rows.map(r => ({ ...r, collectVerified: !!r.collectVerified })) };
+  });
+
   router.get('/api/students/:sid/guardians', (ctx) => {
     const { aca, s } = student(ctx);
+    const cs = db.all('SELECT * FROM guardian_consents WHERE academy_id=? AND student_id=?', aca, s.id).map(consent);
     return {
-      guardians: db.all('SELECT * FROM guardians WHERE academy_id = ? AND student_id = ?', aca, s.id).map((g) => publicGuardian(g, true)),
+      guardians: db.all('SELECT * FROM guardians WHERE academy_id = ? AND student_id = ?', aca, s.id).map((g) => ({ ...publicGuardian(g, true), consents: cs.filter(c => c.guardian_id === g.id) })),
     };
   });
 
