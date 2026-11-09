@@ -334,41 +334,24 @@ if (!process.versions.electron) {
       ok(topDialog().textContent.includes('이미 계정이 있어요'));
       ok(button('인쇄', topDialog()) && button('CSV 받기', topDialog()));
       button('닫기', topDialog()).click(); await tick();
-      ok(!view.bulk.disabled); equal(view.bulk.textContent, '계정 일괄 생성'); equal(view.selected.size, 0);
+      ok(!view.bulk.disabled); equal(view.bulk.textContent, '계정 만들기'); equal(view.selected.size, 0);
     });
-    await run('일괄 생성: 고른 학생이 없으면 목록의 계정 없는 학생 모두, 만들 학생이 없으면 이유를 알림', async () => {
-      const { StudentsView } = await import('./js/views/students.js');
-      state.user.role = 'director';
-      let list = [];
-      cloud.api = async (m, p, b) => {
-        calls.push([m, p, b]);
+    await run('일괄 생성: 선택 없으면 요청 없음·고른 학생만 전송·취소', async () => {
+      const { StudentsView } = await import('./js/views/students.js'); state.user.role = 'director';
+      cloud.api = async (m, p, b) => { calls.push([m,p,b]);
         if (p === '/api/academy') return { code: 'mago' };
         if (p === '/api/academy/members') return { members: [] };
-        if (p === '/api/students') return { students: list, purgeDays: 30 };
-        return { created: [], skipped: [] };
-      };
+        if (m === 'GET') return { students: [{ id: 's1', name: '하나' }, { id: 's2', name: '둘' }], purgeDays: 30 };
+        return { created: [], skipped: [] }; };
       const view = new StudentsView({ cloud, store: { state } }); mount(view); await until(() => view.loaded);
-      ok(!view.bulk.disabled, '학생이 없어도 버튼은 눌려요');
-      calls.length = 0;
-      view.bulk.click(); await until(() => document.body.textContent.includes('‘학생 추가’로 계정을 만들 학생을 등록하세요'));
-      ok(!calls.some((c) => c[1] === '/api/academy'), '만들 학생이 없으면 서버에 묻지 않아요');
-      list = [{ id: 's1', name: '김학생', account: { username: 'mago2611001' } }, { id: 's2', name: '이학생', grade: '고1' }, { id: 's3', name: '박학생', grade: '고2' }, { id: 's4', name: '최학생', deletedAt: 1 }];
-      await view.load(); await until(() => view.table.querySelector('tbody'));
-      view.bulk.click(); await until(() => topDialog()?.textContent.includes('계정이 없는 학생 2명의 계정을 만들까요?'));
-      button('일괄 생성', topDialog()).click(); await until(() => calls.some((c) => c[0] === 'POST'));
-      equal(calls.find((c) => c[0] === 'POST'), ['POST', '/api/students/accounts/bulk', { studentIds: ['s2', 's3'] }]);
-      await until(() => topDialog()?.textContent.includes('새로 만든 계정이 없어요')); button('닫기', topDialog()).click();
-      await until(() => !view.bulk.querySelector('.spinner'));
-      calls.length = 0;
-      view.gradeSel.value = '고2'; view.gradeSel.dispatchEvent(new Event('change'));
-      const pending = view.bulkAccounts(); await until(() => topDialog()?.textContent.includes('계정이 없는 학생 1명의'));
-      button('취소', topDialog()).click(); await pending;
-      list = list.map((s) => (s.deletedAt ? s : { ...s, account: { username: 'x' } }));
-      await view.load(); calls.length = 0;
-      await view.bulkAccounts(); ok(document.body.textContent.includes('지금 목록의 학생은 모두 계정이 있어요'));
-      ok(!calls.some((c) => c[0] === 'POST'));
-      button('삭제한 학생').click(); await tick();
-      equal(view.bulk.style.display, 'none');
+      calls.length = 0; await view.bulkAccounts(); equal(calls, []); equal(view.bulkHint.style.display, 'none');
+      view.table.querySelector('tbody input').click(); equal(view.selected.size, 1); ok(view.bulkHint.textContent.includes('1명 골랐어요'));
+      const pending = view.bulkAccounts(); await until(() => topDialog()); button('일괄 생성', topDialog()).click();
+      await until(() => calls.some((c) => c[0] === 'POST'));
+      equal(calls.find((c) => c[0] === 'POST'), ['POST', '/api/students/accounts/bulk', { studentIds: ['s1'] }]);
+      await until(() => button('닫기', topDialog())); button('닫기', topDialog()).click(); await pending;
+      view.table.querySelector('thead input').click(); equal(view.selected.size, 2);
+      button('고르기 취소', view.el).click(); equal(view.selected.size, 0);
     });
     await run('학원 코드 없음: 원장은 현장에서 설정, 선생님은 안내', async () => {
       const { StudentsView } = await import('./js/views/students.js');
@@ -390,7 +373,7 @@ if (!process.versions.electron) {
       await until(() => topDialog()?.textContent.includes('1명의 계정을'));
       button('취소', topDialog()).click(); await pending;
       equal(code, 'mago');
-      ok(button('학원 코드 mago', view.el.querySelector('.page-head')));
+      ok(!view.el.querySelector('.page-head').textContent.includes('학원 코드'));
       code = null; view.role = 'teacher'; await view.bulkAccounts();
       ok(document.body.textContent.includes('학원 코드 설정은 원장님께 요청하세요'));
       ok(!calls.some((c) => c[0] === 'POST'));
@@ -465,47 +448,12 @@ if (!process.versions.electron) {
       ok(parseFloat(getComputedStyle(check).marginTop) > 0, '입력과 버튼 사이에 여백이 있어야 해요');
       equal(getComputedStyle(check).marginTop, '14px');
     });
-    await run('학생 명단 학원 코드: 원장 표시·저장·선생님 숨김·선생님 관리에서 제거', async () => {
-      const view = await studentsPage();
-      const head = view.el.querySelector('.page-head');
-      ok(button('학원 코드 mago', head)); button('학원 코드 mago', head).click();
-      await until(() => topDialog()?.textContent.includes('학원 코드 정하기'));
-      topDialog().querySelector('input').value = 'newmago'; button('저장', topDialog()).click();
-      await until(() => button('학원 코드 newmago', head));
-      const teacher = await studentsPage({ role: 'teacher' });
-      ok(!teacher.el.querySelector('.page-head').textContent.includes('학원 코드'));
-      state.user.role = 'director';
-      cloud.api = async (m, p) => p === '/api/academies' ? { academies: [] } : { users: [] };
+    await run('학생 명단·선생님 관리: 학원 설정 단추 제거', async () => {
+      const view = await studentsPage(); ok(!view.el.querySelector('.page-head').textContent.includes('학원 코드'));
       const { PeopleView } = await import('./js/views/people.js');
+      cloud.api = async (m,p) => p === '/api/academies' ? { academies: [] } : { users: [], invites: [] };
       const people = new PeopleView({ cloud, store: { state } }); mount(people);
-      ok(!people.el.querySelector('.page-head').textContent.includes('학원 코드'));
-      ok(button('학원 이름 바꾸기', people.el.querySelector('.page-head')));
-    });
-    await run('운영자 학원 코드: 선택 전 비활성·학원 전환·선택 학원에 저장', async () => {
-      const { StudentsView } = await import('./js/views/students.js');
-      state.user.role = 'admin';
-      const codes = { 7: 'mago', 8: null }; let academies;
-      cloud.api = async (m, p, b) => {
-        calls.push([m, p, b]);
-        if (p === '/api/academies') return new Promise((resolve) => { academies = resolve; });
-        const id = new URL(p, 'https://local.test').searchParams.get('academy');
-        if (p.startsWith('/api/academy?')) { if (m === 'PATCH') codes[id] = b.code; return { academy: { code: codes[id] } }; }
-        if (p.startsWith('/api/academy/members')) return { members: [] };
-        return { students: [], purgeDays: 30 };
-      };
-      const view = new StudentsView({ cloud, store: { state } }); mount(view);
-      const head = view.el.querySelector('.page-head');
-      const control = [...head.querySelectorAll('button')].find((b) => b.textContent.startsWith('학원 코드'));
-      ok(control?.disabled || control?.hidden, '학원을 고르기 전에는 쓸 수 없어요');
-      academies({ academies: [{ id: 7, name: '마고' }, { id: 8, name: '다음학원' }] });
-      await until(() => button('학원 코드 mago', head));
-      view.picker.el.value = '8'; view.picker.el.dispatchEvent(new Event('change'));
-      await until(() => button('학원 코드 정하기', head) && !control.disabled);
-      control.click(); await until(() => topDialog());
-      topDialog().querySelector('input').value = 'next'; button('저장', topDialog()).click();
-      await until(() => button('학원 코드 next', head));
-      ok(calls.some((c) => c[0] === 'PATCH' && c[1] === '/api/academy?academy=8' && c[2].code === 'next'));
-      ok(!calls.some((c) => c[1] === '/api/academy'));
+      ok(!people.el.textContent.includes('학원 이름 바꾸기')); ok(!people.el.textContent.includes('학원 관리'));
     });
     await run('학생 추가: 나중에 기본값·추가 POST만·고치기에는 계정 선택 없음', async () => {
       const view = await studentsPage();
@@ -516,7 +464,7 @@ if (!process.versions.electron) {
       equal(calls.filter((c) => c[0] === 'POST').map((c) => c[1]), ['/api/students']);
       await until(() => view.students.length === 1);
       const editing = view.edit(view.students[0]);
-      ok(!topDialog().querySelector('.seg')); button('취소', topDialog()).click(); await editing;
+      await until(() => topDialog()); ok(!topDialog().querySelector('.seg')); button('닫기', topDialog()).click(); await editing;
     });
     await run('학생 추가: 초대 코드·새 ID로 발급·공유 결과창·복사', async () => {
       const view = await studentsPage({ role: 'admin' });
@@ -554,7 +502,7 @@ if (!process.versions.electron) {
       ok(!calls.some((c) => c[1].includes('/bulk')));
       topDialog().querySelector('input').value = 'newmago'; button('저장', topDialog()).click();
       await until(() => topDialog()?.textContent.includes('temporary-once'));
-      ok(button('학원 코드 newmago', view.el.querySelector('.page-head')));
+      ok(!view.el.querySelector('.page-head').textContent.includes('학원 코드'));
       equal(calls.find((c) => c[0] === 'POST' && c[1].includes('/bulk'))[2], { studentIds: ['new/student'] });
       button('닫기', topDialog()).click(); await pending;
     });
@@ -645,29 +593,18 @@ if (!process.versions.electron) {
       ok(topDialog()?.textContent.includes('저장'));
       finish(); await pending;
     });
-    await run('계약 과목: 원장·선생님 프로필과 실시간 갱신, 운영자·학생은 숨김', async () => {
+    await run('내 계정: 계약 과목·학원 공간 제외', async () => {
       const { AccountView } = await import('./js/views/account.js');
-      cloud.refreshStorage = async () => ({ apps: [], usageBytes: 0, quotaBytes: 0 });
+      cloud.refreshStorage = async () => ({ apps: [], usageBytes: 0, quotaBytes: 0, academy: { name: '학원공간', apps: [] } });
       cloud.api = async () => ({ devices: [] });
       for (const role of ['director', 'teacher', 'admin', 'student']) {
-        state.user = { ...state.user, role, academy: { id: 7, name: '마고', subjects: ['math', 'english'] } };
-        const view = new AccountView({ cloud, store: { state } }); mount(view);
-        if (['director', 'teacher'].includes(role)) {
-          equal([...view.profile.querySelectorAll('.pill')].slice(1).map((p) => p.textContent), ['수학', '영어']);
-          ok(view.profile.textContent.includes('과목 변경은 운영자에게 문의하세요.'));
-          equal(view.profile.querySelectorAll('input[type=checkbox]').length, 0);
-          state.user = { ...state.user, academy: { ...state.user.academy, name: '바뀐 학원', subjects: [] } };
-          view.update(state);
-          ok(view.profile.textContent.includes('바뀐 학원') && view.profile.textContent.includes('계약한 과목 없음'));
-          equal(view.profile.querySelectorAll('.pill').length, 1);
-          state.user = { ...state.user, academy: { ...state.user.academy, subjects: ['korean'] } };
-          view.update(state);
-          equal([...view.profile.querySelectorAll('.pill')].slice(1).map((p) => p.textContent), ['국어']);
-        } else ok(!view.profile.textContent.includes('계약 과목'));
+        state.user = { ...state.user, role, academy: { id: 7, name: '마고', subjects: ['math'] } };
+        const view = new AccountView({ cloud, store: { state } }); mount(view); await tick();
+        ok(!view.profile.textContent.includes('계약 과목')); ok(!view.storage.textContent.includes('학원 공간'));
       }
     });
     await run('학원 관리: 과목 저장·빈 과목 재확인·취소·새 학원 과목', async () => {
-      const { PeopleView } = await import('./js/views/people.js');
+      const { AcademiesView } = await import('./js/views/academies.js');
       state.user.role = 'admin';
       let academy = { id: 7, name: '마고', subjects: ['math'], directors: 1, teachers: 0, usageBytes: 0, quotaBytes: 0 };
       cloud.api = async (m, p, b) => {
@@ -677,8 +614,12 @@ if (!process.versions.electron) {
         if (m === 'POST') return { academy: { id: 8, ...b } };
         return { users: [] };
       };
-      const view = new PeopleView({ cloud, store: { state } }); mount(view); await until(() => view.academies.length);
-      const pending = view.manageAcademies(); await until(() => topDialog());
+      const view = new AcademiesView({ cloud, store: { state }, go() {} }); mount(view); await until(() => view.academies?.length);
+      const { dialog, h } = await import('./js/ui.js');
+      const controls = view.controls(academy);
+      const list = h('div', {}, h('span', {}, '과목: 수학'), controls.subjects);
+      view.load = async () => { await view.loadAcademies(); list.firstChild.textContent = '과목: ' + (academy.subjects.length ? academy.subjects.map((x) => ({math:'수학',english:'영어'}[x])).join(' · ') : '계약한 과목 없음'); };
+      const pending = dialog({ title: '학원 관리', body: list, ok: '닫기', cancel: null });
       ok(topDialog().textContent.includes('과목: 수학'));
       button('과목', topDialog()).click();
       equal(topDialog().querySelector('.dialog-title').textContent, '마고 계약 과목');
@@ -700,13 +641,12 @@ if (!process.versions.electron) {
       await until(() => topDialog()?.querySelector('.dialog-title').textContent === '학원 관리');
       await until(() => topDialog().textContent.includes('계약한 과목 없음'));
       equal(calls.filter((c) => c[0] === 'PATCH').at(-1)[2], { subjects: [] });
-      const inputs = topDialog().querySelectorAll('input[type=checkbox]');
-      equal([...inputs].map((c) => c.checked), [true, false, false]);
-      inputs[2].click();
-      topDialog().querySelector('input[placeholder="새 학원 이름"]').value = '새 학원';
-      button('추가', topDialog()).click(); await until(() => calls.some((c) => c[0] === 'POST'));
-      equal(calls.find((c) => c[0] === 'POST'), ['POST', '/api/academies', { name: '새 학원', subjects: ['math', 'korean'] }]);
       button('닫기', topDialog()).click(); await pending;
+      const adding = view.createAcademy();
+      const inputs = topDialog().querySelectorAll('input[type=checkbox]'); equal([...inputs].map((c) => c.checked), [true,false,false]); inputs[2].click();
+      topDialog().querySelector('input[placeholder="새 학원 이름"]').value = '새 학원';
+      button('추가', topDialog()).click(); await adding;
+      equal(calls.find((c) => c[0] === 'POST'), ['POST', '/api/academies', { name: '새 학원', subjects: ['math', 'korean'] }]);
     });
     await run('계정 만들기: 새 학원일 때만 계약 과목과 요청 본문', async () => {
       const { PeopleView } = await import('./js/views/people.js');
@@ -802,37 +742,37 @@ if (!process.versions.electron) {
       const { HomeView } = await import('./js/views/home.js');
       state.web = false; state.user.role = 'director';
       state.apps = [{ id: 'notes', name: '오답노트', release: { version: '1', size: 0 } }];
-      cloud.sync = async (id) => { calls.push(['sync', id]); return true; };
+      cloud.syncAll = async () => { calls.push(['sync']); return true; };
       const view = new HomeView({ cloud, store: { state }, go() {} }); mount(view);
       const card = view.cards.get('notes');
       equal(card.more.style.display, 'none');
       state.apps[0].installed = { version: '1' }; view.update(state);
       ok(card.more.style.display !== 'none');
-      const sync = button('지금 맞추기', card.el); ok(sync); sync.click();
+      ok(!button('지금 맞추기', card.el)); const sync = button('지금 맞추기', view.el); ok(sync); sync.click();
       await until(() => calls.some((c) => c[0] === 'sync'));
-      equal(calls[0], ['sync', 'notes']);
+      equal(calls[0], ['sync']);
       ok(button('열기', card.el));
     });
     await run('학원 삭제: 수를 보여 주고 두 번 확인, 어느 쪽이든 취소하면 요청 없음', async () => {
-      const { PeopleView } = await import('./js/views/people.js');
+      const { AcademiesView } = await import('./js/views/academies.js');
       state.user.role = 'admin';
       cloud.api = async (m, p, b) => {
         calls.push([m, p, b]);
         if (p === '/api/academies/7/delete-preview') return { accounts: 2, students: 5, files: 30 };
         return p === '/api/academies' ? { academies: [{ id: 7, name: '시험 학원', subjects: ['math'], directors: 1, teachers: 1 }] } : { users: [] };
       };
-      const view = new PeopleView({ cloud, store: { state } }); mount(view);
-      await view.loadAcademies(); view.manageAcademies(); await until(() => topDialog());
-      const list = topDialog();
+      const view = new AcademiesView({ cloud, store: { state }, go() {} }); mount(view);
+      await view.load();
+      const list = view.el;
       const deletes = () => calls.filter((c) => c[0] === 'DELETE').length;
-      const confirmOpen = () => topDialog() !== list && topDialog();
+      const confirmOpen = () => topDialog();
       button('지우기', list).click(); await until(confirmOpen);
       ok(topDialog().textContent.includes('계정 2명, 학생 5명과 자료 30개를 지워요. 되돌릴 수 없어요.'));
-      button('취소', topDialog()).click(); await until(() => topDialog() === list);
+      button('취소', topDialog()).click(); await until(() => !topDialog());
       equal(deletes(), 0);
       button('지우기', list).click(); await until(confirmOpen);
       button('삭제', topDialog()).click(); await until(() => confirmOpen() && topDialog().textContent.includes('학원을 삭제할까요?'));
-      button('취소', topDialog()).click(); await until(() => topDialog() === list);
+      button('취소', topDialog()).click(); await until(() => !topDialog());
       equal(deletes(), 0);
       button('지우기', list).click(); await until(confirmOpen);
       button('삭제', topDialog()).click(); await until(() => confirmOpen() && topDialog().textContent.includes('학원을 삭제할까요?'));
@@ -931,15 +871,15 @@ if (!process.versions.electron) {
       view.invites = [i]; view.render([]); document.getElementById('root').replaceChildren(view.table);
       ok(view.table.textContent.includes('초대 중')); ok(view.table.textContent.includes('기간 지남'));
       cloud.api = async (...args) => { calls.push(args); return { code: 'renewed', expiresAt: 1794000000000 }; };
-      button('초대 취소', view.table).click(); equal(calls.length, 0);
+      button('관리', view.table).click(); [...document.querySelectorAll('.menu-item')].find((n) => n.textContent === '초대 취소').click(); equal(calls.length, 0);
       button('취소', topDialog()).click(); await tick(); equal(calls.length, 0);
-      button('초대 취소', view.table).click(); button('초대 취소', topDialog()).click();
+      button('관리', view.table).click(); [...document.querySelectorAll('.menu-item')].find((n) => n.textContent === '초대 취소').click(); button('초대 취소', topDialog()).click();
       await until(() => calls.length === 1); equal(calls[0], ['DELETE', '/api/teacher-invites/9']);
       await until(() => !topDialog());
-      button('코드 다시 만들기', view.table).click(); await until(() => topDialog());
+      button('관리', view.table).click(); [...document.querySelectorAll('.menu-item')].find((n) => n.textContent === '코드 다시 만들기').click(); await until(() => topDialog());
       ok(topDialog().textContent.includes('이전 코드는 더 쓸 수 없어요.')); equal(calls.length, 1);
       button('취소', topDialog()).click(); await until(() => !topDialog()); equal(calls.length, 1);
-      button('코드 다시 만들기', view.table).click(); await until(() => topDialog());
+      button('관리', view.table).click(); [...document.querySelectorAll('.menu-item')].find((n) => n.textContent === '코드 다시 만들기').click(); await until(() => topDialog());
       button('다시 만들기', topDialog()).click(); await until(() => calls.length === 2);
       equal(calls[1], ['POST', '/api/teacher-invites/9/renew', {}]);
       await until(() => topDialog()?.textContent.includes('선생님 초대 코드를 만들었어요'));
@@ -959,6 +899,138 @@ if (!process.versions.electron) {
       equal(calls.length, 0); inputs[4].value = 'secret12'; button('가입하기').click();
       await until(() => calls.length); equal(calls[0], ['signup', { code: 'teacher-code', username: 'teacher1', password: 'secret12' }]);
     });
+    await run('역할별 메뉴 순서·학원 없는 계정·예전 주소·navigate·내 이름', async () => {
+      state.user.role = 'director'; state.user.allowedApps = null;
+      cloud.refreshStorage = async () => ({ apps: [], usageBytes: 0, quotaBytes: 0, academy: { usageBytes: 0, quotaBytes: 100 } });
+      cloud.api = async (m,p) => {
+        if (p === '/api/academies') return { academies: [{ id: 7, name: '마고', subjects: ['math'] }] };
+        if (p.startsWith('/api/academy/ai/all')) return { configs: [], apps: [] };
+        if (p.startsWith('/api/academy')) return { academy: { id: 7, name: '마고', code: 'mago' }, members: [] };
+        return { devices: [], codes: [], students: [], users: [], invites: [], purgeDays: 30 };
+      };
+      history.replaceState(null, '', '#/account'); await import('./js/app.js'); await until(() => document.querySelector('#my-account'));
+      equal(location.hash, '#/settings');
+      const menus = () => [...document.querySelectorAll('.nav-item span')].map((n) => n.textContent);
+      equal(menus(), ['프로그램','학생 명단','선생님 관리','공지사항','학원 설정','도움말','설정']);
+      onNavigate({ view: 'academy-ai' }); await until(() => document.querySelector('.title')?.textContent === '학원 설정');
+      history.replaceState(null, '', '#/academy-ai'); window.dispatchEvent(new PopStateEvent('popstate')); equal(location.hash, '#/academy-settings');
+      state.user.role = 'teacher'; onState(state); await tick();
+      equal(menus(), ['프로그램','학생 명단','공지사항','도움말','설정']);
+      state.user.academy = null; onState(state); await tick(); equal(menus(), ['프로그램','공지사항','도움말','설정']);
+      state.user.role = 'director'; onState(state); await tick(); equal(menus(), ['프로그램','선생님 관리','공지사항','도움말','설정']);
+      state.user.role = 'admin'; onState(state); await tick();
+      equal(menus(), ['프로그램','공지사항','학원','계정','학생 명단','프로그램 관리','활동 기록','서버 설정','도움말','설정']);
+      onNavigate({ view: 'codes' }); await until(() => document.querySelector('#signup-codes')); equal(location.hash, '#/academies');
+      onNavigate({ view: 'academy-ai' }); equal(location.hash, '#/academies');
+      document.querySelector('.me-chip').click(); await until(() => document.querySelector('#my-account')); equal(location.hash, '#/settings');
+      history.replaceState(null, '', '#/account'); window.dispatchEvent(new PopStateEvent('popstate')); equal(location.hash, '#/settings');
+      ok(button('아이디 바꾸기', document.querySelector('#my-account'))); button('아이디 바꾸기', document.querySelector('#my-account')).click();
+      ok(topDialog().querySelector('input[type=password]')); button('닫기', topDialog()).click();
+    });
+    await run('학원 설정: 원장·운영자 칸과 학원 선택·가입 코드 통합', async () => {
+      const { AcademySettingsView, AcademiesView } = await import('./js/views/academies.js');
+      const academy = { id: 7, name: '시험학원', subjects: ['math'], directors: 1, teachers: 2, usageBytes: 2, quotaBytes: 100 };
+      cloud.refreshStorage = async () => ({ academy });
+      cloud.api = async (m,p,b) => { calls.push([m,p,b]);
+        if (p === '/api/academies') return { academies: [academy] };
+        if (p === '/api/codes') return { codes: [{ id: 1, code: 'JOIN-CODE', state: 'active', subjects: ['math'], uses: 0, maxUses: 1 }] };
+        if (p.startsWith('/api/academy/ai/all')) return { defaults: null, apps: [] };
+        return { academy };
+      };
+      for (const role of ['director','admin']) {
+        state.user.role = role; state.user.academy = academy;
+        const view = new AcademySettingsView({ cloud, store: { state }, go() {}, opts: { academy: 7 } }); mount(view);
+        await until(() => view.el.textContent.includes('학원 정보'));
+        ok(view.el.textContent.includes('학원 공간')); ok(view.el.textContent.includes('학원 AI'));
+        equal(!!button('용량 바꾸기', view.el), role === 'admin'); equal(!!button('학원 지우기', view.el), role === 'admin');
+        if (role === 'admin') ok(view.el.querySelector('.title').textContent.includes('시험학원'));
+        else ok(view.el.textContent.includes('과목 변경은 운영자에게 문의하세요.'));
+      }
+      let target;
+      const view = new AcademiesView({ cloud, store: { state }, go: (...args) => { target = args; } }); mount(view);
+      await until(() => view.table.querySelector('tbody')); await until(() => view.codes.table.textContent.includes('JOIN-CODE'));
+      button('학원 설정', view.el).click(); equal(target, ['academy-settings', { academy: 7, force: true }]);
+      ok(button('가입 코드 만들기', view.el)); ok(button('학원 추가', view.el));
+    });
+    await run('정보 고치기: 바뀐 이름·아이디·프로그램만 기존 PATCH', async () => {
+      const { PeopleView } = await import('./js/views/people.js'); state.user.allowedApps = null;
+      const view = Object.create(PeopleView.prototype); Object.assign(view, { cloud, store: { state }, load() {} });
+      const user = { id: 9, name: '선생님', username: 'teacher', allowedApps: null };
+      cloud.api = async (...args) => { calls.push(args); };
+      let pending = view.editInfo(user); topDialog().querySelector('input').value = '새이름'; button('저장', topDialog()).click(); await pending;
+      equal(calls[0], ['PATCH','/api/users/9',{ name: '새이름' }]);
+      pending = view.editInfo(user); topDialog().querySelectorAll('input')[1].value = 'newteacher'; button('저장', topDialog()).click(); await pending;
+      equal(calls[1], ['PATCH','/api/users/9',{ username: 'newteacher' }]);
+      pending = view.editInfo(user); topDialog().querySelector('.toggle').click(); button('저장', topDialog()).click(); await pending;
+      equal(calls[2], ['PATCH','/api/users/9',{ allowedApps: [] }]);
+      pending = view.editInfo(user); button('저장', topDialog()).click(); await tick(); equal(calls.length, 3); button('취소', topDialog()).click(); await pending;
+    });
+    await run('학생 정보: 초대·직접 계정·삭제 뒤 계정 칸 갱신·기본 입력 유지', async () => {
+      const { StudentsView } = await import('./js/views/students.js'); state.user.role = 'director';
+      let student = { id: 's1', name: '학생', rev: 1, updatedAt: 1, updatedBy: { name: '원장' }, account: null };
+      cloud.api = async (m,p,b) => { calls.push([m,p,b]);
+        if (p === '/api/students') return { students: [{ ...student }], purgeDays: 30 };
+        if (p === '/api/academy/members') return { members: [] };
+        if (p.endsWith('/invite')) { student = { ...student, name: '다른 사람이 수정', rev: 2 }; return { code: 'INVITE', expiresAt: Date.now()+10000 }; }
+        if (m === 'PATCH' && p === '/api/students/s1') return { student: { ...student, ...b } };
+        if (p.endsWith('/account')) { if (m === 'DELETE') student.account = null; else student.account = { username: b.username, status: 'active', aiMode: 'academy' }; return { account: student.account }; }
+        return {};
+      };
+      const view = new StudentsView({ cloud, store: { state } }); mount(view); await until(() => view.loaded);
+      const pending = view.edit(view.students[0]); await until(() => topDialog()); const outer = topDialog();
+      outer.querySelector('input').value = '입력중';
+      button('초대 코드 만들기', outer).click(); button('만들기', topDialog()).click(); await until(() => topDialog().textContent.includes('학생 초대 코드를 만들었어요'));
+      button('닫기', topDialog()).click(); await until(() => button('초대 코드 취소', outer)); equal(outer.querySelector('input').value, '입력중');
+      button('아이디·임시 비밀번호로 만들기', outer).click(); topDialog().querySelector('input').value = 'newstudent'; topDialog().querySelector('input[type=password]').value = 'secret12';
+      button('직접 만들기', topDialog()).click(); await until(() => button('계정 지우기', outer)); equal(outer.querySelector('input').value, '입력중');
+      button('계정 지우기', outer).click(); button('계정 지우기', topDialog()).click(); await until(() => button('초대 코드 만들기', outer));
+      equal(outer.querySelector('input').value, '입력중'); ok(outer.textContent.includes('고친 사람: 원장'));
+      button('저장', outer).click(); await pending;
+      equal(calls.find((c) => c[0] === 'PATCH' && c[1] === '/api/students/s1')[2], { name: '입력중', baseRev: 1 });
+      equal(calls.filter((c) => ['POST','DELETE'].includes(c[0])).map((c) => [c[0],c[1]]), [['POST','/api/students/s1/invite'],['POST','/api/students/s1/account'],['DELETE','/api/students/s1/account']]);
+    });
+    await run('예전 데이터 메뉴: 없음·있음·이미 가져옴·다시 묻지 않음', async () => {
+      const { HomeView } = await import('./js/views/home.js'); state.web = false;
+      const app = { id: 'notes', name: '오답노트', installed: { version: '1' }, platform: 'windows' }; state.apps = [app];
+      let found = []; cloud.legacyDetect = async () => found;
+      const view = new HomeView({ cloud, store: { state }, go() {} }); mount(view); const card = view.cards.get('notes');
+      for (const entry of [null, { id: 'old' }, { id: 'old', importedHere: true, importedBy: '원장' }, { id: 'old', dismissed: true }]) {
+        found = entry ? [entry] : []; await view.openMenu(card.more, app);
+        equal([...document.querySelectorAll('.menu-item')].some((n) => n.textContent === '예전 데이터 가져오기'), !!entry);
+        document.body.click();
+      }
+      equal([...view.el.querySelectorAll('button')].filter((b) => b.textContent === '지금 맞추기').length, 1);
+    });
+    win.setSize(700, 900);
+    await run('모바일 메뉴: 예전 주소 이동·뒤로 가기·서랍 닫기', async () => {
+      state.user.role = 'director';
+      cloud.refreshStorage = async () => ({ apps: [], usageBytes: 0, quotaBytes: 0 });
+      cloud.api = async () => ({ devices: [] });
+      await import('./js/app.js'); await until(() => document.querySelector('.shell'));
+      const open = document.querySelector('.topbar button'); open.click();
+      equal(open.getAttribute('aria-expanded'), 'true'); ok(history.state.mobileNav);
+      document.querySelector('.me-chip').click();
+      await until(() => location.hash === '#/settings' && !document.querySelector('.shell').classList.contains('nav-open'));
+      ok(document.querySelector('#my-account'));
+      history.back(); await until(() => location.hash === '#/home');
+      open.click(); await until(() => history.state?.mobileNav); history.back();
+      await until(() => !document.querySelector('.shell').classList.contains('nav-open'));
+      equal(location.hash, '#/home');
+      history.replaceState(null, '', '#/account'); window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await until(() => location.hash === '#/settings'); ok(document.querySelector('#my-account'));
+    });
+    win.setSize(1360, 1000);
+    await run('새로 고침 진입: 운영자 학원 설정의 선택 학원 보존', async () => {
+      state.user.role = 'admin';
+      cloud.api = async (m,p) => {
+        if (p === '/api/academies') return { academies: [{ id: 8, name: '둘째학원', subjects: ['english'] }] };
+        if (p.startsWith('/api/academy/ai/all')) return { defaults: null, apps: [] };
+        return { academy: { id: 8, code: 'second' } };
+      };
+      history.replaceState(null, '', '#/academy-settings?academy=8');
+      await import('./js/app.js'); await until(() => document.querySelector('.title')?.textContent.includes('둘째학원'));
+      equal(location.hash, '#/academy-settings?academy=8');
+    });
     console.log('STUDENT_TESTS=' + JSON.stringify(results));
     win.destroy();
     app.exit(results.some((r) => r.error) ? 1 : 0);
@@ -969,7 +1041,7 @@ function setup() {
   window.calls = [];
   window.state = { phase: 'ready', web: true, online: true, version: '1', config: { serverUrl: 'https://local.test' }, apps: [], notices: [], unreadNotices: 0, user: { id: 1, role: 'student', name: '김학생', username: 'student1', academy: { id: 7, name: '마고' }, student: { id: 's1', teacherName: '이선생' }, aiMode: 'academy' } };
   window.cloud = {
-    getState: async () => state, onState: (fn) => { window.onState = fn; }, onToast() {}, onNavigate() {},
+    getState: async () => state, onState: (fn) => { window.onState = fn; }, onToast() {}, onNavigate(fn) { window.onNavigate = fn; },
     api: async (m, p, b) => { calls.push([m, p, b]); if (p === '/api/me/notes') return []; throw new Error('허용하지 않은 요청: ' + p); },
     changeUsername: async (u, p) => { calls.push(['username', u, p]); return { username: u }; },
     changePassword: async (...args) => { calls.push(['password', ...args]); },

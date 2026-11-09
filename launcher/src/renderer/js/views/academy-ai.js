@@ -59,17 +59,17 @@ function aiForm(cur) {
 }
 
 export class AcademyAiView {
-  constructor({ cloud, store }) {
+  constructor({ cloud, store, academy = null }) {
     this.cloud = cloud;
     this.store = store;
     this.isAdmin = store.state.user.role === 'admin';
-    this.academy = ''; // 운영자가 고른 학원
+    this.academy = academy ? String(academy) : ''; // 운영자가 고른 학원
     this.data = null;
     this.seq = 0;
     this.stamp = store.state.academyStamp;
     this.main = h('div', { class: 'card' });
     this.apps = h('details', { class: 'card advanced-settings' });
-    this.picker = this.isAdmin
+    this.picker = this.isAdmin && !academy
       ? academyPicker(cloud, (id) => {
           this.academy = id;
           this.load();

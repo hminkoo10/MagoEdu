@@ -9,7 +9,7 @@ async function exercise(rendererUrl) {
     { version: '1.2.10', notes: ['새 내역', '<img src=x onerror=alert(1)>'] },
   ] };
   const cloud = { getReleaseNotes: async () => { if (notes instanceof Error) throw notes; return notes; } };
-  const state = { version: '1.2.17', config: { deviceName: '시험 PC' }, online: true, update: { status: 'latest' } };
+  const state = { user: { role: 'teacher', name: '시험', username: 'teacher' }, apps: [], version: '1.2.17', config: { deviceName: '시험 PC' }, online: true, update: { status: 'latest' } };
   const root = document.getElementById('root');
   root.style.padding = '24px';
   const close = async (selector) => {

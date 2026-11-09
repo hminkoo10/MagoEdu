@@ -154,7 +154,7 @@ test('학생 수정 폼: 기존 코드 표시, 같은 교육청의 다른 학교
     await d.onOk();
     return true;
   });
-  const view = Object.assign(Object.create(f.StudentsView.prototype), { cloud: f.cloud, members: [], grades: [], qs: () => '', load() {} });
+  const view = Object.assign(Object.create(f.StudentsView.prototype), { cloud: f.cloud, members: [], grades: [], qs: () => '', load() {}, account: async () => ({ el: f.ui.h('section'), save: async () => {} }) });
   await view.edit(saved);
   assert.deepEqual(plain(calls.at(-1)), { method: 'PATCH', url: '/api/students/student-1', body: { ...fields(hits[1]), baseRev: 3 } });
   clear = true;

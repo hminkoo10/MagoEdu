@@ -1,6 +1,6 @@
 // 내 계정: 아이디·비밀번호·이름 바꾸기, 저장 공간, 로그인한 기기
-import { errorText, appLabel, SUBJECTS } from '../ui.js';
-import { h, ic, btn, busy, toast, field, input, passwordInput, checkbox, pill, bytes, ago, initial, ROLE, confirmDialog, reveal, put } from '../ui.js';
+import { errorText, appLabel } from '../ui.js';
+import { h, ic, btn, busy, toast, dialog, field, input, passwordInput, checkbox, pill, bytes, ago, initial, ROLE, confirmDialog, reveal, put } from '../ui.js';
 
 export class AccountView {
   constructor({ cloud, store }) {
@@ -18,11 +18,27 @@ export class AccountView {
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, this.required ? '새 비밀번호 설정' : '내 계정'), h('div', { class: 'subtitle' }, this.required ? '계속하려면 비밀번호를 바꾸세요.' : this.student ? '이름·담당 선생님 변경은 선생님에게 요청하세요.' : ''))),
       h('div', { class: 'grid2' }, h('div', { class: 'stack' }, this.required ? null : this.profile, this.required ? null : this.usernameCard(), this.passwordCard()), this.student ? null : h('div', { class: 'stack' }, this.storage, this.devices)),
     );
+    if (!this.student) {
+      this.el = h('section', { id: 'my-account', class: 'stack' },
+        h('h2', { class: 'card-title' }, ic('user', 18), '내 계정'), this.profile,
+        h('div', { class: 'toolbar' },
+          btn('아이디 바꾸기', { iconName: 'user', onClick: () => this.openChange(this.usernameCard()) }),
+          btn('비밀번호 바꾸기', { iconName: 'key', onClick: () => this.openChange(this.passwordCard()) })),
+        this.storage, this.devices);
+    }
     this.renderProfile(store.state.user);
     if (!this.student) {
       this.loadStorage();
       this.loadDevices();
     }
+  }
+
+  openChange(card) {
+    // 창 제목과 겹치는 카드 제목·테두리는 빼고, 바꾸기 단추가 주 단추가 되게 닫기는 회색으로
+    const title = card.querySelector('h2');
+    title.remove();
+    card.classList.remove('card');
+    return dialog({ title: title.textContent, body: card, ok: null, cancel: '닫기' });
   }
 
   update(s) {
@@ -59,15 +75,6 @@ export class AccountView {
           h('div', { style: { fontSize: '20px', fontWeight: 700 } }, u.name),
           h('div', { class: 'muted', style: { marginTop: '2px', display: 'flex', gap: '6px', alignItems: 'center' } }, h('span', { class: 'mono' }, u.username), pill(ROLE[u.role], u.role === 'admin' ? 'dark' : u.role === 'director' ? '' : 'grey')),
           u.academy ? h('div', { class: 'subtle', style: { marginTop: '4px' } }, u.academy.name) : null,
-          u.academy && ['director', 'teacher'].includes(u.role) ? h('div', { style: { marginTop: '10px' } },
-            h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' } },
-              h('span', { class: 'muted' }, '계약 과목'),
-              ...((u.academy.subjects ?? ['math']).length
-                ? SUBJECTS.filter(([code]) => (u.academy.subjects ?? ['math']).includes(code)).map(([, name]) => pill(name))
-                : [h('span', { class: 'subtle' }, '계약한 과목 없음')]),
-            ),
-            h('div', { class: 'subtle', style: { marginTop: '6px', fontSize: '12px' } }, '과목 변경은 운영자에게 문의하세요.'),
-          ) : null,
         ),
       ),
       h('div', { style: { height: '16px' } }),
@@ -155,16 +162,6 @@ export class AccountView {
           h('div', { style: { fontWeight: 600 } }, bytes(a.bytes)),
         ),
       );
-      // 학원 공간: 같은 학원 사람들이 함께 쓰는 파일 (예: 오답노트 교재). 내 저장 공간과 따로 센다
-      const aca = r.academy;
-      const acaRows = (aca?.apps || []).map((a) =>
-        h(
-          'div',
-          { class: 'row' },
-          h('div', { class: 'grow' }, h('div', { class: 'row-title' }, names[a.appId] || a.appId), h('div', { class: 'row-desc' }, `파일 ${a.files}개${a.lastChange ? ` · ${ago(a.lastChange)} 바뀜` : ''}`)),
-          h('div', { style: { fontWeight: 600 } }, bytes(a.bytes)),
-        ),
-      );
       put(this.storage, 
         h('h2', { class: 'card-title' }, ic('cloud', 18), '서버 저장 공간'),
         h('p', { class: 'card-desc' }, '같은 아이디의 기기에서 함께 써요.'),
@@ -174,11 +171,6 @@ export class AccountView {
         r.apps.some((a) => a.evictedGroups)
           ? h('div', { class: 'note', style: { marginTop: '12px' } }, ic('info', 18), h('span', {}, '서버에서 정리한 자료는 원래 PC에 남아요. 다시 열면 서버에 올라가요.'))
           : null,
-        aca ? h('h3', { class: 'storage-sub' }, ic('building', 16), `학원 공간 · ${aca.name || '우리 학원'}`) : null,
-        aca ? h('p', { class: 'card-desc' }, '학원 공용 자료예요. 개인 용량과 따로 계산해요.') : null,
-        aca ? usage(aca.usageBytes, aca.quotaBytes) : null,
-        aca ? h('div', { style: { height: '8px' } }) : null,
-        ...acaRows,
       );
     } catch (e) {
       put(this.storage, h('h2', { class: 'card-title' }, '서버 저장 공간'), h('div', { class: 'muted' }, errorText(e)));

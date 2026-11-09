@@ -35,10 +35,12 @@ function viewFixture(file, name, toastMessages = []) {
   const element = (tag, attrs, ...children) => ({
     tag, ...attrs, children, listeners: {},
     addEventListener(event, fn) { this.listeners[event] = fn; },
+    insertBefore(child, before) { this.children.splice(this.children.indexOf(before), 0, child); },
   });
   const source = fs.readFileSync(path.join(__dirname, '../src/renderer/js/views', file), 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(`export class ${name}`, `class ${name}`);
   const View = vm.runInNewContext(`${source}\n${name}`, {
+    AccountView: class { constructor() { this.el = element('section'); } update() {} },
     h: element, ic: () => element('icon'), btn: () => element('button'),
     releaseNotesButton: () => element('button'),
     input: (attrs) => { const el = element('input', attrs); inputs.push(el); return el; },

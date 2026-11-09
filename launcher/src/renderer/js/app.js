@@ -4,14 +4,13 @@ import { HomeView, askLegacy } from './views/home.js';
 import { NoticesView } from './views/notices.js';
 import { AccountView } from './views/account.js';
 import { PeopleView } from './views/people.js';
-import { CodesView } from './views/codes.js';
 import { AppsAdminView } from './views/apps-admin.js';
 import { AuditView } from './views/audit.js';
 import { ServerView } from './views/server.js';
 import { SettingsView } from './views/settings.js';
 import { updateInstallButton } from './update-install.js';
 import { StudentsView } from './views/students.js';
-import { AcademyAiView } from './views/academy-ai.js';
+import { AcademySettingsView, AcademiesView } from './views/academies.js';
 import { StudentNotesView, StudentNaviView, StudentJoinView } from './views/student.js';
 
 // 앱은 preload 의 window.cloud, 웹은 같은 서버 API 로 바로
@@ -45,28 +44,32 @@ function navFor(user) {
     { id: 'account', icon: 'user', label: '내 계정' },
     help,
   ];
-  const items = [
-    { id: 'home', icon: 'apps', label: '프로그램' },
-    { id: 'notices', icon: 'megaphone', label: '공지사항' },
-    { id: 'account', icon: 'user', label: '내 계정' },
-  ];
-  if (user.academy && user.role !== 'admin') items.push({ id: 'students', icon: 'graduationCap', label: '학생 명단' });
-  if (user.role === 'director') items.push({ id: 'teachers', icon: 'users', label: '선생님 관리' });
-  if (user.role === 'director' && user.academy) items.push({ id: 'academy-ai', icon: 'key', label: '학원 AI' });
-  if (user.role === 'admin') {
-    items.push(
-      { section: '운영' },
-      { id: 'people', icon: 'users', label: '계정 관리' },
-      { id: 'students', icon: 'graduationCap', label: '학생 명단' },
-      { id: 'academy-ai', icon: 'key', label: '학원 AI' },
-      { id: 'codes', icon: 'ticket', label: '원장 가입 코드' },
-      { id: 'apps-admin', icon: 'box', label: '프로그램 관리' },
-      { id: 'audit', icon: 'activity', label: '활동 기록' },
-      { id: 'server', icon: 'server', label: '서버 설정' },
-    );
+  const items = [{ id: 'home', icon: 'apps', label: '프로그램' }];
+  if (user.role !== 'admin') {
+    if (user.academy) items.push({ id: 'students', icon: 'graduationCap', label: '학생 명단' });
+    if (user.role === 'director') items.push({ id: 'teachers', icon: 'users', label: '선생님 관리' });
   }
+  items.push({ id: 'notices', icon: 'megaphone', label: '공지사항' });
+  if (user.role === 'director' && user.academy) items.push({ id: 'academy-settings', icon: 'building', label: '학원 설정' });
+  if (user.role === 'admin') items.push(
+    { section: '운영' },
+    { id: 'academies', icon: 'building', label: '학원' },
+    { id: 'people', icon: 'users', label: '계정' },
+    { id: 'students', icon: 'graduationCap', label: '학생 명단' },
+    { id: 'apps-admin', icon: 'box', label: '프로그램 관리' },
+    { id: 'audit', icon: 'activity', label: '활동 기록' },
+    { id: 'server', icon: 'server', label: '서버 설정' },
+  );
   items.push({ section: '' }, help, { id: 'settings', icon: 'sliders', label: '설정' });
   return items;
+}
+
+function redirectView(id, user) {
+  if (user.role === 'student') return id;
+  if (id === 'account') return 'settings';
+  if (id === 'academy-ai') return user.role === 'admin' ? 'academies' : 'academy-settings';
+  if (id === 'codes') return 'academies';
+  return id;
 }
 
 const VIEWS = {
@@ -78,8 +81,8 @@ const VIEWS = {
   teachers: PeopleView,
   people: PeopleView,
   students: StudentsView,
-  'academy-ai': AcademyAiView,
-  codes: CodesView,
+  'academy-settings': AcademySettingsView,
+  academies: AcademiesView,
   'apps-admin': AppsAdminView,
   audit: AuditView,
   server: ServerView,
@@ -209,11 +212,11 @@ class Shell {
       items.push(card);
     }
     const out = btn('', { variant: 'subtle', size: 'sm', iconName: 'logout', title: '로그아웃' });
-    out.addEventListener('click', () => { this.toggleNav(false); logoutFlow(); });
+    out.addEventListener('click', (e) => { e.stopPropagation(); this.toggleNav(false); logoutFlow(); });
     items.push(
       h(
         'div',
-        { class: 'me-chip' },
+        { class: 'me-chip', role: 'button', tabindex: '0', onClick: () => this.go('account'), onKeydown: (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); this.go('account'); } } },
         h('div', { class: 'avatar' }, initial(u.name)),
         h('div', { class: 'who' }, h('div', { class: 'nm' }, u.name), h('div', { class: 'rl' }, `${ROLE[u.role]}${u.academy ? ` · ${u.academy.name}` : ''}`)),
         out,
@@ -225,7 +228,7 @@ class Shell {
   }
 
   markNav(animate = true) {
-    const el = this.navEls.get(this.current) || this.navEls.get(this.current === 'people' ? 'teachers' : 'home');
+    const el = this.navEls.get(this.current) || this.navEls.get(this.current === 'academy-settings' ? 'academies' : this.current === 'people' ? 'teachers' : 'home');
     for (const [, n] of this.navEls) n.classList.toggle('active', n === el);
     this.topTitle.textContent = el?.querySelector('span')?.textContent || '';
     if (!el) return;
@@ -235,6 +238,12 @@ class Shell {
   }
 
   go(id, opts = {}) {
+    const old = id;
+    if (id === 'academy-settings' && !opts.academy && store.state.web) opts = { ...opts, academy: new URLSearchParams(location.hash.split('?')[1] || '').get('academy') };
+    id = redirectView(id, store.state.user);
+    if (old === 'account' && id === 'settings') opts = { ...opts, section: 'account' };
+    if (old === 'codes') opts = { ...opts, section: 'codes' };
+    if (old === 'academy-ai') opts = { ...opts, section: 'academy-ai' };
     // 서랍 기록을 먼저 닫은 뒤 이동해야 뒤로 가기가 꼬이지 않아요.
     if (store.state.web && !opts.fromHistory && (history.state?.mobileNav || this.navBackPending)) {
       this.pendingNav = { id, opts };
@@ -248,14 +257,17 @@ class Shell {
     } else if (id === 'my-notes' || id === 'student-navi') id = 'home';
     if (!VIEWS[id]) id = 'home';
     if (id === 'people' && store.state.user.role === 'director') id = 'teachers';
-    const same = id === this.current && this.view;
+    if (id === 'academies' && user.role !== 'admin') id = 'home';
+    if (id === 'academy-settings' && !(user.role === 'admin' || (user.role === 'director' && user.academy))) id = 'home';
+    const same = id === this.current && this.view && (id !== 'academy-settings' || String(opts.academy) === String(this.currentOpts?.academy));
+    this.currentOpts = opts;
     this.current = id;
     this.toggleNav(false);
-    if (store.state.web && !opts.fromHistory) {
+    if (store.state.web && (!opts.fromHistory || old !== id)) {
       // 웹: 주소에 화면을 남겨 뒤로 가기가 되게
-      const hash = `#/${id}`;
+      const hash = `#/${id}${id === 'academy-settings' && opts.academy ? `?academy=${encodeURIComponent(opts.academy)}` : ''}`;
       if (location.hash !== hash) {
-        if (opts.replace) history.replaceState(null, '', hash);
+        if (opts.replace || opts.fromHistory) history.replaceState(null, '', hash);
         else history.pushState(null, '', hash);
       }
     }
@@ -271,6 +283,7 @@ class Shell {
     put(this.page, this.view.el);
     reveal(this.view.el);
     this.view.update?.(store.state);
+    if (opts.section === 'account') this.view.onNav?.(opts);
   }
 
   update(s) {
@@ -640,7 +653,7 @@ function mount(el) {
 
 function render(force = false) {
   const s = store.state;
-  const userKey = s.user ? `${s.user.id}|${s.user.role}|${!!s.user.mustChangePassword}` : null;
+  const userKey = s.user ? `${s.user.id}|${s.user.role}|${s.user.academy?.id || ''}|${!!s.user.mustChangePassword}` : null;
   if (!force && s.phase === lastPhase && userKey === lastUserKey) {
     if (shell) shell.update(s);
     else ssoPage?.update(s);
@@ -671,8 +684,9 @@ function render(force = false) {
 
 /** 웹: 주소 해시(#/notices)가 가리키는 화면 (이 계정 메뉴에 있을 때만) */
 function hashView(user) {
-  const m = /^#\/([\w-]+)$/.exec(location.hash);
-  return m && navFor(user).some((it) => it.id === m[1]) ? m[1] : null;
+  const m = /^#\/([\w-]+)(?:\?academy=\d+)?$/.exec(location.hash);
+  const id = m && redirectView(m[1], user);
+  return id && (navFor(user).some((it) => it.id === id) || (id === 'academy-settings' && user.role === 'admin')) ? m[1] : null;
 }
 
 async function start() {

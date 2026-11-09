@@ -1,4 +1,5 @@
-// 설정: 이 컴퓨터, 자동 실행, 업데이트, 서버, 정보 (구현민 개발)
+// 설정: 내 계정, 이 컴퓨터, 자동 실행, 업데이트, 서버, 정보 (구현민 개발)
+import { AccountView } from './account.js';
 import { errorText, h, ic, btn, busy, toast, dialog, field, input, toggle, pill, ago, put } from '../ui.js';
 import { openInApp } from './home.js';
 import { updateInstallButton } from '../update-install.js';
@@ -17,6 +18,7 @@ export class SettingsView {
     this.web = !!s.web;
     if (this.web) {
       this.el = this.webView(s);
+      this.mountAccount();
       return;
     }
     const set = (patch, msg) =>
@@ -74,6 +76,7 @@ export class SettingsView {
         ),
       ),
     );
+    this.mountAccount();
     this.update(s);
   }
 
@@ -122,7 +125,17 @@ export class SettingsView {
     );
   }
 
+  mountAccount() {
+    this.account = new AccountView({ cloud: this.cloud, store: this.store });
+    this.el.insertBefore(this.account.el, this.el.children[1]);
+  }
+
+  onNav(opts) {
+    if (opts.section === 'account') this.account.el.scrollIntoView({ block: 'start' });
+  }
+
   update(s) {
+    this.account?.update(s);
     if (this.web) return;
     const u = s.update || {};
     const key = JSON.stringify(u);

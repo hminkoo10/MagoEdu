@@ -65,7 +65,7 @@ export class HomeView {
     const s = store.state;
     this.web = !!s.web;
     this.sub = h('div', { class: 'subtitle' });
-    const syncAll = this.web ? null : btn('모두 서버와 맞추기', { variant: 'white', iconName: 'refresh' });
+    const syncAll = this.web ? null : btn('지금 맞추기', { variant: 'white', iconName: 'refresh' });
     syncAll?.addEventListener('click', () =>
       busy(syncAll, async () => {
         try {
@@ -187,25 +187,17 @@ export class HomeView {
     c.second = btn('', { variant: 'soft' }); // 웹: ‘PC에 설치’
     c.second.style.display = 'none';
     c.more = btn('', { iconName: 'more', title: '더 보기' });
-    c.match = btn('지금 맞추기', { size: 'sm', iconName: 'refresh', title: '서버와 데이터 맞추기' });
-    c.match.style.display = 'none';
     c.el = h(
       'div',
       { class: 'app-card' },
       h('div', { class: 'app-head' }, c.icon, h('div', { style: { minWidth: 0 } }, c.name, c.ver)),
       c.desc,
       c.task,
-      h('div', { class: 'app-foot' }, c.sync, c.match, c.more, c.second, c.primary),
+      h('div', { class: 'app-foot' }, c.sync, c.more, c.second, c.primary),
     );
     c.primary.addEventListener('click', () => this.primary(c.app));
     c.second.addEventListener('click', () => openInApp(this.cloud, this.store, c.app.id, 'install').catch((e) => toast(errorText(e), 'error')));
     c.more.addEventListener('click', () => this.openMenu(c.more, c.app));
-    c.match.addEventListener('click', () => busy(c.match, async () => {
-      try {
-        const result = await this.cloud.sync(c.app.id);
-        if (result) toast('서버와 맞추기를 마쳤어요', 'success');
-      } catch (e) { toast(errorText(e), 'error'); }
-    }));
     return c;
   }
 
@@ -225,8 +217,6 @@ export class HomeView {
     }
     c.name.textContent = a.name;
     c.desc.textContent = a.description || '';
-    c.match.style.display = !this.web && a.installed && !['android', 'web'].includes(a.platform) ? '' : 'none';
-    c.match.disabled = !!a.task || a.sync?.status === 'syncing';
     if (a.platform === 'android') return this.fillPhoneCard(c, a);
     if (a.platform === 'web') return this.fillLinkCard(c, a);
     if (this.web) return this.fillWebCard(c, a);
@@ -478,7 +468,11 @@ export class HomeView {
     }
   }
 
-  openMenu(anchor, a) {
+  async openMenu(anchor, a) {
+    let legacy = [];
+    if (!this.web && a.installed && !['web', 'android'].includes(a.platform)) {
+      try { legacy = await this.cloud.legacyDetect(a.id); } catch (e) { toast(errorText(e), 'error'); }
+    }
     const items = [];
     if (a.platform === 'android' && a.release) {
       // 기기를 잘못 알아봐도(태블릿 등) 언제든 이 기기에서 받을 수 있게
@@ -490,7 +484,7 @@ export class HomeView {
         { icon: 'folder', label: '데이터 폴더 열기', onClick: () => this.cloud.openData(a.id, 'sync') },
       );
       if (a.sync?.conflicts?.length) items.push({ icon: 'copy', label: '따로 보관한 파일 보기', onClick: () => this.cloud.openData(a.id, 'conflicts') });
-      items.push({
+      if (legacy.length) items.push({
         icon: 'history',
         label: '예전 데이터 가져오기',
         onClick: async () => {
