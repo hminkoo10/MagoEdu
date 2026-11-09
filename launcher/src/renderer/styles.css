@@ -616,3 +616,18 @@ select.input {
 .school-results { max-height: 220px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--grey200); border-radius: 10px; }
 .school-results button { display: block; width: 100%; padding: 10px 12px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .school-results button:hover, .school-results button.active { background: var(--accent-soft); }
+
+/* Private inquiry conversations; retain existing typography. */
+.inquiries, .inquiries .stack { min-width: 0; }
+.inquiries .page-head { flex-wrap: wrap; }
+.inquiries .title, .inquiry-row { overflow-wrap: anywhere; }
+.inquiry-row { padding: 12px 0; border-bottom: 1px solid var(--grey200); }
+.inquiry-row > .btn { max-width: 100%; white-space: normal; text-align: left; }
+.inquiry-actions, .inquiry-photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.inquiry-thumb { width: 88px; height: 72px; object-fit: cover; border-radius: 6px; }
+.inquiry-photo { display: block; padding: 0; border: 1px solid var(--grey200); border-radius: 6px; background: none; line-height: 0; cursor: zoom-in; overflow: hidden; }
+.inquiry-photo .inquiry-thumb { display: block; }
+.inquiry-photos > div { display: flex; flex-direction: column; gap: 4px; }
+.inquiry-body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0; }
+.inquiry-message.from-admin { border-left: 3px solid var(--accent, #49739a); }
+.inquiries textarea, .inquiries input { width: 100%; min-width: 0; box-sizing: border-box; }

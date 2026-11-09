@@ -19,6 +19,10 @@ function on(channel, cb) {
 }
 
 contextBridge.exposeInMainWorld('cloud', {
+  inquiryPhotoUpload: (bytes) => call('inquiry:upload', bytes),
+  inquiryPhotoGet: (id, photoId) => call('inquiry:photo', id, photoId),
+  inquiryRefresh: () => call('inquiry:refresh'),
+  inquiryViewing: (id) => call('inquiry:viewing', id),
   getState: () => call('state:get'),
   getReleaseNotes: () => call('releaseNotes:get'),
   onState: (cb) => on('state', cb),

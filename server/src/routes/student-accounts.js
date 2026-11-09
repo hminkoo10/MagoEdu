@@ -186,10 +186,13 @@ function register(router, deps) {
   router.delete('/api/students/:sid/account', (ctx) => {
     const { academy } = who(ctx);
     const s = student(academy.id, ctx.params.sid);
+    // 문의·글·사진 줄은 users 를 지우면 함께 지워진다 (FK). 사진 파일은 트랜잭션 뒤에 지운다
+    const inquiryPhotos = db.all("SELECT * FROM users WHERE student_id = ? AND role = 'student'", s.id).flatMap((u) => deps.inquiries.userPhotos(u));
     db.tx(() => {
       db.run("DELETE FROM users WHERE student_id = ? AND role = 'student'", s.id);
       db.run('DELETE FROM student_invites WHERE student_id = ?', s.id);
     });
+    deps.inquiries.removeFiles(inquiryPhotos);
     changed(ctx, 'student.account.delete', s);
     return { ok: true };
   });

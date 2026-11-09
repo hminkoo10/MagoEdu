@@ -36,7 +36,7 @@ class EventHub {
   }
 
   /** 연결을 연다. apps: 받을 프로그램 ID Set (null = 쓸 수 있는 모든 프로그램) */
-  open(ctx, { user, session, apps = null }) {
+  open(ctx, { user, session, apps = null, onlyInquiry = false }) {
     if (this.closed) throw new HttpError(503, '서버를 다시 켜는 중이에요. 잠시 뒤 다시 연결해요.', 'shutting_down');
     const mine = [...this.streams].filter((s) => s.sessionId === session.id);
     while (mine.length >= this.perSession) this._end(mine.shift());
@@ -62,6 +62,9 @@ class EventHub {
       user,
       sessionId: session.id,
       apps,
+      onlyInquiry: onlyInquiry || user.role === 'student',
+      path: ctx.path,
+      method: req.method,
       authorization: String(req.headers.authorization || ''),
       ip: ctx.ip,
       closed: false,
@@ -78,7 +81,7 @@ class EventHub {
     if (!this.streams.size) return;
     const msg = `event: change\ndata: ${JSON.stringify({ appId, seq, deviceId: deviceId || null })}\n\n`;
     for (const s of this.streams) {
-      if (s.userId !== userId) continue;
+      if (s.onlyInquiry || s.userId !== userId) continue;
       if (s.apps && !s.apps.has(appId)) continue;
       if (!this.svc.canUseApp(s.user, appId)) continue;
       this._write(s, msg);
@@ -90,7 +93,7 @@ class EventHub {
     if (!this.streams.size) return;
     const msg = `event: change\ndata: ${JSON.stringify({ appId, seq, deviceId: deviceId || null, scope: 'academy' })}\n\n`;
     for (const s of this.streams) {
-      if (s.user.academy_id !== academyId) continue;
+      if (s.onlyInquiry || s.user.academy_id !== academyId) continue;
       if (s.apps && !s.apps.has(appId)) continue;
       if (!this.svc.canUseApp(s.user, appId)) continue;
       this._write(s, msg);
@@ -102,7 +105,14 @@ class EventHub {
     if (!this.streams.size) return;
     const msg = `event: academy\ndata: ${JSON.stringify({ kind })}\n\n`;
     for (const s of this.streams) {
-      if (s.user.academy_id === academyId) this._write(s, msg);
+      if (!s.onlyInquiry && s.user.academy_id === academyId) this._write(s, msg);
+    }
+  }
+
+  publishInquiry(inquiry, kind, fromAdmin = false) {
+    const msg = `event: inquiry\ndata: ${JSON.stringify({ id: inquiry.id, kind, fromAdmin: !!fromAdmin })}\n\n`;
+    for (const s of this.streams) {
+      if (s.userId === inquiry.user_id || s.user.role === 'admin') this._write(s, msg);
     }
   }
 
@@ -137,7 +147,7 @@ class EventHub {
   recheck() {
     for (const s of [...this.streams]) {
       try {
-        const { user } = this.svc.authenticate({ req: { headers: { authorization: s.authorization } }, ip: s.ip });
+        const { user } = this.svc.authenticate({ req: { headers: { authorization: s.authorization }, method: s.method }, path: s.path, ip: s.ip });
         s.user = user; // 바뀐 프로그램 권한도 반영
       } catch {
         this._end(s);

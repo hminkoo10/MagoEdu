@@ -110,6 +110,8 @@ class EventStream extends EventEmitter {
             this.emit('hello', msg.data);
           } else if (msg.event === 'change' && msg.data && typeof msg.data === 'object') {
             this.emit('change', msg.data);
+          } else if (msg.event === 'inquiry' && msg.data && typeof msg.data === 'object') {
+            this.emit('inquiry', msg.data);
           } else if (msg.event === 'academy' && msg.data && typeof msg.data === 'object') {
             this.emit('academy', msg.data);
           }

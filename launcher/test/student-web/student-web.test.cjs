@@ -41,10 +41,11 @@ if (!process.versions.electron) {
     session.defaultSession.webRequest.onBeforeRequest((details, callback) => callback({ cancel: /^https?:/.test(details.url) }));
     const win = new BrowserWindow({ show: false, width: 1360, height: 1000, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
     const results = [];
-    const run = async (name, fn) => {
+    const run = async (name, fn, role) => {
       try {
         await win.loadFile(path.join(__dirname, 'renderer.html'));
         await win.webContents.executeJavaScript(`(${setup.toString()})()`);
+        if (role) await win.webContents.executeJavaScript(`state.user.role = ${JSON.stringify(role)}`);
         await win.webContents.executeJavaScript(`(${fn.toString()})()`);
         results.push({ name, error: null });
       } catch (e) { results.push({ name, error: e.stack || e.message }); }
@@ -69,12 +70,12 @@ if (!process.versions.electron) {
       view.update(state);
       equal(normalize(row.querySelector('svg').outerHTML), normalize(icon('cloudOff', 15)));
     });
-    await run('학생 메뉴 네 개·막힌 해시·임시 비밀번호 강제·변경 뒤 복귀', async () => {
+    await run('학생 메뉴 다섯 개·막힌 해시·임시 비밀번호 강제·변경 뒤 복귀', async () => {
       state.user.mustChangePassword = true;
       history.replaceState(null, '', '#/students');
       await import('./js/app.js');
       await until(() => document.querySelector('.nav'));
-      equal([...document.querySelectorAll('.nav-item span')].map((n) => n.textContent), ['내 오답노트', '마고 과목내비', '내 계정', '도움말']);
+      equal([...document.querySelectorAll('.nav-item span')].map((n) => n.textContent), ['내 오답노트', '마고 과목내비', '내 계정', '문의하기', '도움말']);
       ok(document.querySelector('.page').textContent.includes('새 비밀번호 설정'));
       ok(!calls.length, '비밀번호 변경 전에는 목록을 요청하지 않아요');
       document.querySelector('[data-id="my-notes"]').click();
@@ -191,7 +192,7 @@ if (!process.versions.electron) {
           equal(help.title, '브라우저에서 열기');
           equal(help.querySelectorAll('svg').length, 2);
           ok(help.querySelector('circle'));
-          if (role === 'student') equal(help.previousElementSibling.dataset.id, 'account');
+          if (role === 'student') equal(help.previousElementSibling.dataset.id, 'inquiries');
           else equal(help.nextElementSibling.dataset.id, 'settings');
           const current = document.querySelector('.page').firstElementChild;
           const hash = location.hash;
@@ -931,15 +932,15 @@ if (!process.versions.electron) {
       history.replaceState(null, '', '#/account'); await import('./js/app.js'); await until(() => document.querySelector('#my-account'));
       equal(location.hash, '#/settings');
       const menus = () => [...document.querySelectorAll('.nav-item span')].map((n) => n.textContent);
-      equal(menus(), ['프로그램','학생 명단','선생님 관리','공지사항','학원 설정','도움말','설정']);
+      equal(menus(), ['프로그램','학생 명단','선생님 관리','공지사항','학원 설정','문의하기','도움말','설정']);
       onNavigate({ view: 'academy-ai' }); await until(() => document.querySelector('.title')?.textContent === '학원 설정');
       history.replaceState(null, '', '#/academy-ai'); window.dispatchEvent(new PopStateEvent('popstate')); equal(location.hash, '#/academy-settings');
       state.user.role = 'teacher'; onState(state); await tick();
-      equal(menus(), ['프로그램','학생 명단','공지사항','도움말','설정']);
-      state.user.academy = null; onState(state); await tick(); equal(menus(), ['프로그램','공지사항','도움말','설정']);
-      state.user.role = 'director'; onState(state); await tick(); equal(menus(), ['프로그램','선생님 관리','공지사항','도움말','설정']);
+      equal(menus(), ['프로그램','학생 명단','공지사항','문의하기','도움말','설정']);
+      state.user.academy = null; onState(state); await tick(); equal(menus(), ['프로그램','공지사항','문의하기','도움말','설정']);
+      state.user.role = 'director'; onState(state); await tick(); equal(menus(), ['프로그램','선생님 관리','공지사항','문의하기','도움말','설정']);
       state.user.role = 'admin'; onState(state); await tick();
-      equal(menus(), ['프로그램','공지사항','학원','계정','학생 명단','프로그램 관리','활동 기록','서버 설정','도움말','설정']);
+      equal(menus(), ['프로그램','공지사항','학원','계정','학생 명단','프로그램 관리','활동 기록','서버 설정','문의','도움말','설정']);
       onNavigate({ view: 'codes' }); await until(() => document.querySelector('#signup-codes')); equal(location.hash, '#/academies');
       onNavigate({ view: 'academy-ai' }); equal(location.hash, '#/academies');
       document.querySelector('.me-chip').click(); await until(() => document.querySelector('#my-account')); equal(location.hash, '#/settings');
@@ -1072,6 +1073,63 @@ if (!process.versions.electron) {
       await import('./js/app.js'); await until(() => document.querySelector('.title')?.textContent.includes('둘째학원'));
       equal(location.hash, '#/academy-settings?academy=8');
     });
+    win.setSize(375, 900);
+    for (const role of ['student', 'director', 'admin']) {
+      await run(`문의 화면: ${role} 메뉴·사진·대화·배지·375px`, async () => {
+        const role = state.user.role;
+        state.user.role = role;
+        state.unreadInquiries = 2;
+        let made = false;
+        let closed = false;
+        let liveReply = false;
+        const inquiry = () => ({ id: 12, title: '시험 문의', status: closed ? 'closed' : 'open', lastMessageAt: Date.now(), unread: true, senderName: '학생', role: 'student', academyName: '시험학원', client: '웹' });
+        cloud.inquiryPhotoUpload = async () => ({ photo: { id: 'a'.repeat(48) } });
+        cloud.inquiryPhotoGet = async () => ({ bytes: new Uint8Array([137,80,78,71]), mime: 'image/png' });
+        cloud.api = async (m, p, b) => {
+          calls.push([m, p, b]);
+          if (p === '/api/inquiries' && m === 'POST') { made = true; return { inquiry: inquiry() }; }
+          if (p.startsWith('/api/inquiries') && p.endsWith('/close')) { closed = true; return {}; }
+          if (p === '/api/inquiries/12') return { inquiry: inquiry(), messages: [{ id: 1, body: '시험 내용', fromAdmin: false, createdAt: Date.now(), photoIds: [] }, ...(liveReply ? [{ id: 2, body: '운영자 실시간 답변', fromAdmin: true, createdAt: Date.now(), photoIds: [] }] : [])] };
+          if (p.startsWith('/api/inquiries')) return { inquiries: made || role === 'admin' ? [inquiry()] : [] };
+          if (p === '/api/me/notes') return [];
+          return { apps: [], notices: [], members: [] };
+        };
+        history.replaceState(null, '', '#/inquiries');
+        await import('./js/app.js');
+        await until(() => document.querySelector('.inquiries'));
+        const menu = document.querySelector('[data-id="inquiries"]');
+        ok(menu.textContent.includes(role === 'admin' ? '문의' : '문의하기'));
+        ok(menu.nextElementSibling.textContent.includes('도움말'));
+        equal(menu.querySelector('.badge-num')?.textContent, '2');
+        ok([...document.querySelectorAll('.topbar button')].some((b) => b.style.display !== 'none' && b.querySelector('.badge-num')?.textContent === '2'), '휴대폰 위 막대에도 새 글 숫자');
+        const page = document.querySelector('.inquiries');
+        if (role === 'admin') {
+          // 운영자는 받는 쪽: 새 문의 단추 없이 목록에서 연다
+          await until(() => button('#12 · 시험 문의', page));
+          ok(!button('새 문의'), '운영자 화면에는 새 문의 단추가 없음');
+          button('#12 · 시험 문의', page).click(); await until(() => page.textContent.includes('시험 내용'));
+        } else {
+          button('새 문의').click();
+          page.querySelector('input:not([type=file])').value = '시험 문의'; page.querySelector('textarea').value = '시험 내용';
+          const picker = page.querySelector('input[type=file]');
+          const data = new DataTransfer(); data.items.add(new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII='), c => c.charCodeAt(0))], 'test.png', { type: 'image/png' })); picker.files = data.files; picker.dispatchEvent(new Event('change'));
+          await until(() => page.querySelector('.inquiry-thumb'));
+          button('보내기', page).click(); await until(() => page.textContent.includes('시험 내용') && !page.querySelector('input:not([type=file])'));
+          ok(calls.some(c => c[0] === 'POST' && c[1] === '/api/inquiries' && c[2].photoIds.length === 1));
+        }
+        page.querySelector('textarea').value = '쓰던 답글';
+        liveReply = true;
+        state.inquiryStamp = 1; onState(state);
+        await until(() => page.textContent.includes('운영자 실시간 답변'));
+        equal(page.querySelector('textarea').value, '쓰던 답글');
+        if (role === 'admin') {
+          button('끝내기', page).click(); await until(() => button('다시 열기', page));
+          button('목록', page).click(); await until(() => button('전체', page));
+          button('접수됨', page).click(); await until(() => calls.some(c => c[1] === '/api/inquiries?status=open'));
+        }
+        ok(document.documentElement.scrollWidth <= innerWidth, '375px 가로 넘침 없음');
+      }, role);
+    }
     console.log('STUDENT_TESTS=' + JSON.stringify(results));
     win.destroy();
     app.exit(results.some((r) => r.error) ? 1 : 0);
@@ -1080,9 +1138,10 @@ if (!process.versions.electron) {
 
 function setup() {
   window.calls = [];
-  window.state = { phase: 'ready', web: true, online: true, version: '1', config: { serverUrl: 'https://local.test' }, apps: [], notices: [], unreadNotices: 0, user: { id: 1, role: 'student', name: '김학생', username: 'student1', academy: { id: 7, name: '마고' }, student: { id: 's1', teacherName: '이선생' }, aiMode: 'academy' } };
+  window.state = { phase: 'ready', web: true, online: true, version: '1', config: { serverUrl: 'https://local.test' }, apps: [], notices: [], unreadNotices: 0, inquiryStamp: 0, user: { id: 1, role: 'student', name: '김학생', username: 'student1', academy: { id: 7, name: '마고' }, student: { id: 's1', teacherName: '이선생' }, aiMode: 'academy' } };
   window.cloud = {
     getState: async () => state, onState: (fn) => { window.onState = fn; }, onToast() {}, onNavigate(fn) { window.onNavigate = fn; },
+    inquiryViewing: async () => {}, inquiryRefresh: async () => {},
     api: async (m, p, b) => { calls.push([m, p, b]); if (p === '/api/me/notes') return []; throw new Error('허용하지 않은 요청: ' + p); },
     changeUsername: async (u, p) => { calls.push(['username', u, p]); return { username: u }; },
     changePassword: async (...args) => { calls.push(['password', ...args]); },

@@ -370,6 +370,32 @@ const MIGRATIONS = [
     expires_at INTEGER NOT NULL
   );
   CREATE INDEX teacher_invites_creator ON teacher_invites(created_by);`,
+  // 13: Private support conversations and independently retained photos.
+  `CREATE TABLE inquiries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    academy_id INTEGER REFERENCES academies(id) ON DELETE SET NULL,
+    role TEXT NOT NULL, title TEXT NOT NULL, client TEXT NOT NULL,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_message_at INTEGER NOT NULL,
+    closed_at INTEGER, owner_seen_at INTEGER, admin_seen_at INTEGER
+  );
+  CREATE INDEX inquiries_owner ON inquiries(user_id, last_message_at);
+  CREATE TABLE inquiry_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inquiry_id INTEGER NOT NULL REFERENCES inquiries(id) ON DELETE CASCADE,
+    author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    from_admin INTEGER NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL,
+    photo_count INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX inquiry_messages_thread ON inquiry_messages(inquiry_id, id);
+  CREATE INDEX inquiry_messages_rate ON inquiry_messages(author_id, created_at);
+  CREATE TABLE inquiry_photos (
+    id TEXT PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    inquiry_id INTEGER REFERENCES inquiries(id) ON DELETE CASCADE,
+    message_id INTEGER REFERENCES inquiry_messages(id) ON DELETE CASCADE,
+    mime TEXT NOT NULL, size INTEGER NOT NULL, created_at INTEGER NOT NULL
+  );
+  CREATE INDEX inquiry_photos_owner ON inquiry_photos(user_id, created_at);`,
 ];
 
 function openDb(file) {

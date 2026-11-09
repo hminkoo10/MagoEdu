@@ -26,6 +26,7 @@ function deleteUser(db, u, nextSeq) {
   db.run('DELETE FROM teacher_invites WHERE created_by = ?', u.id);
   db.run('UPDATE signup_codes SET created_by = NULL WHERE created_by = ?', u.id);
   db.run("DELETE FROM audit WHERE (actor_id = ? AND action IN ('login', 'logout', 'session.revoke', 'session.revoke_others')) OR (action = 'login.failed' AND target = ?)", u.id, `${u.name} (${u.username})`);
+  db.run('DELETE FROM inquiry_photos WHERE user_id = ? AND inquiry_id IS NULL', u.id);
   db.run('DELETE FROM users WHERE id = ?', u.id);
   return touched;
 }

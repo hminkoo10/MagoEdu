@@ -3,7 +3,7 @@
 // 마고에듀 통합 클라우드 - 구현민 개발
 // Electron 메인 프로세스: 창, 트레이, 자동 실행, 화면과 주고받는 기능(IPC)
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage, clipboard, safeStorage, powerMonitor, screen } = require('electron');
+const { Notification, app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage, clipboard, safeStorage, powerMonitor, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const log = require('electron-log/main');
@@ -268,6 +268,20 @@ function handle(channel, fn) {
 }
 
 function registerIpc() {
+  handle('inquiry:refresh', () => cloud.refreshInquiries());
+  handle('inquiry:viewing', id => { cloud.viewingInquiry = Number(id) || null; });
+  handle('inquiry:upload', async bytes => {
+    if (!(bytes instanceof Uint8Array) || bytes.length > 5 * 1024 * 1024) throw new Error('Invalid photo');
+    const res = await cloud.api._send('POST', '/api/inquiries/photos', { body: Buffer.from(bytes) });
+    if (!res.ok) throw await cloud.api._error(res);
+    return res.json();
+  });
+  handle('inquiry:photo', async (id, photoId) => {
+    if (!Number.isSafeInteger(id) || !/^[a-f0-9]{48}$/.test(photoId)) throw new Error('Invalid photo');
+    const res = await cloud.api._send('GET', `/api/inquiries/${id}/photos/${photoId}`);
+    if (!res.ok) throw await cloud.api._error(res);
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mime: res.headers.get('content-type') };
+  });
   handle('state:get', () => cloud.snapshot());
   handle('releaseNotes:get', () => readJsonSync(path.join(ROOT, 'src', 'renderer', 'release-notes.json'), null));
   handle('server:set', (url) => cloud.setServer(url));
@@ -391,6 +405,11 @@ if (app.isPackaged && DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s))) 
     const resume = takeResume();
     const hidden = startHidden || !!resume?.hidden;
     cloud = new Cloud({ paths, store, version: app.getVersion(), log, shortcuts: appShortcuts(), startedAtLogin: resume ? !!resume.autoLaunch : startHidden });
+    cloud.on('inquiry', event => {
+      void require('./inquiry-notifications').notifyInquiry({ event, cloud, Notification, window: win,
+        navigate: id => { showWindow(); send('navigate', { view: 'inquiries', inquiryId: id }); }
+      }).catch(() => {});
+    });
     cloud.on('state', (s) => {
       send('state', s);
       trayPopup?.refresh();

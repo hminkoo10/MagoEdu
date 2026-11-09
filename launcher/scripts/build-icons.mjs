@@ -3,6 +3,7 @@
 // 동기화 표시(cloudCheck·cloudUpload·cloudOff)는 꽉 찬 구름 모양을 직접 그려 씁니다 (CUSTOM).
 // 사용: node scripts/build-icons.mjs   (lucide-static 은 개발용 의존성)
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +15,7 @@ const MAP = {
   userPlus: 'user-plus',
   key: 'key-round',
   ticket: 'ticket',
+  messageCircle: 'message-circle',
   shield: 'shield-check',
   megaphone: 'megaphone',
   activity: 'scroll-text',
@@ -69,7 +71,7 @@ const MAP = {
 
 const out = {};
 for (const [key, name] of Object.entries(MAP)) {
-  const svg = readFileSync(join(root, 'node_modules', 'lucide-static', 'icons', `${name}.svg`), 'utf8');
+  const svg = readFileSync(createRequire(import.meta.url).resolve(`lucide-static/icons/${name}.svg`), 'utf8');
   const inner = svg
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/^[\s\S]*?<svg[^>]*>/, '')

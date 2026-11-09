@@ -465,12 +465,14 @@ function register(router, deps) {
     const to = pickReceiver(actor, target, str(ctx.query.get('to'), 64));
     let handed = null;
     let removedShared = new Map();
+    const inquiryPhotos = deps.inquiries.userPhotos(target);
     const candidates = userFiles(db, target);
     const counts = userDeleteCounts(target, to);
     db.tx(() => {
       if (to) handed = handOver(target, to, actor);
       removedShared = deleteUser(db, target, deps.nextSeq);
     });
+    deps.inquiries.removeFiles(inquiryPhotos);
     for (const [appId, seq] of removedShared) deps.events.publishAcademy(target.academy_id, appId, seq, null);
     if (handed) {
       for (const [appId, seq] of handed.touched) deps.events.publishAcademy(target.academy_id, appId, seq, null);
@@ -561,6 +563,7 @@ function register(router, deps) {
     if (!a) throw notFound('학원을 찾을 수 없어요.');
     const counts = academyDeleteCounts(id);
     const users = db.all("SELECT * FROM users WHERE academy_id = ? AND role != 'admin'", id);
+    const inquiryPhotos = users.flatMap(u => deps.inquiries.userPhotos(u));
     const candidates = [...db.all('SELECT sha256 FROM shared_files WHERE academy_id = ?', id), ...users.flatMap((u) => userFiles(db, u))];
     db.tx(() => {
       for (const u of users) deleteUser(db, u, deps.nextSeq);
@@ -568,6 +571,7 @@ function register(router, deps) {
       db.run('DELETE FROM academies WHERE id = ?', id);
     });
     const blobs = deps.blobs.removeUnreferenced(candidates);
+    deps.inquiries.removeFiles(inquiryPhotos);
     svc.audit({ ...ctx, auth: { ...ctx.auth, user: { ...ctx.auth.user, academy_id: null } } }, 'academy.delete', a.name, { id, ...counts, blobs });
     return { ok: true };
   });

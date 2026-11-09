@@ -1,6 +1,7 @@
 // 마고에듀 통합 클라우드 화면 - 구현민 개발
 import { errorText, h, ic, btn, busy, field, input, passwordInput, toast, dialog, notify, reveal, initial, ROLE, put, useCloud } from './ui.js';
 import { HomeView, askLegacy } from './views/home.js';
+import { InquiriesView } from './views/inquiries.js';
 import { NoticesView } from './views/notices.js';
 import { AccountView } from './views/account.js';
 import { PeopleView } from './views/people.js';
@@ -37,12 +38,13 @@ function serverUrl() {
 }
 
 function navFor(user) {
+  const inquiry = { id: 'inquiries', icon: 'messageCircle', label: user.role === 'admin' ? '문의' : '문의하기' };
   const help = { id: 'help', icon: 'help', label: '도움말', title: '브라우저에서 열기' };
   if (user.role === 'student') return [
     { id: 'my-notes', icon: 'list', label: '내 오답노트' },
     { id: 'student-navi', icon: 'graduationCap', label: '마고 과목내비' },
     { id: 'account', icon: 'user', label: '내 계정' },
-    help,
+    inquiry, help,
   ];
   const items = [{ id: 'home', icon: 'apps', label: '프로그램' }];
   if (user.role !== 'admin') {
@@ -60,7 +62,7 @@ function navFor(user) {
     { id: 'audit', icon: 'activity', label: '활동 기록' },
     { id: 'server', icon: 'server', label: '서버 설정' },
   );
-  items.push({ section: '' }, help, { id: 'settings', icon: 'sliders', label: '설정' });
+  items.push({ section: '' }, inquiry, help, { id: 'settings', icon: 'sliders', label: '설정' });
   return items;
 }
 
@@ -77,6 +79,7 @@ const VIEWS = {
   'student-navi': StudentNaviView,
   home: HomeView,
   notices: NoticesView,
+  inquiries: InquiriesView,
   account: AccountView,
   teachers: PeopleView,
   people: PeopleView,
@@ -124,7 +127,9 @@ class Shell {
     this.topTitle = h('div', { class: 'topbar-title' });
     this.topNotice = btn('', { variant: 'subtle', iconName: 'megaphone', title: '새 공지', cls: 'topbar-notice', onClick: () => this.go('notices') });
     this.topNotice.style.display = 'none';
-    this.topbar = h('header', { class: 'topbar' }, this.menuBtn, h('img', { class: 'logo sm', src: 'logo.png', alt: '' }), this.topTitle, this.topNotice);
+    this.topInquiry = btn('', { variant: 'subtle', iconName: 'messageCircle', title: store.state.user.role === 'admin' ? '새 문의' : '새 답글', cls: 'topbar-notice', onClick: () => this.go('inquiries') });
+    this.topInquiry.style.display = 'none';
+    this.topbar = h('header', { class: 'topbar' }, this.menuBtn, h('img', { class: 'logo sm', src: 'logo.png', alt: '' }), this.topTitle, this.topNotice, this.topInquiry);
     this.scrim = h('div', { class: 'scrim', onClick: () => this.toggleNav(false) });
     this.main = h('main', { class: 'main' }, this.topbar, this.offline, this.page);
     this.el = h('div', { class: 'shell' }, this.sidebar, this.scrim, this.main);
@@ -289,6 +294,13 @@ class Shell {
   update(s) {
     this.offline.style.display = s.online ? 'none' : '';
     const n = s.user.role === 'student' ? 0 : s.unreadNotices;
+    const inquiryEl = this.navEls.get('inquiries');
+    inquiryEl?.querySelector('.badge-num')?.remove();
+    if (inquiryEl && s.unreadInquiries > 0) inquiryEl.append(h('span', { class: 'badge-num' }, s.unreadInquiries > 9 ? '9+' : s.unreadInquiries));
+    // 휴대폰 너비: 메뉴를 열지 않아도 보이게 위 막대에도 (공지와 같은 모양)
+    this.topInquiry.querySelector('.badge-num')?.remove();
+    this.topInquiry.style.display = s.unreadInquiries > 0 ? '' : 'none';
+    if (s.unreadInquiries > 0) this.topInquiry.append(h('span', { class: 'badge-num' }, s.unreadInquiries > 9 ? '9+' : s.unreadInquiries));
     const nEl = this.navEls.get('notices');
     if (nEl) {
       nEl.querySelector('.badge-num')?.remove();
@@ -702,7 +714,7 @@ async function start() {
   cloud.onToast((t) => toast(t.text, t.kind));
   cloud.onNavigate(async (n) => {
     if (!shell) return;
-    shell.go(n.view || 'home');
+    shell.go(n.view || 'home', { inquiryId: n.inquiryId });
     if (n.legacyFor && n.legacy) await askLegacy(cloud, n.legacyFor, n.legacy, store);
   });
   if (store.state.web) {

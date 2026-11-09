@@ -10,7 +10,7 @@ const { DAY } = require('./util');
 
 const TOMBSTONE_KEEP_DAYS = 180;
 
-function createJobs({ db, svc, blobs, catalog, log, nextSeq, events = null, students = null }) {
+function createJobs({ db, svc, blobs, catalog, log, nextSeq, events = null, students = null, inquiries = null }) {
   let timer = null;
   let hourly = null;
 
@@ -75,6 +75,7 @@ function createJobs({ db, svc, blobs, catalog, log, nextSeq, events = null, stud
     const keep = svc.getSettings().auditKeepDays;
     const aud = db.run('DELETE FROM audit WHERE at < ?', now - keep * DAY).changes;
     blobs.gc();
+    inquiries?.cleanup(now);
     return { tombstones: tomb, sessions: sess, audit: aud };
   }
 
@@ -121,7 +122,7 @@ function createJobs({ db, svc, blobs, catalog, log, nextSeq, events = null, stud
     hourly = null;
   }
 
-  return { runColdStorage, runCleanup, start, stop };
+  return { runAll, runColdStorage, runCleanup, start, stop };
 }
 
 module.exports = { createJobs };
