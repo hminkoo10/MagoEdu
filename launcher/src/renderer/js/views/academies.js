@@ -17,7 +17,7 @@ class AcademyActions {
         await this.load();
       }
     });
-    const quota = btn('학원 공간 용량', { variant: 'subtle', size: 'sm', iconName: 'cloud' });
+    const quota = btn('학원 공간 용량', { variant: 'subtle', size: 'sm', iconName: 'drive' });
     quota.addEventListener('click', async () => {
       const q = input({ type: 'number', min: '0', value: a.quotaMb ?? '', placeholder: '비우면 기본값' });
       const ok = await dialog({
@@ -146,14 +146,14 @@ export class AcademySettingsView extends AcademyActions {
             h('div', { class: 'row' }, h('div', { class: 'grow' }, `학원 코드 ${academy?.code || '없음'}`), code),
             h('div', { class: 'row' }, h('div', { class: 'grow' }, `계약 과목 · ${subjectText(a.subjects)}`), this.isAdmin ? controls.subjects : null),
             this.isAdmin ? null : h('p', { class: 'card-desc' }, '과목 변경은 운영자에게 문의하세요.')),
-          h('section', { class: 'card' }, h('h2', { class: 'card-title' }, ic('cloud', 18), '학원 공간'),
+          h('section', { class: 'card' }, h('h2', { class: 'card-title' }, ic('drive', 18), '학원 공간'),
             h('div', { class: 'row' }, h('div', { class: 'grow' }, `${bytes(a.usageBytes)} / ${a.quotaBytes ? bytes(a.quotaBytes) : '제한 없음'}`), this.isAdmin ? controls.quota : null)),
           this.ai.el,
           this.isAdmin ? btn('학원 지우기', { iconName: 'trash', variant: 'danger', onClick: () => controls.del.click() }) : null));
       if (this.opts.section === 'academy-ai') this.ai.el.scrollIntoView({ block: 'start' });
       controls.edit.replaceChildren(ic('edit', 16), '바꾸기');
       controls.subjects.replaceChildren(ic('edit', 16), '바꾸기');
-      controls.quota.replaceChildren(ic('cloud', 16), '용량 바꾸기');
+      controls.quota.replaceChildren(ic('drive', 16), '용량 바꾸기');
       for (const b of [controls.edit, controls.subjects, controls.quota]) b.classList.remove('subtle');
     } catch (e) { put(this.el, h('div', { class: 'empty' }, errorText(e))); }
   }

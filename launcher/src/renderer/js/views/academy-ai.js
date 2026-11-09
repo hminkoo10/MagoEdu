@@ -67,8 +67,8 @@ export class AcademyAiView {
     this.data = null;
     this.seq = 0;
     this.stamp = store.state.academyStamp;
-    this.main = h('div', { class: 'card' });
-    this.apps = h('details', { class: 'card advanced-settings' });
+    this.main = h('div');
+    this.apps = h('details', { class: 'academy-ai-apps advanced-settings' });
     this.picker = this.isAdmin && !academy
       ? academyPicker(cloud, (id) => {
           this.academy = id;
@@ -76,20 +76,13 @@ export class AcademyAiView {
         })
       : null;
     this.el = h(
-      'div',
-      {},
-      h(
-        'div',
-        { class: 'page-head' },
-        h(
-          'div',
-          { class: 'tt' },
-          h('h1', { class: 'title' }, '학원 AI'),
-          h('div', { class: 'subtitle' }, '오답노트 정밀 인식·과목내비에서 함께 쓰는 서비스 키예요.'),
-        ),
-        this.picker ? h('div', { class: 'right' }, this.picker.el) : null,
-      ),
-      h('div', { class: 'stack' }, this.main, this.apps),
+      'section',
+      { class: 'card academy-ai' },
+      h('h2', { class: 'card-title' }, ic('key', 18), '학원 AI'),
+      h('p', { class: 'card-desc' }, '오답노트 정밀 인식·과목내비에서 함께 쓰는 서비스 키예요.'),
+      this.picker ? h('div', { class: 'academy-ai-picker' }, this.picker.el) : null,
+      this.main,
+      this.apps,
     );
     this.init();
   }
@@ -173,7 +166,7 @@ export class AcademyAiView {
     const clear = d ? btn('지우기', { variant: 'danger', onClick: () => this.clear(null) }) : null;
     put(
       this.main,
-      h('h2', { class: 'card-title' }, ic('key', 18), '기본 설정', d ? pill(PROVIDER[d.provider] || d.provider, 'green') : pill('정하지 않음', 'grey')),
+      h('h3', { class: 'academy-ai-sub' }, '기본 설정', d ? pill(PROVIDER[d.provider] || d.provider, 'green') : pill('정하지 않음', 'grey')),
       h('p', { class: 'card-desc' }, d ? `${summary(d)} · ${ago(d.updatedAt)} 바꿈` : '등록 전에는 개인 키를 사용해요.'),
       form.el,
       err,
@@ -186,7 +179,7 @@ export class AcademyAiView {
     const progs = this.data.programs || [];
     put(
       this.apps,
-      h('summary', { class: 'card-title' }, '고급: 프로그램별 설정'),
+      h('summary', { class: 'academy-ai-sub' }, '고급: 프로그램별 설정'),
       h('p', { class: 'card-desc' }, ''),
       ...(progs.length ? progs.map((p) => this.appRow(p)) : [h('div', { class: 'empty', style: { padding: '24px 20px' } }, '프로그램이 없어요')]),
     );

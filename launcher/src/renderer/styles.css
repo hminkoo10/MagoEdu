@@ -439,6 +439,9 @@ select.input {
 .toast > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .toast .btn { color: #fff; flex: none; }
 .toast .btn:hover { background: var(--grey700); }
+.academy-ai-sub { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 700; margin: 18px 0 8px; }
+.academy-ai-apps { border-top: 1px solid var(--grey200); margin-top: 20px; padding-top: 2px; }
+.academy-ai-picker { margin: 14px 0; }
 .advanced-settings > summary { display: list-item; cursor: pointer; color: var(--grey700); }
 .advanced-settings > summary:focus-visible { outline: 2px solid var(--accent); }
 .advanced-settings[open] > summary { margin-bottom: 14px; }

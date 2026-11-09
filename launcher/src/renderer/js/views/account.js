@@ -141,7 +141,7 @@ export class AccountView {
   }
 
   async loadStorage() {
-    put(this.storage, h('h2', { class: 'card-title' }, ic('cloud', 18), '서버 저장 공간'), h('div', { class: 'spinner', style: { margin: '18px 0' } }));
+    put(this.storage, h('h2', { class: 'card-title' }, ic('drive', 18), '서버 저장 공간'), h('div', { class: 'spinner', style: { margin: '18px 0' } }));
     try {
       const r = await this.cloud.refreshStorage();
       const s = this.store.state;
@@ -163,7 +163,7 @@ export class AccountView {
         ),
       );
       put(this.storage, 
-        h('h2', { class: 'card-title' }, ic('cloud', 18), '서버 저장 공간'),
+        h('h2', { class: 'card-title' }, ic('drive', 18), '서버 저장 공간'),
         h('p', { class: 'card-desc' }, '같은 아이디의 기기에서 함께 써요.'),
         usage(r.usageBytes, r.quotaBytes),
         h('div', { style: { height: '8px' } }),
