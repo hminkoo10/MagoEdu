@@ -350,8 +350,8 @@ class WebCloud {
     return this.request('GET', `/api/join/${encodeURIComponent(code)}`, { auth: false });
   }
 
-  async joinStudent({ code, username, password }) {
-    const r = await this.request('POST', '/api/join', { json: { code, username, password }, auth: false });
+  async joinStudent(fields) {
+    const r = await this.request('POST', '/api/join', { json: fields, auth: !!this.token });
     save(KEY.lastUsername, r.user.username);
     await this._loggedIn(r);
     return r.user;
@@ -374,10 +374,10 @@ class WebCloud {
 
   async _afterLogin({ fromSession }) {
     this.lastWake = Date.now();
-    if (fromSession || this.user?.role === 'student') await this.refreshMe().catch(() => {});
+    if (fromSession || ['student', 'guardian'].includes(this.user?.role)) await this.refreshMe().catch(() => {});
     if (this.phase !== 'ready') return;
     this._startTimers();
-    if (this.user?.role === 'student') return;
+    if (['student', 'guardian'].includes(this.user?.role)) return;
     await Promise.all([this.refreshApps().catch(() => {}), this.refreshNotices().catch(() => {})]);
   }
 
@@ -449,7 +449,7 @@ class WebCloud {
 
   // ---------------------------------------------------------------- 목록·공지
   async refreshApps() {
-    if (this.user?.role === 'student') return [];
+    if (['student', 'guardian'].includes(this.user?.role)) return [];
     const r = await this.request('GET', '/api/apps');
     if (this.phase !== 'ready') return r.apps;
     this.apps = r.apps;
@@ -458,7 +458,7 @@ class WebCloud {
   }
 
   async refreshNotices() {
-    if (this.user?.role === 'student') return [];
+    if (['student', 'guardian'].includes(this.user?.role)) return [];
     const r = await this.request('GET', '/api/notices');
     if (this.phase !== 'ready') return r.notices;
     this.notices = r.notices;
@@ -473,7 +473,7 @@ class WebCloud {
   }
 
   async refreshStorage() {
-    if (this.user?.role === 'student') throw cloudError('학생 계정에서는 저장 공간을 쓸 수 없어요.', 'student_forbidden', 403);
+    if (['student', 'guardian'].includes(this.user?.role)) throw cloudError('학생 계정에서는 저장 공간을 쓸 수 없어요.', 'student_forbidden', 403);
     const r = await this.request('GET', '/api/sync');
     if (this.phase !== 'ready') return r;
     this.storage = { usageBytes: r.usageBytes, quotaBytes: r.quotaBytes, apps: r.apps, academy: r.academy || null };
@@ -485,7 +485,7 @@ class WebCloud {
   _startTimers() {
     this._stopTimers();
     const every = (ms, fn) => this.timers.push(setInterval(() => this.phase === 'ready' && fn(), ms));
-    if (this.user?.role === 'student') {
+    if (['student', 'guardian'].includes(this.user?.role)) {
       every(NOTICES_EVERY, () => this.refreshMe().catch(() => {}));
       return;
     }

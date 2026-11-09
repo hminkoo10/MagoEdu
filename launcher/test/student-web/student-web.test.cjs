@@ -1072,6 +1072,36 @@ if (!process.versions.electron) {
       await import('./js/app.js'); await until(() => document.querySelector('.title')?.textContent.includes('둘째학원'));
       equal(location.hash, '#/academy-settings?academy=8');
     });
+    await run('보호자: 내 자녀·빈 연결·선택 동의 철회·비밀번호 화면', async () => {
+      const { GuardianView } = await import('./js/views/guardian.js');
+      state.user.role = 'guardian'; state.user.children = [];
+      cloud.api = async (m,p,b) => {
+        calls.push([m,p,b]);
+        if(p==='/api/me')return {user:state.user};
+        if(p==='/api/me/guardians')return {guardians:[],apps:[{name:'학원운영',url:'https://example.invalid'}]};
+        if(p==='/api/me/consents')return {consents:[{id:8,item:'collect',version:'1',verified:false},{id:9,item:'marketing',version:'1',verified:true}]};
+        return {ok:true};
+      };
+      const view=new GuardianView({cloud,store:{state}});mount(view);
+      await until(()=>button('비밀번호 바꾸기'));
+      ok(document.body.textContent.includes('연결된 자녀가 없어요'));
+      equal([...document.querySelectorAll('button')].filter(b=>b.textContent==='철회').length,1);
+      button('철회').click();await until(()=>calls.some(c=>c[1]==='/api/me/consents/9/withdraw'));
+    });
+    await run('보호자: 가입 코드 확인→계정 입력→동의문 판·필수/선택 전달', async () => {
+      const { GuardianJoinView } = await import('./js/views/guardian.js');
+      state.user=null;
+      cloud.joinStudent=async fields=>calls.push(['join',fields]);
+      const view=new GuardianJoinView({cloud,code:'guardian-code',verified:{role:'guardian',academyName:'학원',studentName:'자녀',consentVersion:'2026-11-09'},back(){}});mount(view);
+      await until(()=>button('다음: 동의 확인'));
+      const inputs=view.el.querySelectorAll('input');
+      inputs[1].value='보호자';inputs[2].value='guardian';inputs[3].value=inputs[4].value='password-123';
+      button('다음: 동의 확인').click();
+      ok(view.el.textContent.includes('2026-11-09'));equal(view.el.querySelectorAll('input[type=checkbox]').length,4);
+      view.el.querySelector('input[type=checkbox]').checked=true;
+      button('동의하고 가입').click();await until(()=>calls.some(c=>c[0]==='join'));
+      const fields=calls.find(c=>c[0]==='join')[1];equal(fields.code,'guardian-code');equal(fields.consents,{collect:true,messaging:false,overseas_ai:false,marketing:false});
+    });
     console.log('STUDENT_TESTS=' + JSON.stringify(results));
     win.destroy();
     app.exit(results.some((r) => r.error) ? 1 : 0);

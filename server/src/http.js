@@ -21,7 +21,7 @@ class Router {
     });
     if (rest) keys.push('rest');
     const re = new RegExp(`^${body}${rest ? '(?:/(.*))?$' : '/?$'}`);
-    this.routes.push({ method, re, keys, handler });
+    this.routes.push({ method, pattern, re, keys, handler });
     return this;
   }
 

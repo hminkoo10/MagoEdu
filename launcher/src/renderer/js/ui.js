@@ -406,4 +406,4 @@ export function initial(name) {
   return (String(name || '?').trim()[0] || '?').toUpperCase();
 }
 
-export const ROLE = { admin: '운영자', director: '원장', teacher: '선생님', student: '학생' };
+export const ROLE = { admin: '운영자', director: '원장', teacher: '선생님', student: '학생', guardian: '보호자' };

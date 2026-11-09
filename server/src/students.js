@@ -259,6 +259,7 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
           candidates.push(...userFiles(db, u));
           for (const [app, seq] of deleteUser(db, u, nextSeq)) touched.set(app, seq);
         }
+        db.run('DELETE FROM guardians WHERE student_id = ? AND academy_id = ?', s.id, aca);
         db.run('DELETE FROM student_invites WHERE student_id = ? AND academy_id = ?', s.id, aca);
         for (const f of purgeFiles(s)) {
           candidates.push(f);
