@@ -1074,33 +1074,101 @@ if (!process.versions.electron) {
     });
     await run('보호자: 내 자녀·빈 연결·선택 동의 철회·비밀번호 화면', async () => {
       const { GuardianView } = await import('./js/views/guardian.js');
-      state.user.role = 'guardian'; state.user.children = [];
-      cloud.api = async (m,p,b) => {
-        calls.push([m,p,b]);
-        if(p==='/api/me')return {user:state.user};
-        if(p==='/api/me/guardians')return {guardians:[],apps:[{name:'학원운영',url:'https://example.invalid'}]};
-        if(p==='/api/me/consents')return {consents:[{id:8,item:'collect',version:'1',verified:false},{id:9,item:'marketing',version:'1',verified:true}]};
-        return {ok:true};
+      state.user.role = 'guardian';
+      state.user.children = [];
+      cloud.api = async (m, p, b) => {
+        calls.push([m, p, b]);
+        if (p === '/api/me') return { user: state.user };
+        if (p === '/api/me/guardians') return { guardians: [], apps: [{ name: '학원운영', url: 'https://example.invalid' }] };
+        if (p === '/api/me/consents')
+          return {
+            consents: [
+              { id: 8, item: 'collect', version: '1', verified: false },
+              { id: 9, item: 'messaging', version: '1', verified: true },
+            ],
+          };
+        return { ok: true };
       };
-      const view=new GuardianView({cloud,store:{state}});mount(view);
-      await until(()=>button('비밀번호 바꾸기'));
+      const view = new GuardianView({ cloud, store: { state } });
+      mount(view);
+      await until(() => button('비밀번호 바꾸기'));
       ok(document.body.textContent.includes('연결된 자녀가 없어요'));
-      equal([...document.querySelectorAll('button')].filter(b=>b.textContent==='철회').length,1);
-      button('철회').click();await until(()=>calls.some(c=>c[1]==='/api/me/consents/9/withdraw'));
+      equal(view.el.querySelectorAll('section.card').length, 4);
+      ok(view.el.textContent.includes('학원 확인 전'));
+      button('열기').click();
+      await until(() => calls.some((c) => c[0] === 'external' && c[1] === 'https://example.invalid'));
+      equal([...document.querySelectorAll('button')].filter((b) => b.textContent === '철회').length, 1);
+      button('철회').click();
+      await until(() => calls.some((c) => c[1] === '/api/me/consents/9/withdraw'));
     });
     await run('보호자: 가입 코드 확인→계정 입력→동의문 판·필수/선택 전달', async () => {
       const { GuardianJoinView } = await import('./js/views/guardian.js');
-      state.user=null;
-      cloud.joinStudent=async fields=>calls.push(['join',fields]);
-      const view=new GuardianJoinView({cloud,code:'guardian-code',verified:{role:'guardian',academyName:'학원',studentName:'자녀',consentVersion:'2026-11-09'},back(){}});mount(view);
-      await until(()=>button('다음: 동의 확인'));
-      const inputs=view.el.querySelectorAll('input');
-      inputs[1].value='보호자';inputs[2].value='guardian';inputs[3].value=inputs[4].value='password-123';
+      state.user = null;
+      cloud.joinStudent = async (fields) => calls.push(['join', fields]);
+      const view = new GuardianJoinView({
+        cloud,
+        code: 'guardian-code',
+        verified: { role: 'guardian', academyName: '학원', studentName: '자녀', consentVersion: '2026-11-09' },
+        back() {},
+      });
+      mount(view);
+      await until(() => button('다음: 동의 확인'));
+      const inputs = view.el.querySelectorAll('input');
+      inputs[1].value = '보호자';
+      inputs[2].value = 'guardian';
+      inputs[3].value = inputs[4].value = 'password-123';
       button('다음: 동의 확인').click();
-      ok(view.el.textContent.includes('2026-11-09'));equal(view.el.querySelectorAll('input[type=checkbox]').length,4);
-      view.el.querySelector('input[type=checkbox]').checked=true;
-      button('동의하고 가입').click();await until(()=>calls.some(c=>c[0]==='join'));
-      const fields=calls.find(c=>c[0]==='join')[1];equal(fields.code,'guardian-code');equal(fields.consents,{collect:true,messaging:false,overseas_ai:false,marketing:false});
+      ok(view.el.textContent.includes('2026-11-09'));
+      equal(view.el.querySelectorAll('input[type=checkbox]').length, 2);
+      ok(!view.el.textContent.includes('해외'));
+      ok(!view.el.textContent.includes('광고'));
+      for (const text of ['목적:', '항목:', '보유', '거부할 수 있습니다', '문자·알림톡']) ok(view.el.textContent.includes(text));
+      button('동의하고 가입').click();
+      await tick();
+      equal(calls.filter((c) => c[0] === 'join').length, 0);
+      view.el.querySelector('input[type=checkbox]').checked = true;
+      button('동의하고 가입').click();
+      await until(() => calls.some((c) => c[0] === 'join'));
+      const fields = calls.find((c) => c[0] === 'join')[1];
+      equal(fields.code, 'guardian-code');
+      equal(fields.consents, { collect: true, messaging: false });
+    });
+    await run('보호자: 새로 고침 없이 자녀 연결과 돌아가기', async () => {
+      state.user.role = 'guardian';
+      state.user.children = [];
+      cloud.api = async (m, p) => {
+        if (p === '/api/me') return { user: state.user };
+        if (p === '/api/me/guardians') return { guardians: [], apps: [] };
+        if (p === '/api/me/consents') return { consents: [] };
+        return {};
+      };
+      cloud.checkStudentInvite = async (code) => {
+        equal(code, 'child-code');
+        return { role: 'guardian', academyName: '학원', studentName: '둘째', consentVersion: '2026-11-09' };
+      };
+      cloud.joinStudent = async (fields) => {
+        calls.push(['join', fields]);
+        state.user.children = [{ name: '둘째', studentId: 's2' }];
+      };
+      await import('./js/app.js');
+      await until(() => button('자녀 연결'));
+      const originalDocument = document;
+      document.querySelector('.field input').value = 'child-code';
+      button('자녀 연결').click();
+      await until(() => button('동의 확인'));
+      ok(document === originalDocument);
+      ok(document.body.textContent.includes('둘째'));
+      button('동의 확인').click();
+      document.querySelector('input[type=checkbox]').checked = true;
+      button('내 계정에 자녀 연결').click();
+      await until(() => document.querySelector('.title')?.textContent === '내 자녀');
+      ok(document.body.textContent.includes('둘째'));
+      equal(calls.filter((c) => c[0] === 'join').length, 1);
+      document.querySelector('.field input').value = 'child-code';
+      button('자녀 연결').click();
+      await until(() => button('동의 확인'));
+      button('돌아가기').click();
+      await until(() => document.querySelector('.title')?.textContent === '내 자녀');
     });
     console.log('STUDENT_TESTS=' + JSON.stringify(results));
     win.destroy();

@@ -198,7 +198,8 @@ export class AppsAdminView {
     const iconUrl = input({ value: a?.iconUrl || '', placeholder: 'https://... (PNG)' });
     const color = input({ value: a?.color || '#F76B15', type: 'color', style: 'width: 64px; padding: 4px' });
     let guardianEnabled = !!a?.guardianEnabled;
-    const guardianRow = h('div', {class: 'row'}, '보호자 사용 가능 (웹만)', toggle(guardianEnabled, v => guardianEnabled = v));
+    const guardianRow = h('div', { class: 'row' }, '보호자 사용 가능 (웹만)',
+      toggle(guardianEnabled, (value) => { guardianEnabled = value; }));
     let autoLaunch = !!a?.autoLaunchDefault;
     const gh = h('div', {}, field('저장소', repo), field('묶음 파일 이름 규칙 (정규식, 괄호 안이 버전)', asset));
     const exeField = field('실행 파일', exe);
@@ -228,7 +229,8 @@ export class AppsAdminView {
         {},
         h('div', { class: 'form-row' }, field('ID', id, '영어 소문자, 바꿀 수 없음'), field('이름', name)),
         field('설명', desc),
-        guardianRow, field('플랫폼', platform, '안드로이드는 휴대폰에 설치해요. 웹은 브라우저에서 열려요.'),
+        guardianRow,
+        field('플랫폼', platform, '안드로이드는 휴대폰에 설치해요. 웹은 브라우저에서 열려요.'),
         typeField,
         urlField,
         gh,

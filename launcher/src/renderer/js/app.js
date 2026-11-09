@@ -1,5 +1,5 @@
-import { GuardianView, GuardianJoinView } from './views/guardian.js';
 // 마고에듀 통합 클라우드 화면 - 구현민 개발
+import { GuardianView, GuardianJoinView } from './views/guardian.js';
 import { errorText, h, ic, btn, busy, field, input, passwordInput, toast, dialog, notify, reveal, initial, ROLE, put, useCloud } from './ui.js';
 import { HomeView, askLegacy } from './views/home.js';
 import { NoticesView } from './views/notices.js';
@@ -67,7 +67,7 @@ function navFor(user) {
 }
 
 function redirectView(id, user) {
-  if (['student','guardian'].includes(user.role)) return id;
+  if (['student', 'guardian'].includes(user.role)) return id;
   if (id === 'account') return 'settings';
   if (id === 'academy-ai') return user.role === 'admin' ? 'academies' : 'academy-settings';
   if (id === 'codes') return 'academies';
@@ -451,7 +451,21 @@ function loginView() {
 class JoinView {
   constructor(opts) {
     this.el = h('div', {}, '코드를 확인하고 있어요.');
-    (async () => { try { const info = opts.verified || await cloud.checkStudentInvite(opts.code); if(info.role === 'guardian') { const head=document.querySelector('.auth-head h1'); if(head)head.textContent='보호자 계정 만들기'; } const View = info.role === 'guardian' ? GuardianJoinView : StudentJoinView; put(this.el, new View({...opts,verified:info,showInvite:!opts.verified}).el); } catch(e) { put(this.el, h('p',{},errorText(e)),btn('돌아가기',{onClick:opts.back})); } })();
+    this.load(opts);
+  }
+
+  async load(opts) {
+    try {
+      const info = opts.verified || await cloud.checkStudentInvite(opts.code);
+      if (info.role === 'guardian') {
+        const head = document.querySelector('.auth-head h1');
+        if (head) head.textContent = '보호자 계정 만들기';
+      }
+      const View = info.role === 'guardian' ? GuardianJoinView : StudentJoinView;
+      put(this.el, new View({ ...opts, verified: info, showInvite: !opts.verified }).el);
+    } catch (e) {
+      put(this.el, h('p', {}, errorText(e)), btn('돌아가기', { onClick: opts.back }));
+    }
   }
 }
 function joinView({ code, verified } = {}) {
@@ -525,7 +539,7 @@ function signupView() {
           if (!value) throw new Error('코드를 다시 확인해 주세요');
           codeInfo = await cloud.checkCode(value);
           if (value !== code.value.trim()) return;
-          if (['student','guardian'].includes(codeInfo.role)) {
+          if (['student', 'guardian'].includes(codeInfo.role)) {
             if (store.state.web) mount(joinView({ code: value, verified: codeInfo }));
             else await cloud.openExternal(`${serverUrl()}/#/join?code=${encodeURIComponent(value)}`);
             return;
@@ -734,7 +748,7 @@ async function start() {
         shell.toggleNav(false, true);
         if (location.hash === `#/${shell.current}`) return;
       }
-      if (store.state.phase === 'login' && /^#\/join(?:\?|$)/.test(location.hash)) {
+      if (/^#\/join(?:\?|$)/.test(location.hash)) {
         sso = null;
         render(true);
         return;
@@ -747,7 +761,7 @@ async function start() {
         return;
       }
       if (shell && store.state.phase === 'ready') shell.go(hashView(store.state.user) || 'home', { fromHistory: true });
-      else if (store.state.phase === 'login') render(true);
+      else if (['login', 'ready'].includes(store.state.phase)) render(true);
     };
     window.addEventListener('popstate', navigate);
     window.addEventListener('hashchange', navigate);

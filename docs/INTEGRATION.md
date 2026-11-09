@@ -331,7 +331,7 @@ PC 에서 웹 프로그램을 창으로 여는 프로그램(예: 마고 과목�
 ### 가입·자기 정보
 
 - `GET /api/auth/codes/:code`, `GET /api/join/:code`: 보호자 초대이면 `{role:'guardian',academyName,studentName,consentVersion}`. 기존 학생 흐름 보존.
-- `POST /api/join`: `{code,name,username,password,consentVersion,consents:{collect:true,messaging?:boolean,overseas_ai?:boolean,marketing?:boolean}}` → `{token,user,server}`. 현재 판은 `2026-11-09`. 비밀번호는 기존 정책 적용.
+- `POST /api/join`: `{code,name,username,password,consentVersion,consents:{collect:true,messaging?:boolean}}` → `{token,user,server}`. 현재 판은 `2026-11-09`. 비밀번호는 기존 정책 적용. `overseas_ai`, `marketing` 등 지원하지 않는 동의 항목을 보내면 400으로 거절합니다.
 - 같은 학원 보호자 일반 세션의 Bearer를 붙이면 새 계정 없이 자녀만 연결합니다. 다른 역할·학원은 403이며 로그아웃 후 그 학원용 계정을 만들어야 합니다.
 - 코드 조회·가입 실패 횟수는 기존 joinCodes와 공유합니다. 한 번 쓴 코드는 재사용 불가.
 - `GET /api/me`: `user.role='guardian'`, `academy`, `children:[{studentId,name,guardianId}]`. 지웠거나 purge한 자녀는 제외. 연결 없는 계정도 로그인 가능.
@@ -344,9 +344,10 @@ PC 에서 웹 프로그램을 창으로 여는 프로그램(예: 마고 과목�
 
 프로그램 관리의 **보호자 사용 가능**(`guardianEnabled`, 기본 false)은 웹에만 유효합니다. 기존 앱 생성·수정 API에서 설정합니다.
 SSO 인가·코드 교환 시 모두 재검사하고, 보호자 앱 세션은 이후 요청에서도 앱 허용 여부를 재검사합니다.
-보호자 앱 세션은 `GET /api/me`, `GET /api/me/consents`만 허용합니다. 원장·담당 선생님의 앱 세션은 위 관리 API를 각자의 역할 범위에서 사용합니다.
+보호자 앱 세션은 `GET /api/me`, `GET /api/me/consents`, `POST /api/auth/logout`만 허용합니다. 로그아웃은 해당 앱 세션을 삭제합니다. 원장·담당 선생님의 앱 세션은 위 관리 API를 각자의 역할 범위에서 사용합니다.
 
-동의 항목: `collect`, `messaging`, `overseas_ai`, `marketing`. 응답은 DB 필드와 `verified`를 포함합니다.
+동의 표와 종이 기록의 항목은 `collect`, `messaging`, `overseas_ai`, `marketing`으로 유지합니다. 현재 가입 API와 보호자 화면은 `collect`(필수), `messaging`(선택)만 받거나 보여 줍니다. 해외 이전·광고 동의는 기능 도입 시 받는 곳·국가·내용을 안내하고 따로 받습니다. 응답은 DB 필드와 `verified`를 포함합니다.
+화면의 수집·이용 동의문은 [개인정보 보호법 제15조 제2항](https://www.law.go.kr/LSW/lsLinkProc.do?joLnkStr=%EC%A0%9C15%EC%A1%B0&lsNm=%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4%EB%B3%B4%ED%98%B8%EB%B2%95&mode=11)의 목적·항목·보유 기간·거부 권리와 불이익을 구분해 안내합니다.
 `method='paper'` 또는 `sms_confirmed_at != null`이면 verified=true. 온라인 가입은 항상 문자 확인 전(false)으로 저장합니다.
 `confirmConsentSms(db,id,at?)`는 성공한 확인 문자 발송을 연결할 **내부 함수**이며 HTTP API는 없습니다. 아직 문자 발송은 하지 않습니다.
 만 14세 미만의 법정대리인 확인을 체크박스만으로 완료한 것으로 취급하면 안 됩니다.

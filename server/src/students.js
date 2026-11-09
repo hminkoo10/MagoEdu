@@ -116,7 +116,7 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
   /** 학원 사람(활성 계정) — 담당 선생님 고르기 */
   function members(aca) {
     return db
-      .all("SELECT uid, name, role FROM users WHERE academy_id = ? AND role != 'student' AND status = 'active' ORDER BY role = 'teacher', name COLLATE NOCASE", aca)
+      .all("SELECT uid, name, role FROM users WHERE academy_id = ? AND role NOT IN ('student', 'guardian') AND status = 'active' ORDER BY role = 'teacher', name COLLATE NOCASE", aca)
       .map((u) => ({ id: u.uid, name: u.name, role: u.role, roleLabel: svc.ROLE_LABEL[u.role] }));
   }
 
@@ -133,7 +133,7 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
     if (t !== undefined) {
       if (t === null || t === '') out.teacher_uid = null;
       else {
-        const u = db.get("SELECT uid FROM users WHERE uid = ? AND academy_id = ? AND role != 'student'", String(t), aca);
+        const u = db.get("SELECT uid FROM users WHERE uid = ? AND academy_id = ? AND role NOT IN ('student', 'guardian')", String(t), aca);
         if (!u) throw bad('담당 선생님은 이 학원 사람 중에서 골라 주세요.', 'invalid_teacher');
         out.teacher_uid = u.uid;
       }

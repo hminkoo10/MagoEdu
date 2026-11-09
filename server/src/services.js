@@ -272,11 +272,12 @@ function createServices({ db, config, log }) {
       const path = String(ctx.path || '').replace(/\/$/, '');
       const method = ctx.req.method === 'HEAD' ? 'GET' : ctx.req.method;
       const read = method === 'GET' && ['/api/me', '/api/me/consents', ...(!session.app_id ? ['/api/me/guardians'] : [])].includes(path);
-      const web = !session.app_id && ((method === 'POST' && ['/api/auth/logout','/api/sso/authorize','/api/join'].includes(path))
+      const logout = method === 'POST' && path === '/api/auth/logout';
+      const web = !session.app_id && ((method === 'POST' && ['/api/sso/authorize', '/api/join'].includes(path))
         || (method === 'GET' && /^\/api\/join\/[^/]+$/.test(path))
         || (method === 'PATCH' && path === '/api/me/password')
         || (method === 'POST' && /^\/api\/me\/consents\/[^/]+\/withdraw$/.test(path)));
-      if (!read && !web) throw forbidden('보호자 계정으로는 쓸 수 없는 기능이에요.', 'guardian_forbidden');
+      if (!read && !web && !logout) throw forbidden('보호자 계정으로는 쓸 수 없는 기능이에요.', 'guardian_forbidden');
       if (session.app_id && !canUseApp(user, session.app_id)) throw forbidden();
     }
     assertStudentAccess(ctx, user, session);
