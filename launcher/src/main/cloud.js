@@ -186,6 +186,8 @@ class Cloud extends EventEmitter {
       storage: this.storage,
       devicesRevision: this.devicesRevision,
       notices: this.notices,
+      unreadInquiries: this.unreadInquiries || 0,
+      inquiryStamp: this.inquiryStamp || 0,
       unreadNotices: acc ? this.notices.filter((n) => n.id > (acc.noticesSeen || 0)).length : 0,
       update: this.update,
       shortcuts: !!this.shortcuts,
@@ -842,16 +844,33 @@ class Cloud extends EventEmitter {
 
   // ---------------------------------------------------------------- 실시간 동기화
   // 서버 알림(다른 기기에서 바뀜)과 동기화 폴더 지켜보기(이 컴퓨터에서 바뀜)로 바로 맞추고, 5분마다 맞추기는 그대로 둔다.
+  async refreshInquiries() {
+    const token = this.api.token;
+    try {
+      const r = await this.api.get('/api/inquiries/unread');
+      if (token !== this.api.token || !this.user) return;
+      this.unreadInquiries = r.count; this.emitState();
+    } catch { /* offline */ }
+  }
+
   _startRealtime() {
     this._stopRealtime();
     const stream = new EventStream({ api: this.api, log: this.log });
     stream.on('hello', async () => {
+      void this.refreshInquiries();
       this._online(true);
       for (const id of this._syncIds()) this._queueSync(id, REMOTE_DELAY); // 끊긴 동안 바뀐 것
       await this.refreshMe().catch(() => {}); // 끊긴 동안 바뀐 학원 이름·계약 과목부터 받는다
       if (this.events !== stream) return;
       this._queueAcademyInfo();
     });
+    stream.on('inquiry', async e => {
+      if (this.events !== stream) return;
+      this.inquiryStamp = (this.inquiryStamp || 0) + 1;
+      await this.refreshInquiries();
+      if (this.events === stream) this.emit('inquiry', e);
+    });
+    void this.refreshInquiries();
     stream.on('change', (e) => this._onRemoteChange(e));
     stream.on('academy', async (e) => {
       if (e?.kind === 'academy') await this.refreshMe().catch(() => {});
@@ -866,6 +885,8 @@ class Cloud extends EventEmitter {
   }
 
   _stopRealtime() {
+    this.unreadInquiries = 0;
+    this.viewingInquiry = null;
     this.events?.stop();
     this.events = null;
     clearTimeout(this._academyInfoTimer);

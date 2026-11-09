@@ -49,7 +49,7 @@ function schoolFields(body, cur = null) {
   return out;
 }
 
-function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, purgeDays = 30 }) {
+function createStudents({ inquiries, db, svc, blobs, events, catalog, nextSeq, log, aiKey, purgeDays = 30 }) {
   // ---------------- 명단 ----------------
   function stateOf(row) {
     if (!row) return null;
@@ -251,11 +251,13 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
   function purge(aca, ids, ctx = { actorLabel: '서버' }, manual = true, now = Date.now()) {
     const { userFiles, deleteUser } = require('./hard-delete');
     const rows = purgeTargets(aca, ids), candidates = [], touched = new Map();
+    const inquiryPhotos = [];
     const counts = purgePreview(aca, ids);
     db.tx(() => {
       for (const s of rows) {
         const single = purgePreview(aca, [s.id]);
         for (const u of db.all('SELECT * FROM users WHERE student_id = ? AND academy_id = ?', s.id, aca)) {
+          inquiryPhotos.push(...(inquiries?.userPhotos(u) || []));
           candidates.push(...userFiles(db, u));
           for (const [app, seq] of deleteUser(db, u, nextSeq)) touched.set(app, seq);
         }
@@ -272,6 +274,7 @@ function createStudents({ db, svc, blobs, events, catalog, nextSeq, log, aiKey, 
         svc.audit(ctx, 'student.purge', s.name, { id: s.id, manual, ...single }, aca);
       }
     });
+    inquiries?.removeFiles(inquiryPhotos);
     const blobsRemoved = blobs.removeUnreferenced(candidates);
     for (const [appId, seq] of touched) events?.publishAcademy(aca, appId, seq, null);
     if (rows.length) notify(aca, 'students');

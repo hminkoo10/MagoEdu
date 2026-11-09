@@ -1,6 +1,8 @@
 // 웹(브라우저)용 window.cloud - 같은 서버의 API 와 바로 이야기한다 (구현민 개발)
 // 앱(preload.js)과 같은 메서드·같은 에러 모양({ code, status, extra })을 맞춘다.
 
+import { InquiryEvents } from './inquiry-events.js';
+
 const KEY = {
   session: 'magoedu.web.session',
   device: 'magoedu.web.device',
@@ -183,6 +185,8 @@ class WebCloud {
       user: this.user,
       storage: this.storage,
       notices: this.notices,
+      unreadInquiries: this.unreadInquiries || 0,
+      inquiryStamp: this.inquiryStamp || 0,
       unreadNotices: this.user ? this.notices.filter((n) => n.id > seen).length : 0,
       update: { status: 'disabled', message: '웹에서는 업데이트가 필요 없어요.' },
       apps: this.apps.map((a) => this._appView(a)),
@@ -231,11 +235,11 @@ class WebCloud {
   }
 
   // ---------------------------------------------------------------- 서버 요청
-  async request(method, p, { json, auth = true, timeout = 20000, blob = false } = {}) {
+  async request(method, p, { json, auth = true, timeout = 20000, blob = false, raw } = {}) {
     const token = auth ? this.token : null;
     const headers = {};
     if (token) headers.authorization = `Bearer ${token}`;
-    let body;
+    let body = raw;
     if (json !== undefined) {
       headers['content-type'] = 'application/json';
       body = JSON.stringify(json);
@@ -424,7 +428,9 @@ class WebCloud {
 
   async changePassword(currentPassword, newPassword, logoutOthers = true) {
     await this.request('PATCH', '/api/me/password', { json: { currentPassword, newPassword, logoutOthers } });
-    return this.refreshMe();
+    const user = await this.refreshMe();
+    if (this.phase === 'ready') this._startTimers();
+    return user;
   }
 
   async changeUsername(username, password) {
@@ -448,6 +454,15 @@ class WebCloud {
   }
 
   // ---------------------------------------------------------------- 목록·공지
+  async refreshInquiries() {
+    const token = this.token;
+    try {
+      const r = await this.api('GET', '/api/inquiries/unread');
+      if (token !== this.token || this.phase !== 'ready') return;
+      this.unreadInquiries = r.count; this.emitState();
+    } catch { /* offline */ }
+  }
+
   async refreshApps() {
     if (['student', 'guardian'].includes(this.user?.role)) return [];
     const r = await this.request('GET', '/api/apps');
@@ -484,6 +499,14 @@ class WebCloud {
   // ---------------------------------------------------------------- 주기 작업
   _startTimers() {
     this._stopTimers();
+    if (!this.user?.mustChangePassword) {
+      this.inquiryEvents = new InquiryEvents({ token: this.token, onEvent: () => {
+        this.inquiryStamp = (this.inquiryStamp || 0) + 1;
+        void this.refreshInquiries();
+      } });
+      this.inquiryEvents.start();
+      void this.refreshInquiries();
+    }
     const every = (ms, fn) => this.timers.push(setInterval(() => this.phase === 'ready' && fn(), ms));
     if (['student', 'guardian'].includes(this.user?.role)) {
       every(NOTICES_EVERY, () => this.refreshMe().catch(() => {}));
@@ -494,6 +517,9 @@ class WebCloud {
   }
 
   _stopTimers() {
+    this.inquiryEvents?.stop();
+    this.inquiryEvents = null;
+    this.unreadInquiries = 0;
     for (const t of this.timers) clearInterval(t);
     this.timers = [];
   }
@@ -559,6 +585,13 @@ export function createWebCloud() {
     changePassword: call((cur, next, others) => c.changePassword(cur, next, others)),
     changeUsername: call((u, p) => c.changeUsername(u, p)),
     changeName: call((n) => c.changeName(n)),
+    inquiryPhotoUpload: call(async bytes => c.request('POST', '/api/inquiries/photos', { raw: new Uint8Array(bytes) })),
+    inquiryPhotoGet: call(async (id, photoId) => {
+      const blob = await c.request('GET', `/api/inquiries/${id}/photos/${photoId}`, { blob: true });
+      return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
+    }),
+    inquiryRefresh: call(() => c.refreshInquiries()),
+    inquiryViewing: async () => {},
     api: call((method, p, body) => c.api(method, p, body)),
 
     refreshApps: call(() => c.refreshApps()),

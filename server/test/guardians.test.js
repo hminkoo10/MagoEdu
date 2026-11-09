@@ -100,25 +100,31 @@ test('보호자 마이그레이션: main 모든 행·열·연결·색인·트리
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'db');
   let raw = new DatabaseSync(file);
-  for (const sql of MIGRATIONS.slice(0, 12)) raw.exec(sql);
+  // 보호자 마이그레이션 바로 앞 판(문의하기 표까지 있음)에서 시작한다.
+  const before = MIGRATIONS.findIndex((sql) => sql.includes('CREATE TABLE guardians'));
+  assert.ok(before > 0);
+  for (const sql of MIGRATIONS.slice(0, before)) raw.exec(sql);
   raw.exec(
-    `PRAGMA user_version=12;
+    `PRAGMA user_version=${before};
     INSERT INTO academies(id,name,created_at)VALUES(1,'학원',1);
     INSERT INTO students(id,academy_id,name,created_at,updated_at)VALUES('student-1',1,'학생',1,1);
     INSERT INTO users(uid,username,name,role,academy_id,student_id,password_hash,ai_mode,created_at,updated_at)VALUES('u','student','학생','student',1,'student-1','hash','teacher',1,2);
     INSERT INTO sessions(token_hash,user_id,device_id,created_at,last_seen_at,expires_at)VALUES('h',1,'d',1,1,9999999999999);
+    INSERT INTO inquiries(user_id,academy_id,role,title,client,created_at,updated_at,last_message_at)VALUES(1,1,'student','문의','web',1,1,1);
     CREATE INDEX extra_user_name ON users(name);
     CREATE TRIGGER extra_user AFTER UPDATE OF name ON users BEGIN UPDATE users SET updated_at=77 WHERE id=NEW.id;
     END;
     UPDATE sqlite_sequence SET seq=80 WHERE name='users';`,
   );
   const users = raw.prepare('SELECT * FROM users').all(),
-    sessions = raw.prepare('SELECT * FROM sessions').all();
+    sessions = raw.prepare('SELECT * FROM sessions').all(),
+    inquiries = raw.prepare('SELECT * FROM inquiries').all();
   raw.close();
   for (let i = 0; i < 2; i++) {
     const db = openDb(file);
     assert.deepEqual(db.all('SELECT * FROM users'), users);
     assert.deepEqual(db.all('SELECT * FROM sessions'), sessions);
+    assert.deepEqual(db.all('SELECT * FROM inquiries'), inquiries);
     assert.deepEqual(db.all('PRAGMA foreign_key_check'), []);
     assert.ok(db.get("SELECT 1 FROM sqlite_schema WHERE name='extra_user_name'"));
     assert.ok(db.get("SELECT 1 FROM sqlite_schema WHERE name='extra_user'"));

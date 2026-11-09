@@ -370,7 +370,33 @@ const MIGRATIONS = [
     expires_at INTEGER NOT NULL
   );
   CREATE INDEX teacher_invites_creator ON teacher_invites(created_by);`,
-  // 13: 보호자 계정·연락처·동의. 기존 사용자와 연결 보존.
+  // 13: Private support conversations and independently retained photos.
+  `CREATE TABLE inquiries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    academy_id INTEGER REFERENCES academies(id) ON DELETE SET NULL,
+    role TEXT NOT NULL, title TEXT NOT NULL, client TEXT NOT NULL,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_message_at INTEGER NOT NULL,
+    closed_at INTEGER, owner_seen_at INTEGER, admin_seen_at INTEGER
+  );
+  CREATE INDEX inquiries_owner ON inquiries(user_id, last_message_at);
+  CREATE TABLE inquiry_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inquiry_id INTEGER NOT NULL REFERENCES inquiries(id) ON DELETE CASCADE,
+    author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    from_admin INTEGER NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL,
+    photo_count INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX inquiry_messages_thread ON inquiry_messages(inquiry_id, id);
+  CREATE INDEX inquiry_messages_rate ON inquiry_messages(author_id, created_at);
+  CREATE TABLE inquiry_photos (
+    id TEXT PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    inquiry_id INTEGER REFERENCES inquiries(id) ON DELETE CASCADE,
+    message_id INTEGER REFERENCES inquiry_messages(id) ON DELETE CASCADE,
+    mime TEXT NOT NULL, size INTEGER NOT NULL, created_at INTEGER NOT NULL
+  );
+  CREATE INDEX inquiry_photos_owner ON inquiry_photos(user_id, created_at);`,
+  // 14: 보호자 계정·연락처·동의. 기존 사용자와 연결 보존.
   `  CREATE TABLE users_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     uid TEXT NOT NULL UNIQUE,
@@ -453,7 +479,7 @@ function openDb(file) {
 function migrate(db) {
   const current = db.prepare('PRAGMA user_version').get().user_version;
   for (let v = current; v < MIGRATIONS.length; v += 1) {
-    const rebuildUsers = v === 6 || v === 12;
+    const rebuildUsers = v === 6 || v === 13;
     const schema = rebuildUsers ? db.prepare("SELECT name, sql FROM sqlite_schema WHERE tbl_name = 'users' AND type IN ('index', 'trigger') AND sql IS NOT NULL").all() : [];
     const sequence = rebuildUsers ? db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'users'").get()?.seq : null;
     // 트랜잭션 안에서 foreign_keys 를 끄면 적용되지 않고, DROP TABLE 이 기존 세션까지 지워 버린다.

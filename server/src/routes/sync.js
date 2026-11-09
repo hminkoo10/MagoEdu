@@ -138,13 +138,13 @@ function register(router, deps) {
     const { user, session } = svc.authenticate(ctx);
     let apps = null;
     const want = ctx.query.get('apps');
-    if (want) {
+    if (want && user.role !== 'student' && ctx.query.get('only') !== 'inquiry') {
       const ids = [...new Set(want.split(',').map((x) => x.trim()).filter(Boolean))];
       if (ids.length > 50) throw bad('프로그램을 너무 많이 골랐어요.', 'too_many_apps');
       for (const id of ids) requireApp(id, user);
       if (ids.length) apps = new Set(ids);
     }
-    deps.events.open(ctx, { user, session, apps });
+    deps.events.open(ctx, { user, session, apps, onlyInquiry: ctx.query.get('only') === 'inquiry' });
     return undefined;
   });
 

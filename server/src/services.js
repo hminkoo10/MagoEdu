@@ -233,7 +233,9 @@ function createServices({ db, config, log }) {
       || (method === 'PATCH' && path === '/api/me/password')
       || (method === 'POST' && path === '/api/auth/logout');
     if (user.must_change_password && !basic) throw forbidden('먼저 임시 비밀번호를 바꿔야 해요.', 'password_change_required');
-    const allowed = basic
+    const inquiry = (method === 'GET' && (/^\/api\/inquiries(?:\/(?:unread|[0-9]+(?:\/photos\/[A-Za-z0-9_-]+)?))?$/.test(path) || path === '/api/sync/events'))
+      || (method === 'POST' && /^\/api\/inquiries(?:\/photos|\/[0-9]+\/messages)?$/.test(path));
+    const allowed = basic || inquiry
       || (method === 'PATCH' && ['/api/me', '/api/me/username'].includes(path))
       || (method === 'GET' && (path === '/api/notices' || /^\/api\/me\/notes(?:\/[^/]+\/pdf)?$/.test(path)))
       || (method === 'POST' && path === '/api/sso/authorize')

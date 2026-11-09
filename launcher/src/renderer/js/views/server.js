@@ -6,11 +6,12 @@ export class ServerView {
     this.cloud = cloud;
     this.stats = h('div', { class: 'card' });
     this.form = h('div', { class: 'card' });
+    this.webhook = h('div', { class: 'card stack' });
     this.el = h(
       'div',
       {},
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '서버 설정'), h('div', { class: 'subtitle' }, '기본값은 모든 계정에 적용돼요.'))),
-      h('div', { class: 'stack' }, this.stats, this.form),
+      h('div', { class: 'stack' }, this.stats, this.form, this.webhook),
     );
     this.load();
   }
@@ -20,9 +21,27 @@ export class ServerView {
       const [st, se] = await Promise.all([this.cloud.api('GET', '/api/admin/stats'), this.cloud.api('GET', '/api/admin/settings')]);
       this.renderStats(st);
       this.renderForm(se.settings);
+      await this.renderWebhook();
     } catch (e) {
       put(this.stats, h('div', { class: 'muted' }, errorText(e)));
     }
+  }
+
+  async renderWebhook() {
+    const r = await this.cloud.api('GET', '/api/admin/inquiry-webhook');
+    const url = input({ type: 'password', autocomplete: 'off', placeholder: r.set ? '바꿀 때만 새 주소를 넣으세요.' : 'https://discord.com/api/webhooks/…' });
+    const action = (label, iconName, method, suffix = '') => btn(label, { iconName, onClick: async () => {
+      try {
+        await this.cloud.api(method, `/api/admin/inquiry-webhook${suffix}`, method === 'PUT' ? { url: url.value } : undefined);
+        url.value = '';
+        toast(suffix ? '시험 알림을 요청했어요.' : '저장했어요.', 'success');
+        await this.renderWebhook();
+      } catch (e) { toast(errorText(e), 'error'); }
+    } });
+    put(this.webhook, h('h2', { class: 'card-title' }, ic('bell', 18), '문의 알림'),
+      h('div', { class: 'muted' }, r.set ? `디스코드 알림이 켜져 있어요 (${r.hint})` : '디스코드 알림이 꺼져 있어요. 주소를 넣으면 새 문의를 알려요.'),
+      field('디스코드 웹훅 주소', url),
+      h('div', { class: 'inquiry-actions' }, action('저장', 'check', 'PUT'), action('지우기', 'trash', 'DELETE'), action('시험 보내기', 'right', 'POST', '/test')));
   }
 
   renderStats(s) {

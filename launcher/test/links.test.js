@@ -35,6 +35,7 @@ test('브라우저 기기 알아보기: PC 처럼 보이는 안드로이드 태�
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'web-cloud.mjs');
   fs.copyFileSync(path.join(__dirname, '..', 'src', 'renderer', 'js', 'web-cloud.js'), file);
+  fs.copyFileSync(path.join(__dirname, '..', 'src', 'renderer', 'js', 'inquiry-events.js'), path.join(dir, 'inquiry-events.js'));
   const { detectClient } = await import(pathToFileURL(file).href);
   const d = (userAgent, extra = {}) => detectClient({ userAgent, maxTouchPoints: 0, ...extra });
   const pick = (c) => ({ os: c.os, mobile: c.mobile, canOpenApp: c.canOpenApp });

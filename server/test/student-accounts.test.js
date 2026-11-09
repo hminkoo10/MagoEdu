@@ -302,9 +302,10 @@ test('학생 인증: 임시 비밀번호 강제·허용 목록·PC 거절·본�
     ['GET', '/api/academy/members'], ['GET', '/api/academy/ai'], ['GET', '/api/academy/ai/all'], ['PUT', '/api/academy/ai'],
     ['GET', '/api/users'], ['GET', '/api/admin/apps'], ['GET', '/api/apps'], ['POST', '/api/apps/ohdapnote/ticket'], ['POST', '/api/apps/ohdapnote/download-link'],
     ['GET', '/api/me/data-key'], ['GET', '/api/me/devices'], ['PATCH', '/api/me/name'], ['POST', '/api/notices'],
-    ['GET', '/api/sync/events'], ['GET', '/api/sync/ohdapnote'], ['GET', '/api/sync/ohdapnote/academy'],
+    ['GET', '/api/sync/ohdapnote'], ['GET', '/api/sync/ohdapnote/academy'],
     ['GET', '/api/ai/relay/ohdapnote/v1beta/models'],
   ]) error(await rq(method, url, { token, body: ['GET', 'DELETE'].includes(method) ? undefined : {} }), 403, 'student_forbidden');
+  assert.equal(auth('GET', '/api/sync/events').user.student_id, student.id);
   const renamed = ok(await rq('PATCH', '/api/me', { token, body: { username: 'My.Student', role: 'admin', aiMode: 'teacher' } })).user;
   assert.equal(renamed.username, 'my.student');
   assert.equal(renamed.role, 'student');

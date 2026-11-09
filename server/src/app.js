@@ -50,6 +50,7 @@ function loadConfig(env = process.env, overrides = {}) {
     studentPurgeDays: intOr(env.STUDENT_PURGE_DAYS, 30, 1, 3650), // 지운 학생을 완전히 지우기까지
     neisApiKey: env.NEIS_API_KEY || '', // 없어도 학교 검색 가능 (나이스가 최대 5건만 반환)
     aiRelayPerTenMinutes: intOr(env.AI_RELAY_PER_10_MIN, 600, 1, 100000), // 학원 AI 중계: 사람·프로그램마다 10분에
+    inquiryWebhookAllowLocal: env.INQUIRY_WEBHOOK_ALLOW_LOCAL === '1',
     aiRelayAllowPrivate: env.AI_RELAY_ALLOW_PRIVATE === '1', // 시험용: 서버 안쪽 주소로도 중계
     // 없으면 내려받기 안내 페이지(public)만
     webDir: WEB_DIRS.find((d) => fs.existsSync(path.join(d, 'index.html'))) || null,
@@ -116,7 +117,9 @@ function createCloudServer(config = loadConfig()) {
       if (user.role === 'admin') fs.rmSync(path.join(config.dataDir, ADMIN_PASSWORD_FILE), { force: true });
     },
   };
+  deps.inquiries = require('./inquiries').createInquiries(deps);
   deps.students = createStudents({
+    inquiries: deps.inquiries,
     db,
     svc,
     blobs,
@@ -127,7 +130,7 @@ function createCloudServer(config = loadConfig()) {
     aiKey: loadOrCreateSecret(path.join(config.dataDir, 'keys'), 'ai.key'),
     purgeDays: config.studentPurgeDays,
   });
-  deps.jobs = createJobs({ db, svc, blobs, catalog, log, nextSeq, events, students: deps.students });
+  deps.jobs = createJobs({ db, svc, blobs, catalog, log, nextSeq, events, students: deps.students, inquiries: deps.inquiries });
   try {
     deps.students.importLegacy(); // 예전 오답노트 학생·학원 AI (다시 해도 안전)
   } catch (err) {
@@ -140,6 +143,7 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/auth').register(router, deps);
   require('./routes/users').register(router, deps);
   require('./routes/admin').register(router, deps);
+  require('./routes/inquiries').register(router, deps);
   require('./routes/apps').register(router, deps);
   require('./routes/ci').register(router, deps);
   require('./routes/sync').register(router, deps);
