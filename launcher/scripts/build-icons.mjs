@@ -91,6 +91,8 @@ const CUSTOM = {
   cloud:
     `<mask id="{id}"><image href="${CLOUD_GLYPH}" width="24" height="24"/></mask>` +
     `<rect width="24" height="24" fill="currentColor" stroke="none" mask="url(#{id})"/>`,
+  // 맞추기 전: 구름에 점 세 개를 뚫음 (중심 (7.5,15.8)·(12,15.8)·(16.5,15.8), 반지름 1.4)
+  cloudPending: cut('M7.5 15.1a0.7 0.7 0 1 0 0 1.4a0.7 0.7 0 1 0 0-1.4 M12 15.1a0.7 0.7 0 1 0 0 1.4a0.7 0.7 0 1 0 0-1.4 M16.5 15.1a0.7 0.7 0 1 0 0 1.4a0.7 0.7 0 1 0 0-1.4', 1.4),
   cloudCheck: cut('m8.5 15.4 2.4 2.4 4.6-4.7'),
   cloudUpload: cut('M12 18.6v-5.4m-2.7 2.5 2.7-2.7 2.7 2.7'),
   cloudOff: `${cut('M2.5 2.5l19 19', 4.6)}<path d="M2.5 2.5l19 19"/>`,

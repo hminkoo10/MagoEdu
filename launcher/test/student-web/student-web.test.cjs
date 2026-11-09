@@ -49,6 +49,26 @@ if (!process.versions.electron) {
         results.push({ name, error: null });
       } catch (e) { results.push({ name, error: e.stack || e.message }); }
     };
+    await run('PC 맞추기 전 상태는 15px 구름과 세 점, 나머지 상태 유지', async () => {
+      const { HomeView } = await import('./js/views/home.js');
+      const { icon } = await import('./js/icons.js');
+      state.web = false;
+      state.apps = [{ id: 'pending', name: '시험 프로그램', installed: { version: '1' }, sync: null }];
+      const view = new HomeView({ cloud, store: { state }, go() {} });
+      mount(view);
+      const row = view.cards.get('pending').sync;
+      const normalize = (s) => { const t = document.createElement('template'); t.innerHTML = s; return t.innerHTML.replace(/icm\d+/g, 'mask'); };
+      equal(row.textContent, '아직 서버와 맞추기 전');
+      equal(normalize(row.querySelector('svg').outerHTML), normalize(icon('cloudPending', 15)));
+      equal(row.querySelectorAll('image').length, 0);
+      ok(row.querySelector('mask path'), '대기 표시를 구름에 뚫어요');
+      state.apps[0].sync = { at: Date.now() };
+      view.update(state);
+      equal(normalize(row.querySelector('svg').outerHTML), normalize(icon('cloudCheck', 15)));
+      state.apps[0].sync = { status: 'offline' };
+      view.update(state);
+      equal(normalize(row.querySelector('svg').outerHTML), normalize(icon('cloudOff', 15)));
+    });
     await run('학생 메뉴 네 개·막힌 해시·임시 비밀번호 강제·변경 뒤 복귀', async () => {
       state.user.mustChangePassword = true;
       history.replaceState(null, '', '#/students');

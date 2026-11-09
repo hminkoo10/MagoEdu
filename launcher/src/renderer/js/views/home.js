@@ -281,7 +281,7 @@ export class HomeView {
     let syncEl = [];
     let warn = false;
     if (!a.installed) syncEl = [];
-    else if (!sy) syncEl = [ic('cloud', 15), '아직 서버와 맞추기 전'];
+    else if (!sy) syncEl = [ic('cloudPending', 15), '아직 서버와 맞추기 전'];
     else if (sy.status === 'syncing') syncEl = [h('span', { class: 'spinner', style: { width: '13px', height: '13px', borderWidth: '2px' } }), '서버와 맞추는 중'];
     else if (sy.status === 'offline') syncEl = [ic('cloudOff', 15), '연결되면 자동으로 맞춰요'];
     else if (sy.status === 'error') {
