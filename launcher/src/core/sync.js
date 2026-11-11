@@ -23,6 +23,7 @@ const { readJson, writeJson, renameRetry, sha256File, walk, pruneEmptyDirs, insi
 const { ApiError, Cancelled } = require('./api');
 
 const STATE_VERSION = 1;
+const FULL_EVERY = 6 * 60 * 60 * 1000; // 받기 전용 공간의 전체 목록 주기
 
 function safeRelPath(value) {
   return typeof value === 'string' && value.length <= 1000 && /^[^/\\:\u0000-\u001f]+(?:\/[^/\\:\u0000-\u001f]+)*$/.test(value) && !value.split('/').some((part) => part === '.' || part === '..') ? value : null;
@@ -78,7 +79,10 @@ function sanitizeState(value) {
       if (clean) maps[kind][p] = clean;
     }
   }
-  return { v: STATE_VERSION, seq, ...maps };
+  const out = { v: STATE_VERSION, seq, ...maps };
+  const fullAt = safeNumber(value.fullAt, Date.now() + 24 * 60 * 60 * 1000);
+  if (fullAt !== null) out.fullAt = fullAt; // 받기 전용 공간: 마지막으로 전체 목록을 받은 때
+  return out;
 }
 
 class SyncEngine {
@@ -98,9 +102,14 @@ class SyncEngine {
   }
 
   async _fetchRemote(state) {
-    // 읽기 전용 책장: 계약 과목이 줄면 예전 파일도 지우도록 작은 색인을 매번 전체 조회한다.
-    const res = await this.api.get(`${this.base}?since=${this.readOnly ? 0 : state.seq || 0}`, { timeout: 60000 });
-    if (res.full) state.remote = {};
+    // 받기 전용 공간(공용 책장): 평소엔 바뀐 것만 받고, 계약 과목이 줄었을 때 예전 파일도 지우도록
+    // 전체 목록은 FULL_EVERY 마다 한 번만 받는다 (동기화는 자주 돌고, 다 찬 목록은 1MB 남짓이라 매번 받기엔 많음).
+    const full = this.readOnly && (!state.fullAt || Date.now() - state.fullAt > FULL_EVERY);
+    const res = await this.api.get(`${this.base}?since=${full ? 0 : state.seq || 0}`, { timeout: 60000 });
+    if (res.full) {
+      state.remote = {};
+      if (this.readOnly) state.fullAt = Date.now();
+    }
     for (const e of res.entries) state.remote[e.path] = e;
     state.seq = res.seq;
     return res;

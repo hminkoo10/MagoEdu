@@ -17,6 +17,9 @@ test('공용 책장 SDK: 폴더·개발 환경·요청·기존 파일·시간 �
   fs.writeFileSync(path.join(session.libraryDir, 'present.pdf'), 'present');
   assert.deepEqual(await sdk.requestLibraryFiles(session, ['present.pdf']), { ok: true, missing: [] });
   assert.equal((await sdk.requestLibraryFiles({}, ['a.pdf'])).ok, false);
+  for (const bad of [['../x.pdf'], ['/etc/x'], ['C:/x.pdf'], ['books//a.pdf'], [''], 'books/a.pdf']) {
+    assert.deepEqual(await sdk.requestLibraryFiles(session, bad), { ok: false, missing: [], error: '잘못된 파일 경로입니다.' }, JSON.stringify(bad));
+  }
   const timer = setInterval(() => {
     if (!fs.existsSync(session.requestDir)) return;
     for (const n of fs.readdirSync(session.requestDir).filter((n) => /^[^.]+\.json$/.test(n))) {

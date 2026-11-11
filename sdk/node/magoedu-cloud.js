@@ -183,7 +183,13 @@ async function requestFiles(session, paths, { timeoutMs = 120000 } = {}) {
 
 /** 공용 책장의 열 때만 받는 파일 요청. → { ok, missing, error? } */
 async function requestLibraryFiles(session, paths, { timeoutMs = 120000 } = {}) {
-  const want = [...new Set(paths.map((p) => String(p).replace(/\\/g, '/')))];
+  // 공용 책장 밖(.., 절대 경로)·이상한 경로는 부탁하지 않는다
+  const rel = (p) => {
+    const s = typeof p === 'string' ? p.replace(/\\/g, '/') : '';
+    return s && s.length <= 1000 && !s.startsWith('/') && !/^[A-Za-z]:/.test(s) && s.split('/').every((x) => x && x !== '.' && x !== '..') ? s : null;
+  };
+  if (!Array.isArray(paths) || paths.length > 10000 || paths.some((p) => !rel(p))) return { ok: false, missing: [], error: '잘못된 파일 경로입니다.' };
+  const want = [...new Set(paths.map(rel))];
   const need = want.filter((p) => !session.libraryDir || !fs.existsSync(path.join(session.libraryDir, ...p.split('/'))));
   if (!need.length) return { ok: true, missing: [] };
   if (!session.libraryDir || !session.requestDir) return { ok: false, missing: need, error: '공용 책장을 쓰지 않아요.' };

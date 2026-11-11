@@ -74,7 +74,14 @@ test('받기 전용: 실제 읽기 API·수정 복원·삭제·lazy·want·요�
   const request = api.request.bind(api);
   api.request = (method, ...args) => { if (method !== 'GET') { writes.push(method); throw new Error('쓰기 요청 금지'); } return request(method, ...args); };
   const cloud = Object.assign(Object.create(Cloud.prototype), { paths, api, installed: { notes: { manifest } }, user: { id: 'u', role: 'admin' }, log: quiet });
-  const run = (opts) => cloud._libraryEngine('notes').run(opts);
+  // 이 시험은 색인을 seq 없이 바꿔 가며 보므로 매번 전체 목록을 받게 한다 (주기는 아래 시험에서 따로 본다).
+  const expireFull = () => {
+    if (!fs.existsSync(dirs.libraryState)) return;
+    const st = JSON.parse(fs.readFileSync(dirs.libraryState, 'utf8'));
+    delete st.fullAt;
+    fs.writeFileSync(dirs.libraryState, JSON.stringify(st));
+  };
+  const run = (opts) => { expireFull(); return cloud._libraryEngine('notes').run(opts); };
   const local = (p) => path.join(dirs.library, p);
   assert.equal((await run({ drop: new Set(['books/b1/a.pdf']) })).downloaded, 2);
   assert.equal(fs.existsSync(local('books/b1/a.pdf')), false);
@@ -114,8 +121,36 @@ test('받기 전용: 실제 읽기 API·수정 복원·삭제·lazy·want·요�
   assert.equal(fs.existsSync(path.join(dirs.requests, 'academy.json')), true);
   entries = []; publish();
   assert.equal((await run()).deletedLocal, 2, '전체 목록에서 빠진 과목 파일 정리');
-  assert.ok(gets.every((p) => p.endsWith('?since=0')));
   assert.deepEqual(writes, [], 'PUT·DELETE·upload 한 번도 안 보냄');
+});
+
+test('받기 전용: 평소엔 바뀐 것만, 전체 목록은 6시간에 한 번', async (t) => {
+  const { root, paths, dirs } = setup(t);
+  const libraryDir = path.join(root, 'published');
+  const write = (p, data) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, data); };
+  const sha256 = crypto.createHash('sha256').update('metadata').digest('hex');
+  write(path.join(libraryDir, 'blobs', sha256), 'metadata');
+  write(path.join(libraryDir, 'notes', 'index.json'), JSON.stringify({ format: 1, appId: 'notes', seq: 1, entries: [
+    { path: 'books/b1/book.json', rev: 1, seq: 1, sha256, size: 8, mtime: Date.now(), deleted: false, subject: 'math', book: 'b1' },
+  ] }));
+  const s = await startServer({ libraryDir });
+  t.after(() => s.close());
+  const token = await s.login('admin', ADMIN_PASSWORD);
+  assert.equal((await s.request('POST', '/api/admin/apps', { token, body: { id: 'notes', name: '노트', source: { type: 'local' } } })).status, 200);
+  const api = new ApiClient({ serverUrl: s.base, device: { id: 'library-full', name: '시험', platform: 'test', version: '1' } });
+  await api.login('admin', ADMIN_PASSWORD);
+  const gets = [];
+  const get = api.get.bind(api);
+  api.get = (p, opts) => { gets.push(p.split('?')[1]); return get(p, opts); };
+  const cloud = Object.assign(Object.create(Cloud.prototype), { paths, api, installed: { notes: { manifest } }, user: { id: 'u', role: 'admin' }, log: quiet });
+  const run = () => cloud._libraryEngine('notes').run();
+  await run();
+  await run();
+  const st = JSON.parse(fs.readFileSync(dirs.libraryState, 'utf8'));
+  st.fullAt = Date.now() - 7 * 60 * 60 * 1000;
+  fs.writeFileSync(dirs.libraryState, JSON.stringify(st));
+  await run();
+  assert.deepEqual(gets, ['since=0', 'since=1', 'since=0']);
 });
 
 test('공용 책장 실패: 403·404·연결 오류는 로그만, 요청에는 실패 답', async (t) => {

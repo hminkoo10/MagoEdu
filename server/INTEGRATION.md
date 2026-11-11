@@ -70,7 +70,7 @@ node server/scripts/library-publish.js --library <LIBRARY_DIR> --app ohdapnote -
 
 앱별 계정 폴더에서 `academy/` 옆 `library/`에 받고 `.library-sync-state.json`에 상태를 둔다. `MAGOEDU_LIBRARY_DIR` → Node `session.libraryDir`, Python `session.library_dir`(미사용 시 빈 값). 개발 모드도 같은 환경 변수로 바꾼다. 공용 책 id를 개인·학원 책 id와 섞지 않는다.
 
-런처는 앱 실행 전과 일반 동기화 때 목록을 조회한다. 계약 과목 축소를 반영하도록 매번 `since=0` 전체 목록으로 맞춘다(색인은 작음). 목록에서 빠진 파일·삭제 파일·서버에 없는 로컬 파일은 지우고 로컬 수정은 보관 없이 서버 것으로 되돌린다. 올리기·서버 삭제 요청은 보내지 않으며 drop도 무시한다. 403·404는 로그 한 줄로 건너뛰고 수신 실패도 앱 실행을 막지 않는다. 공용 게시 SSE 알림은 없다.
+런처는 앱 실행 전과 일반 동기화 때 목록을 조회한다. 평소엔 `since=<마지막 seq>` 로 바뀐 것만 받고, 계약 과목 축소를 반영하도록 6시간에 한 번(처음 포함) `since=0` 전체 목록으로 맞춘다(동기화는 자주 돌고, 다 찬 목록은 1MB 남짓). 목록에서 빠진 파일·삭제 파일·서버에 없는 로컬 파일은 지우고 로컬 수정은 보관 없이 서버 것으로 되돌린다. 올리기·서버 삭제 요청은 보내지 않으며 drop도 무시한다. 403·404는 로그 한 줄로 건너뛰고 수신 실패도 앱 실행을 막지 않는다. 공용 게시 SSE 알림은 없다.
 
 Node에서 `await cloud.requestLibraryFiles(session, ['books/<공용 책 id>/problem-1.pdf'])` → `{ ok, missing, error? }`. 처음에는 lazy 외 파일만 받고, 한 번 받은 lazy 파일은 계속 맞춘다. 직접 요청하려면 `requests/<rid>.json`에 `{ "library": true, "paths": ["books/<공용 책 id>/problem-1.pdf"] }`를 임시 파일 → rename으로 쓴다. 같은 폴더 `<rid>.done.json`으로 `{ ok, missing, error? }` 답을 받고 읽은 답은 지운다. Python SDK는 폴더 값만 제공한다.
 
