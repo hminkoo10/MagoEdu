@@ -9,7 +9,8 @@ const { validPath } = require('../src/routes/sync');
 function mkdir(dir) {
   if (fs.existsSync(dir)) return;
   mkdir(path.dirname(dir));
-  try { fs.mkdirSync(dir, { mode: 0o750 }); fs.chmodSync(dir, 0o750); }
+  // 위 폴더의 setgid(그룹 물려받기)는 지키고 나머지는 0750: 서버 계정이 그룹으로 읽는다.
+  try { fs.mkdirSync(dir, { mode: 0o750 }); fs.chmodSync(dir, 0o750 | (fs.statSync(path.dirname(dir)).mode & 0o2000)); }
   catch (err) { if (err.code !== 'EEXIST') throw err; }
 }
 
@@ -109,16 +110,17 @@ function main(args = process.argv.slice(2)) {
       for (const e of entries.values()) if (e.book === options.remove) remove(e);
     } else {
       for (const folder of options.roots) {
-        let books;
+        let exams;
         try {
+          // 처리기(오답노트 --exam-out)의 summary.json: { exams: [{ name, bookId, done, error, ... }] }
           const summary = JSON.parse(fs.readFileSync(path.join(folder, 'summary.json'), 'utf8'));
-          if (!Array.isArray(summary.books)) throw new Error('invalid summary');
-          books = summary.books;
-        } catch { exit = 1; console.error('결과 요약을 읽지 못해 건너뜁니다.'); continue; }
-        for (const item of books) {
-          if (!item || item.error || !(item.status === 'done' || item.done === true)) continue;
+          if (!Array.isArray(summary.exams)) throw new Error('exams 목록이 없어요');
+          exams = summary.exams;
+        } catch (err) { exit = 1; console.error(`결과 요약을 읽지 못해 건너뜁니다: ${folder} (${err.message})`); continue; }
+        for (const item of exams) {
+          if (!item || item.error || item.done !== true) continue;
           try {
-            const book = readBook(folder, item.id);
+            const book = readBook(folder, item.bookId);
             // 모든 입력과 blob을 준비한 뒤에만 이 책의 색인을 바꾼다.
             for (const f of book.files) {
               f.sha256 = crypto.createHash('sha256').update(f.bytes).digest('hex');
@@ -136,7 +138,7 @@ function main(args = process.argv.slice(2)) {
             }
             for (const e of entries.values()) if (e.book === book.id && !present.has(e.path)) remove(e);
             result.books++;
-          } catch { exit = 1; console.error('완료된 책을 읽거나 올리지 못해 건너뜁니다.'); }
+          } catch (err) { exit = 1; console.error(`완료된 책을 읽거나 올리지 못해 건너뜁니다: ${item.name || item.bookId} (${err.message})`); }
         }
       }
     }
@@ -146,7 +148,7 @@ function main(args = process.argv.slice(2)) {
       atomic(indexFile, JSON.stringify(index, null, 2) + '\n');
     }
     result.seq = index.seq;
-  } catch { exit = 2; console.error('공용 책장 올리기를 시작하거나 색인을 저장하지 못했습니다.'); }
+  } catch (err) { exit = 2; console.error(`공용 책장 올리기를 시작하거나 색인을 저장하지 못했습니다: ${err.message}`); }
   finally {
     if (locked) fs.rmSync(lock, { force: true });
     console.log(JSON.stringify(result));

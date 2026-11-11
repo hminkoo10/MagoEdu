@@ -25,7 +25,7 @@ function setup(t) {
     write(path.join(folder, 'problem-1.pdf'), '%PDF-synthetic');
     return folder;
   };
-  const summary = (books = [{ id: 'source', status: 'done' }]) => write(path.join(output, 'summary.json'), { books });
+  const summary = (books = [{ bookId: 'source', done: true }]) => write(path.join(output, 'summary.json'), { exams: books });
   const publish = (...args) => {
     const r = spawnSync(process.execPath, [script, '--library', library, '--app', 'ohdapnote', ...(args.length ? args : [output])], { encoding: 'utf8' });
     return { code: r.status, result: JSON.parse(r.stdout), stderr: r.stderr };
@@ -72,7 +72,7 @@ test('올리기: 잠금·시작 오류·깨진 입력·실패한 책 보존', (t
   fs.unlinkSync(lock);
   f.write(path.join(f.output, 'summary.json'), '{');
   assert.equal(f.publish().code, 1);
-  f.summary([{ id: 'source', status: 'done' }, { id: 'missing', done: true }, { id: 'ignored', status: 'done', error: 'failed' }]);
+  f.summary([{ bookId: 'source', done: true }, { bookId: 'missing', done: true }, { bookId: 'ignored', done: true, error: 'failed' }]);
   f.write(path.join(f.output, 'books/source/book.json'), '{');
   assert.equal(f.publish().code, 1);
   assert.deepEqual(f.index(), before);
@@ -84,9 +84,9 @@ test('올리기: 잠금·시작 오류·깨진 입력·실패한 책 보존', (t
 
 test('올리기: 일부 성공·완료 상태 필터·다른 입력 id의 같은 시험', (t) => {
   const f = setup(t); f.book('a'); f.book('b');
-  f.summary([{ id: 'a', done: true }, { id: 'bad', status: 'done' }, { id: 'pending', status: 'running' }]);
+  f.summary([{ bookId: 'a', done: true }, { bookId: 'bad', done: true }, { bookId: 'pending', done: false }]);
   const r = f.publish(); assert.equal(r.code, 1); assert.equal(r.result.books, 1);
-  f.summary([{ id: 'b', status: 'done' }]);
+  f.summary([{ bookId: 'b', done: true }]);
   assert.equal(f.publish().result.changed, 0);
   assert.equal(new Set(f.index().entries.map((e) => e.book)).size, 1);
   for (const key of Object.keys(exam)) assert.notEqual(bookId({ ...exam, [key]: key === 'year' ? 2025 : 'different' }), bookId(exam));
@@ -127,7 +127,7 @@ test('색인: 없음·깨짐·잘못된 sha·mtime/크기 변경 시 재읽기',
 
 test('읽기 API: 역할·계약 과목·증분·HEAD·삭제·색인 갱신', async (t) => {
   const f = setup(t); const mathDir = f.book(); f.book('english', 'english');
-  f.summary([{ id: 'source', status: 'done' }, { id: 'english', status: 'done' }]); f.publish();
+  f.summary([{ bookId: 'source', done: true }, { bookId: 'english', done: true }]); f.publish();
   const s = await startServer({ libraryDir: f.library }); t.after(() => s.close());
   const rq = s.request;
   const admin = await s.login('admin', ADMIN_PASSWORD);

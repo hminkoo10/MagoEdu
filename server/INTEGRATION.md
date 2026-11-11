@@ -4,7 +4,13 @@
 
 ## 저장 형식과 운영
 
-`LIBRARY_DIR`로 루트를 정한다(기본 `/var/lib/mago-library`). 서버는 이 루트를 읽기만 하며, 올리기 명령은 별도 처리기 계정으로 실행한다. 서버 계정에는 공유 그룹의 읽기·탐색 권한을 준다. 새 폴더는 0750, 파일은 0640으로 명시 설정한다. 기존 폴더의 소유권·권한은 바꾸지 않는다.
+`LIBRARY_DIR`로 루트를 정한다(기본 `/var/lib/mago-library`). 서버는 이 루트를 읽기만 하며, 올리기 명령은 별도 처리기 계정으로 실행한다. 서버 계정에는 공유 그룹의 읽기·탐색 권한을 준다. 새 폴더는 0750(위 폴더의 setgid 는 이어 받음), 파일은 0640으로 명시 설정한다. 기존 폴더의 소유권·권한은 바꾸지 않는다.
+
+처음 한 번, 루트와 그 아래 폴더를 처리기 계정 소유·서버 그룹·setgid 로 만들어 두면 새 파일이 서버 그룹으로 생긴다:
+
+```sh
+install -d -o <처리기 계정> -g <서버 그룹> -m 2750 <LIBRARY_DIR> <LIBRARY_DIR>/blobs <LIBRARY_DIR>/ohdapnote
+```
 
 ```text
 <LIBRARY_DIR>/blobs/<sha256>
@@ -41,7 +47,7 @@ node server/scripts/library-publish.js --library <LIBRARY_DIR> --app ohdapnote <
 node server/scripts/library-publish.js --library <LIBRARY_DIR> --app ohdapnote --remove exam-0123456789abcdef
 ```
 
-각 결과 폴더는 `summary.json`과 `books/<원본 id>/`를 가진다. summary 형식은 `{ "books": [{ "id": "synthetic-book", "status": "done", "error": null }] }`이며 `done: true`도 지원한다. 완료 상태이며 error가 없는 책만 올린다. 깨진 summary·완료 책은 건너뛰고 나머지는 계속한다. 실패한 책의 기존 게시본은 보존한다. 심볼릭 링크 입력은 받지 않는다.
+각 결과 폴더는 오답노트 처리기(`--exam-out`)의 출력으로 `summary.json`과 `books/<원본 id>/`를 가진다. summary 는 `{ "exams": [{ "name": "...", "bookId": "<원본 id>", "done": true, "error": null, ... }] }`이며 `done: true` 이고 error 가 없는 책만 올린다. 깨진 summary·완료 책은 건너뛰고 나머지는 계속한다. 실패한 책의 기존 게시본은 보존한다. 심볼릭 링크 입력은 받지 않는다.
 
 공용 id는 `book.json.exam`의 `[exam, year, schoolYear, month, grade, subject, selection, form]` 순서 배열을 JSON 직렬화한 SHA-256 앞 16자에 `exam-`을 붙인다. 없는 선택 필드는 null로 통일한다. 필드는 문자열·숫자·null이며 exam·year·subject는 필수다. 같은 시험의 필드 값과 타입을 유지하면 원본 책 id와 무관하게 같은 공용 id가 된다. `book.json.id`와 `createdBy`만 공용 값으로 바꾸고 나머지 파일은 바이트 그대로 저장한다.
 
