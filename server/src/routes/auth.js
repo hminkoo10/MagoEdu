@@ -70,6 +70,8 @@ function register(router, deps) {
     // 형식이 아니라 실제 유효성을 확인한다. 둘 다 유효하면 원장 코드 우선.
     if (director) return { valid: true, role: director.role, academyName: director.academy_name || '' };
     if (student) return { valid: true, role: 'student', academyName: student.academy_name, studentName: student.student_name };
+    const guardian = joinCodes.guardian(ctx.params.code);
+    if (guardian) return { valid: true, role: 'guardian', academyName: guardian.academy_name, studentName: guardian.student_name, consentVersion: require('./guardians').CONSENT_VERSION };
     const teacher = joinCodes.teacher(ctx.params.code);
     if (teacher) return { valid: true, role: 'teacher', academyName: teacher.academy_name, teacherName: teacher.name };
     joinCodes.invalid(ctx.ip);

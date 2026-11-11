@@ -396,6 +396,77 @@ const MIGRATIONS = [
     mime TEXT NOT NULL, size INTEGER NOT NULL, created_at INTEGER NOT NULL
   );
   CREATE INDEX inquiry_photos_owner ON inquiry_photos(user_id, created_at);`,
+  // 14: 보호자 계정·연락처·동의. 기존 사용자와 연결 보존.
+  `  CREATE TABLE users_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'director', 'teacher', 'student', 'guardian')),
+    academy_id INTEGER REFERENCES academies(id) ON DELETE SET NULL,
+    password_hash TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+    suspended_reason TEXT,
+    allowed_apps TEXT,
+    quota_mb INTEGER,
+    created_by INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_login_at INTEGER,
+    password_changed_at INTEGER,
+    student_id TEXT REFERENCES students(id) ON DELETE CASCADE,
+    ai_mode TEXT DEFAULT 'academy' CHECK (ai_mode IN ('academy', 'teacher')),
+    CHECK ((role = 'student' AND student_id IS NOT NULL AND academy_id IS NOT NULL AND ai_mode IS NOT NULL)
+        OR (role != 'student' AND student_id IS NULL AND (role != 'guardian' OR academy_id IS NOT NULL)))
+  );
+  INSERT INTO users_new SELECT * FROM users;
+  DROP TABLE users;
+  ALTER TABLE users_new RENAME TO users;
+  CREATE INDEX users_academy ON users(academy_id);
+  CREATE UNIQUE INDEX users_student ON users(student_id) WHERE student_id IS NOT NULL;
+
+  ALTER TABLE apps ADD COLUMN guardian_enabled INTEGER NOT NULL DEFAULT 0 CHECK (guardian_enabled IN (0,1));
+  CREATE TABLE guardians (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, relation TEXT NOT NULL DEFAULT '', phone_enc TEXT NOT NULL,
+    notify INTEGER NOT NULL DEFAULT 0 CHECK (notify IN (0,1)),
+    is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0,1)),
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, rev INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(student_id, user_id)
+  );
+  CREATE TRIGGER guardians_scope_insert BEFORE INSERT ON guardians BEGIN
+    SELECT RAISE(ABORT, 'guardian_scope') WHERE NOT EXISTS (SELECT 1 FROM students WHERE id=NEW.student_id AND academy_id=NEW.academy_id)
+      OR (NEW.user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users WHERE id=NEW.user_id AND role='guardian' AND academy_id=NEW.academy_id));
+  END;
+  CREATE TRIGGER guardians_scope_update BEFORE UPDATE OF user_id,student_id,academy_id ON guardians BEGIN
+    SELECT RAISE(ABORT, 'guardian_scope') WHERE NOT EXISTS (SELECT 1 FROM students WHERE id=NEW.student_id AND academy_id=NEW.academy_id)
+      OR (NEW.user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users WHERE id=NEW.user_id AND role='guardian' AND academy_id=NEW.academy_id));
+  END;
+  CREATE UNIQUE INDEX guardians_primary ON guardians(student_id) WHERE is_primary = 1;
+  CREATE TABLE guardian_invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, code_hash TEXT NOT NULL UNIQUE,
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    guardian_id INTEGER NOT NULL UNIQUE REFERENCES guardians(id) ON DELETE CASCADE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER
+  );
+  CREATE TABLE guardian_consents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    academy_id INTEGER NOT NULL REFERENCES academies(id) ON DELETE CASCADE,
+    student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    guardian_id INTEGER NOT NULL REFERENCES guardians(id) ON DELETE CASCADE,
+    item TEXT NOT NULL CHECK (item IN ('collect','messaging','overseas_ai','marketing')),
+    version TEXT NOT NULL, method TEXT NOT NULL CHECK (method IN ('paper','online')),
+    agreed_at INTEGER NOT NULL, withdrawn_at INTEGER,
+    recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL, sms_confirmed_at INTEGER
+  );
+  CREATE INDEX guardian_consents_guardian ON guardian_consents(guardian_id);
+  `,
 ];
 
 function openDb(file) {
@@ -408,7 +479,7 @@ function openDb(file) {
 function migrate(db) {
   const current = db.prepare('PRAGMA user_version').get().user_version;
   for (let v = current; v < MIGRATIONS.length; v += 1) {
-    const rebuildUsers = v === 6;
+    const rebuildUsers = v === 6 || v === 13;
     const schema = rebuildUsers ? db.prepare("SELECT name, sql FROM sqlite_schema WHERE tbl_name = 'users' AND type IN ('index', 'trigger') AND sql IS NOT NULL").all() : [];
     const sequence = rebuildUsers ? db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'users'").get()?.seq : null;
     // 트랜잭션 안에서 foreign_keys 를 끄면 적용되지 않고, DROP TABLE 이 기존 세션까지 지워 버린다.

@@ -1,4 +1,5 @@
 // 마고에듀 통합 클라우드 화면 - 구현민 개발
+import { GuardianView, GuardianJoinView } from './views/guardian.js';
 import { errorText, h, ic, btn, busy, field, input, passwordInput, toast, dialog, notify, reveal, initial, ROLE, put, useCloud } from './ui.js';
 import { HomeView, askLegacy } from './views/home.js';
 import { InquiriesView } from './views/inquiries.js';
@@ -38,6 +39,7 @@ function serverUrl() {
 }
 
 function navFor(user) {
+  if (user.role === 'guardian') return [{ id: 'children', icon: 'users', label: '내 자녀' }];
   const inquiry = { id: 'inquiries', icon: 'messageCircle', label: user.role === 'admin' ? '문의' : '문의하기' };
   const help = { id: 'help', icon: 'help', label: '도움말', title: '브라우저에서 열기' };
   if (user.role === 'student') return [
@@ -67,7 +69,7 @@ function navFor(user) {
 }
 
 function redirectView(id, user) {
-  if (user.role === 'student') return id;
+  if (['student', 'guardian'].includes(user.role)) return id;
   if (id === 'account') return 'settings';
   if (id === 'academy-ai') return user.role === 'admin' ? 'academies' : 'academy-settings';
   if (id === 'codes') return 'academies';
@@ -75,6 +77,7 @@ function redirectView(id, user) {
 }
 
 const VIEWS = {
+  children: GuardianView,
   'my-notes': StudentNotesView,
   'student-navi': StudentNaviView,
   home: HomeView,
@@ -256,6 +259,7 @@ class Shell {
       return;
     }
     const user = store.state.user;
+    if (user.role === 'guardian') id = 'children';
     if (user.role === 'student') {
       if (user.mustChangePassword) id = 'account';
       else if (!navFor(user).some((it) => it.id === id)) id = 'my-notes';
@@ -456,13 +460,33 @@ function loginView() {
   return view;
 }
 
+class JoinView {
+  constructor(opts) {
+    this.el = h('div', {}, '코드를 확인하고 있어요.');
+    this.load(opts);
+  }
+
+  async load(opts) {
+    try {
+      const info = opts.verified || await cloud.checkStudentInvite(opts.code);
+      if (info.role === 'guardian') {
+        const head = document.querySelector('.auth-head h1');
+        if (head) head.textContent = '보호자 계정 만들기';
+      }
+      const View = info.role === 'guardian' ? GuardianJoinView : StudentJoinView;
+      put(this.el, new View({ ...opts, verified: info, showInvite: !opts.verified }).el);
+    } catch (e) {
+      put(this.el, h('p', {}, errorText(e)), btn('돌아가기', { onClick: opts.back }));
+    }
+  }
+}
 function joinView({ code, verified } = {}) {
   const query = new URLSearchParams(location.hash.split('?')[1] || '');
-  const view = new StudentJoinView({ cloud, code: code ?? query.get('code') ?? '', verified, back: () => {
+  const view = new JoinView({ cloud, code: code ?? query.get('code') ?? '', verified, back: () => {
     history.replaceState(null, '', '#/home');
     render(true);
   } });
-  return authFrame(authHead('학생 계정 만들기'), view.el);
+  return authFrame(authHead(verified?.role === 'guardian' ? '보호자 계정 만들기' : '학생 계정 만들기'), view.el);
 }
 
 function signupView() {
@@ -527,7 +551,7 @@ function signupView() {
           if (!value) throw new Error('코드를 다시 확인해 주세요');
           codeInfo = await cloud.checkCode(value);
           if (value !== code.value.trim()) return;
-          if (codeInfo.role === 'student') {
+          if (['student', 'guardian'].includes(codeInfo.role)) {
             if (store.state.web) mount(joinView({ code: value, verified: codeInfo }));
             else await cloud.openExternal(`${serverUrl()}/#/join?code=${encodeURIComponent(value)}`);
             return;
@@ -680,6 +704,7 @@ function render(force = false) {
     if (s.web && /^#\/join(?:\?|$)/.test(location.hash)) return mount(joinView());
     return mount(loginView());
   }
+  if (s.web && /^#\/join(?:\?|$)/.test(location.hash)) return mount(joinView());
   if (sso && !(s.user.role === 'student' && s.user.mustChangePassword)) {
     const page = ssoView();
     mount(page.el);
@@ -735,7 +760,7 @@ async function start() {
         shell.toggleNav(false, true);
         if (location.hash === `#/${shell.current}`) return;
       }
-      if (store.state.phase === 'login' && /^#\/join(?:\?|$)/.test(location.hash)) {
+      if (/^#\/join(?:\?|$)/.test(location.hash)) {
         sso = null;
         render(true);
         return;
@@ -748,7 +773,7 @@ async function start() {
         return;
       }
       if (shell && store.state.phase === 'ready') shell.go(hashView(store.state.user) || 'home', { fromHistory: true });
-      else if (store.state.phase === 'login') render(true);
+      else if (['login', 'ready'].includes(store.state.phase)) render(true);
     };
     window.addEventListener('popstate', navigate);
     window.addEventListener('hashchange', navigate);

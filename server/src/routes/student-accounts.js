@@ -205,12 +205,17 @@ function register(router, deps) {
   }
 
   router.get('/api/join/:code', (ctx) => {
+    joinCodes.check(ctx.ip);
+    const g = joinCodes.guardian(ctx.params.code);
+    if (g) return { role: 'guardian', academyName: g.academy_name, studentName: g.student_name, consentVersion: require('./guardians').CONSENT_VERSION };
     const i = invite(ctx, ctx.params.code);
     return { academyName: i.academy_name, studentName: i.student_name };
   });
 
   router.post('/api/join', async (ctx) => {
     const body = await readJson(ctx.req);
+    const guardianResult = await deps.guardianJoin(ctx, body);
+    if (guardianResult) return guardianResult;
     const i = invite(ctx, body.code);
     const username = normalizeUsername(body.username);
     const password = validatePassword(body.password, username);

@@ -180,6 +180,10 @@ function register(router, deps) {
     if (body.iconUrl !== undefined) out.iconUrl = str(body.iconUrl, 500);
     if (body.exe !== undefined) out.exe = str(body.exe, 120);
     if (body.color !== undefined) out.color = /^#[0-9a-fA-F]{6}$/.test(body.color) ? body.color : null;
+    if (body.guardianEnabled !== undefined) {
+      if (typeof body.guardianEnabled !== 'boolean') throw bad('보호자 사용 설정을 확인해 주세요.');
+      out.guardianEnabled = body.guardianEnabled;
+    }
     if (body.autoLaunchDefault !== undefined) out.autoLaunchDefault = !!body.autoLaunchDefault;
     if (body.coldStorage !== undefined) {
       out.coldStorage = {

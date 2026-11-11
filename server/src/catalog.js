@@ -75,6 +75,7 @@ function rowToApp(r) {
     platform: r.platform || 'windows',
     url: r.platform === 'web' ? jsonParse(r.source, {}).url || null : null,
     hasSecret: !!r.client_secret_hash,
+    guardianEnabled: !!r.guardian_enabled,
     release: jsonParse(r.release, null),
     releaseCheckedAt: r.release_checked_at || null,
     releaseError: r.release_error || null,
@@ -167,6 +168,10 @@ class Catalog {
         a.id, v.name, v.description, v.sort, v.enabled, v.source, v.icon_url, v.exe, v.color, v.cold_enabled,
         v.cold_days, v.auto_launch_default, v.platform, now, now,
       );
+    }
+    if (a.guardianEnabled !== undefined) {
+      if (typeof a.guardianEnabled !== 'boolean') throw bad('보호자 사용 설정이 올바르지 않아요.');
+      this.db.run('UPDATE apps SET guardian_enabled = ? WHERE id = ?', a.guardianEnabled ? 1 : 0, a.id);
     }
     this._restoreApp(a.id);
     return this.get(a.id);

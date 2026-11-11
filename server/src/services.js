@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS = {
   auditKeepDays: 365,
 };
 
-const ROLE_LABEL = { admin: '운영자', director: '원장', teacher: '선생님', student: '학생' };
+const ROLE_LABEL = { admin: '운영자', director: '원장', teacher: '선생님', student: '학생', guardian: '보호자' };
 
 function createServices({ db, config, log }) {
   // ---------------- 설정 ----------------
@@ -102,6 +102,10 @@ function createServices({ db, config, log }) {
   }
 
   function canUseApp(user, appId) {
+    if (user.role === 'guardian') {
+      const a = db.get('SELECT guardian_enabled, enabled, platform FROM apps WHERE id = ?', appId);
+      if (!a?.guardian_enabled || !a.enabled || a.platform !== 'web') return false;
+    }
     const list = allowedApps(user);
     if (list !== null && !list.includes(appId)) return false;
     if (user.role === 'student') {
@@ -136,7 +140,8 @@ function createServices({ db, config, log }) {
       out.aiMode = u.ai_mode;
       if (s) out.name = s.name;
     }
-    if (withUsage) {
+    if (u.role === 'guardian') out.children = db.all(`SELECT s.id AS studentId, s.name, g.id AS guardianId FROM guardians g JOIN students s ON s.id = g.student_id AND s.academy_id = g.academy_id WHERE g.user_id = ? AND g.academy_id = ? AND s.deleted_at IS NULL AND s.purged_at IS NULL`, u.id, u.academy_id);
+    if (withUsage && u.role !== 'guardian') {
       out.usageBytes = usageBytes(u.id);
       out.quotaBytes = quotaBytes(u);
       if (u.academy_id) {
@@ -156,7 +161,7 @@ function createServices({ db, config, log }) {
   /** actor 가 target 계정을 관리(수정·삭제·초기화)할 수 있는지 */
   function canManage(actor, target) {
     if (!actor || !target || actor.id === target.id) return false;
-    if (target.role === 'student') return false; // 학생 계정은 명단에 연결한 전용 경로에서만 관리
+    if (['student', 'guardian'].includes(target.role)) return false; // 학생 계정은 명단에 연결한 전용 경로에서만 관리
     if (actor.role === 'admin') return true;
     if (actor.role === 'director') {
       return target.role === 'teacher' && !!actor.academy_id && target.academy_id === actor.academy_id;
@@ -175,6 +180,7 @@ function createServices({ db, config, log }) {
   // ---------------- 세션 ----------------
   /** appId: 웹 프로그램(예: 마고 과목내비) 서버가 받는 그 프로그램 전용 세션 (authenticate 에서 허용한 곳만 씀) */
   function createSession(user, device, ip, { appId = null } = {}) {
+    if (user.role === 'guardian' && device?.platform !== 'web' && !(appId && device?.platform === 'web-app')) throw forbidden('보호자는 웹에서만 로그인할 수 있어요.', 'guardian_web_only');
     if (user.role === 'student') {
       if (device?.platform !== 'web' && !(appId && device?.platform === 'web-app')) {
         throw forbidden('학생 계정은 웹(mago.milky.kr)에서만 써요.', 'student_web_only');
@@ -245,7 +251,7 @@ function createServices({ db, config, log }) {
   function guardStudentSession(ctx) {
     const token = /^Bearer\s+(\S+)$/i.exec(String(ctx.req.headers.authorization || ''))?.[1];
     if (!token) return;
-    const student = db.get("SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.role = 'student'", sha256Hex(token));
+    const student = db.get("SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND (u.role = 'guardian' OR (u.role = 'student' AND ?))", sha256Hex(token), ctx.path.startsWith('/api/') ? 1 : 0);
     if (student) authenticate({ ...ctx }, { app: true });
   }
 
@@ -266,6 +272,18 @@ function createServices({ db, config, log }) {
       // 세션은 이때 지운다 (사용 중지할 때 바로 지우면 그 기기는 왜 로그아웃됐는지 알 수 없음)
       db.run('DELETE FROM sessions WHERE id = ?', session.id);
       throw new HttpError(401, '사용이 중지된 계정이에요. 원장님이나 운영자에게 문의해 주세요.', 'account_suspended');
+    }
+    if (user.role === 'guardian') {
+      const path = String(ctx.path || '').replace(/\/$/, '');
+      const method = ctx.req.method === 'HEAD' ? 'GET' : ctx.req.method;
+      const read = method === 'GET' && ['/api/me', '/api/me/consents', ...(!session.app_id ? ['/api/me/guardians'] : [])].includes(path);
+      const logout = method === 'POST' && path === '/api/auth/logout';
+      const web = !session.app_id && ((method === 'POST' && ['/api/sso/authorize', '/api/join'].includes(path))
+        || (method === 'GET' && /^\/api\/join\/[^/]+$/.test(path))
+        || (method === 'PATCH' && path === '/api/me/password')
+        || (method === 'POST' && /^\/api\/me\/consents\/[^/]+\/withdraw$/.test(path)));
+      if (!read && !web && !logout) throw forbidden('보호자 계정으로는 쓸 수 없는 기능이에요.', 'guardian_forbidden');
+      if (session.app_id && !canUseApp(user, session.app_id)) throw forbidden();
     }
     assertStudentAccess(ctx, user, session);
     if (session.app_id && !app) throw new HttpError(403, '이 로그인으로는 쓸 수 없는 기능이에요.', 'app_session');

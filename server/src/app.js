@@ -152,6 +152,8 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/library').register(router, deps);
   require('./routes/students').register(router, deps);
   require('./routes/schools').register(router, deps);
+  deps.guardianKey = loadOrCreateSecret(path.join(config.dataDir, 'keys'), 'guardian.key');
+  require('./routes/guardians').register(router, deps);
   require('./routes/student-accounts').register(router, deps);
   require('./routes/student-notes').register(router, deps);
   require('./routes/sso').register(router, deps);
@@ -177,7 +179,7 @@ function createCloudServer(config = loadConfig()) {
       auth: null,
     };
     try {
-      if (ctx.path.startsWith('/api/')) svc.guardStudentSession(ctx);
+      svc.guardStudentSession(ctx);
       const m = router.match(req.method, url.pathname);
       if (!m) {
         if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) {
@@ -230,6 +232,7 @@ function createCloudServer(config = loadConfig()) {
     server,
     deps,
     initialAdmin,
+    routes: router.routes.map(({ method, pattern }) => ({ method, pattern })),
     listen(port = config.port, host = config.host) {
       return new Promise((resolve, reject) => {
         server.once('error', reject);
