@@ -1,6 +1,6 @@
 # 마고 공용 책장
 
-모든 학원에 같은 시험 책을 배포하는 읽기 전용 공간이다. 학원 공간·개인 공간과 별개이며 DB 마이그레이션은 없다. 런처 수신과 SDK 연결은 B2 범위다.
+모든 학원에 같은 시험 책을 배포하는 읽기 전용 공간이다. 학원 공간·개인 공간과 별개이며 DB 마이그레이션은 없다. 런처는 받아 두기만 하며 SDK에서 폴더와 지연 수신 요청을 쓴다.
 
 ## 저장 형식과 운영
 
@@ -66,7 +66,15 @@ node server/scripts/library-publish.js --library <LIBRARY_DIR> --app ohdapnote -
 
 ## B2 런처 연결 메모
 
-개인·학원 공간과 별도 namespace 및 since 커서를 유지하고 공용 공간은 수신만 한다. 최초 since=0으로 받은 뒤 응답 seq를 저장한다. 삭제 항목은 해당 공용 파일을 지운다. 계약 과목 변경 시 subjects를 비교하고 since=0으로 다시 받아, 권한을 잃은 과목의 로컬 파일도 정리해야 한다. 공용 게시에는 SSE 알림이 없으므로 목록을 주기 조회한다. 공용 책 id를 다른 공간의 책과 섞거나 쓰기 API로 되돌려 보내지 않는다.
+매니페스트에 `"library": { "include": ["**"], "exclude": [], "lazy": ["books/*/*.pdf"] }`를 둔다. shared와 같은 포함·제외·지연 수신 규칙이다. 학원 소속 원장·선생님 또는 운영자만 사용한다. 학생과 학원 없는 원장·선생님은 사용하지 않는다.
+
+앱별 계정 폴더에서 `academy/` 옆 `library/`에 받고 `.library-sync-state.json`에 상태를 둔다. `MAGOEDU_LIBRARY_DIR` → Node `session.libraryDir`, Python `session.library_dir`(미사용 시 빈 값). 개발 모드도 같은 환경 변수로 바꾼다. 공용 책 id를 개인·학원 책 id와 섞지 않는다.
+
+런처는 앱 실행 전과 일반 동기화 때 목록을 조회한다. 계약 과목 축소를 반영하도록 매번 `since=0` 전체 목록으로 맞춘다(색인은 작음). 목록에서 빠진 파일·삭제 파일·서버에 없는 로컬 파일은 지우고 로컬 수정은 보관 없이 서버 것으로 되돌린다. 올리기·서버 삭제 요청은 보내지 않으며 drop도 무시한다. 403·404는 로그 한 줄로 건너뛰고 수신 실패도 앱 실행을 막지 않는다. 공용 게시 SSE 알림은 없다.
+
+Node에서 `await cloud.requestLibraryFiles(session, ['books/<공용 책 id>/problem-1.pdf'])` → `{ ok, missing, error? }`. 처음에는 lazy 외 파일만 받고, 한 번 받은 lazy 파일은 계속 맞춘다. 직접 요청하려면 `requests/<rid>.json`에 `{ "library": true, "paths": ["books/<공용 책 id>/problem-1.pdf"] }`를 임시 파일 → rename으로 쓴다. 같은 폴더 `<rid>.done.json`으로 `{ ok, missing, error? }` 답을 받고 읽은 답은 지운다. Python SDK는 폴더 값만 제공한다.
+
+처음 받는 양은 include/lazy 규칙에 달려 있다. 큰 원본 PDF는 lazy로 두고 열 때 요청한다. 화면(C 단계)은 이 폴더를 읽기 전용으로 쓰며 로컬 편집 결과는 개인·학원 공간에 따로 저장한다.
 
 # CI 릴리스 알림
 

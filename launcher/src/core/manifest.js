@@ -14,12 +14,20 @@ function cleanList(v) {
   return Array.isArray(v) ? v.map(String).filter(Boolean).slice(0, 100) : [];
 }
 
+function normalizeSpace(value) {
+  if (!value || typeof value !== 'object') return null;
+  return {
+    include: cleanList(value.include).length ? cleanList(value.include) : ['**'],
+    exclude: cleanList(value.exclude),
+    lazy: cleanList(value.lazy),
+  };
+}
+
 function normalizeManifest(raw, fallback = {}) {
   const m = raw && typeof raw === 'object' ? raw : {};
   const exe = String(m.exe || fallback.exe || '').replace(/\\/g, '/');
   if (exe && (path.isAbsolute(exe) || exe.split('/').includes('..'))) throw new Error('magoedu-app.json 의 exe 경로가 올바르지 않아요.');
   const sync = m.sync && typeof m.sync === 'object' ? m.sync : {};
-  const shared = m.shared && typeof m.shared === 'object' ? m.shared : null;
   return {
     format: Number(m.format) || 1,
     id: String(m.id || fallback.id || ''),
@@ -37,13 +45,8 @@ function normalizeManifest(raw, fallback = {}) {
         .map((g) => ({ pattern: String(g.pattern), cold: !!g.cold })),
     },
     // 학원 공간 (같은 학원 사람들이 함께 쓰는 파일). 없으면 쓰지 않음
-    shared: shared
-      ? {
-          include: cleanList(shared.include).length ? cleanList(shared.include) : ['**'],
-          exclude: cleanList(shared.exclude),
-          lazy: cleanList(shared.lazy),
-        }
-      : null,
+    shared: normalizeSpace(m.shared),
+    library: normalizeSpace(m.library),
     legacy: (Array.isArray(m.legacy) ? m.legacy : [])
       .filter((l) => l && l.from && l.to)
       .map((l, i) => ({

@@ -25,3 +25,9 @@ const session = cloud.check('ohdapnote', { packaged: app.isPackaged }); // 아�
 - 자세한 연결 방법: [docs/INTEGRATION.md](../docs/INTEGRATION.md)
 
 시험: `npm test` (서버를 띄워 실제 허가증으로 확인)
+
+### 마고 공용 책장
+
+매니페스트 `library: { include: ["**"], exclude: [], lazy: ["books/*/*.pdf"] }`로 켠다. `MAGOEDU_LIBRARY_DIR`는 Node `session.libraryDir`, Python `session.library_dir`이며 미사용 시 빈 값.
+Node: `await cloud.requestLibraryFiles(session, paths)` → `{ ok, missing, error? }`. 학원 소속 원장·선생님 또는 운영자만 읽는다.
+폴더는 받기 전용. 큰 파일은 lazy로 두고 열 때 요청한다. 수정본은 개인·학원 공간에 별도 저장한다.

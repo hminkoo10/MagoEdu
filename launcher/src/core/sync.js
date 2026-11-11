@@ -82,7 +82,8 @@ function sanitizeState(value) {
 }
 
 class SyncEngine {
-  constructor({ api, appId, base, dirs, rules, log = console, concurrency = 3 }) {
+  constructor({ api, appId, base, dirs, rules, log = console, concurrency = 3, readOnly = false }) {
+    this.readOnly = readOnly;
     this.api = api;
     this.appId = appId;
     this.base = base || `/api/sync/${encodeURIComponent(appId)}`;
@@ -97,7 +98,8 @@ class SyncEngine {
   }
 
   async _fetchRemote(state) {
-    const res = await this.api.get(`${this.base}?since=${state.seq || 0}`, { timeout: 60000 });
+    // 읽기 전용 책장: 계약 과목이 줄면 예전 파일도 지우도록 작은 색인을 매번 전체 조회한다.
+    const res = await this.api.get(`${this.base}?since=${this.readOnly ? 0 : state.seq || 0}`, { timeout: 60000 });
     if (res.full) state.remote = {};
     for (const e of res.entries) state.remote[e.path] = e;
     state.seq = res.seq;
@@ -128,6 +130,11 @@ class SyncEngine {
 
   _plan(p, L, B, R) {
     const live = R && !R.deleted;
+    if (this.readOnly) {
+      if (!live) return L ? { type: 'deleteLocal' } : B ? { type: 'forget' } : null;
+      if (L && L.sha === R.sha256) return { type: 'record' };
+      return { type: 'download' };
+    }
     if (live) {
       if (!B) {
         if (!L) return R.evicted ? null : { type: 'download' };
@@ -163,6 +170,7 @@ class SyncEngine {
    * drop: 이 컴퓨터에 받지 않은 채로 서버에서 지울 것 (Set)
    */
   async run({ onProgress, signal, want, drop } = {}) {
+    if (this.readOnly) drop = undefined; // 공용 책장은 삭제 요청도 서버에 보내지 않는다.
     const summary = { uploaded: 0, downloaded: 0, deletedLocal: 0, deletedRemote: 0, conflicts: [], reverted: [], pending: [], errors: [], quotaExceeded: false };
     const state = await this._loadState();
     let quota = null;
@@ -178,7 +186,7 @@ class SyncEngine {
       for (const p of all) {
         if (!this.rules.wants(p)) continue;
         let op = this._plan(p, local[p], state.base[p], state.remote[p]);
-        if (op?.type === 'download' && !state.base[p]) {
+        if (op?.type === 'download' && !state.base[p] && (!this.readOnly || !local[p])) {
           if (drop?.has(p)) op = { type: 'deleteRemote', baseRev: state.remote[p].rev };
           else if (this.rules.lazy(p) && !want?.has(p)) continue; // 달라고 할 때 받음
         }
@@ -333,6 +341,7 @@ class SyncEngine {
   async _transfer(p, op, local, state, summary, shaIndex, signal) {
     const L = local[p];
     const R = state.remote[p];
+    if (this.readOnly && op.type !== 'download') throw new Error('읽기 전용 공간이에요.');
     try {
       if (op.type === 'upload') {
         const group = this.rules.groupOf(p);

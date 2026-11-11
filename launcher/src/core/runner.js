@@ -101,7 +101,7 @@ function readRunning(file) {
   return sanitizeRunning(readJsonSync(file, null));
 }
 
-function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, requests = academy, academyInfo = false, ssoCode = '', dataKey = '', serverUrl, launcherVersion, trustFile }) {
+function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, library = false, requests = academy || library, academyInfo = false, ssoCode = '', dataKey = '', serverUrl, launcherVersion, trustFile }) {
   return {
     ...base,
     MAGOEDU_TICKET: ticket,
@@ -113,6 +113,7 @@ function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = 
     MAGOEDU_ACADEMY: user.academy?.name || '',
     MAGOEDU_ACADEMY_ID: academy && user.academy ? String(user.academy.id) : '',
     MAGOEDU_ACADEMY_DIR: academy && user.academy ? appDirs.academy : '', // 학원 공간 (학원이 없거나 쓰지 않는 프로그램은 빈 값)
+    MAGOEDU_LIBRARY_DIR: library ? appDirs.library : '',
     MAGOEDU_REQUEST_DIR: requests ? appDirs.requests : '', // 프로그램이 통합 클라우드에 부탁하는 곳 (학원 공간 파일·학생 명단·로그인 코드)
     MAGOEDU_ACADEMY_INFO: academyInfo && user.academy ? appDirs.academyInfo : '', // 학원 학생 명단·학원 AI (매니페스트 academyInfo)
     MAGOEDU_SSO_CODE: ssoCode || '', // 웹 프로그램 일회용 로그인 코드 (매니페스트 sso, 60초)

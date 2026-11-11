@@ -14,6 +14,7 @@
         sys.exit(0)
 
     session.data_dir     # 같은 아이디면 어느 컴퓨터에서든 같은 데이터 (서버와 동기화)
+    session.library_dir  # 마고 공용 책장 (받기 전용, 쓰지 않으면 빈 값)
     session.local_dir    # 이 컴퓨터에만 두는 데이터 (캐시, 기록)
     session.user         # {"id", "username", "name", "role", "academy"}
 
@@ -50,6 +51,7 @@ class Session:
     expires_at: float = 0.0
     dev: bool = False
     payload: dict = field(default_factory=dict)
+    library_dir: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +237,7 @@ def check(app_id: str) -> Session | None:
             user={"id": "dev", "username": "dev", "name": "개발자", "role": "admin", "academy": ""},
             data_dir=Path(env.get("MAGOEDU_DATA_DIR") or base / "sync"),
             local_dir=Path(env.get("MAGOEDU_LOCAL_DIR") or base / "local"),
+            library_dir=env.get("MAGOEDU_LIBRARY_DIR", ""),
             dev=True,
         )
         s.data_dir.mkdir(parents=True, exist_ok=True)
@@ -270,6 +273,7 @@ def check(app_id: str) -> Session | None:
         },
         data_dir=Path(data_dir),
         local_dir=Path(local_dir),
+        library_dir=env.get("MAGOEDU_LIBRARY_DIR", ""),
         server=env.get("MAGOEDU_SERVER", ""),
         launcher_version=env.get("MAGOEDU_LAUNCHER_VERSION", ""),
         expires_at=float(payload["exp"]),

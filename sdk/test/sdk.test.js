@@ -33,15 +33,16 @@ test('실행 허가증 확인 (Python·Node)', async (t) => {
     MAGOEDU_DATA_DIR: path.join(dir, 'sync'),
     MAGOEDU_LOCAL_DIR: path.join(dir, 'local'),
     MAGOEDU_SDK_PURE: '1',
+    MAGOEDU_LIBRARY_DIR: path.join(dir, 'library'),
   };
 
   await t.test('Python (순수 구현)', () => {
     const out = python(
-      'import magoedu_cloud as c, json\ns=c.check("tajong")\nprint(json.dumps({"ok": s is not None, "user": s and s.user["username"], "reason": c.REASON, "other": c.check("ohdapnote") is None}))',
+      'import magoedu_cloud as c, json\ns=c.check("tajong")\nprint(json.dumps({"ok": s is not None, "user": s and s.user["username"], "library": s and s.library_dir, "reason": c.REASON, "other": c.check("ohdapnote") is None}))',
       env,
     );
     const r = JSON.parse(out);
-    assert.deepEqual(r, { ok: true, user: 'admin', reason: '', other: true });
+    assert.deepEqual(r, { ok: true, user: 'admin', library: env.MAGOEDU_LIBRARY_DIR, reason: '', other: true });
   });
 
   await t.test('Python: 바꾼 허가증·허가증 없음·키 없음은 거절', () => {
@@ -67,6 +68,7 @@ test('실행 허가증 확인 (Python·Node)', async (t) => {
     const s1 = sdk.check('tajong', { packaged: false, env });
     assert.equal(s1.user.username, 'admin');
     assert.equal(s1.dataDir, env.MAGOEDU_DATA_DIR);
+    assert.equal(s1.libraryDir, env.MAGOEDU_LIBRARY_DIR);
     assert.equal(sdk.check('ohdapnote', { packaged: false, env }), null);
     assert.equal(sdk.check('tajong', { packaged: false, env: { ...env, MAGOEDU_TICKET: `${ticket}x` } }), null);
     assert.equal(sdk.check('tajong', { packaged: false, env: { ...env, MAGOEDU_TICKET: undefined } }), null);

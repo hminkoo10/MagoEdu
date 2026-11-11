@@ -15,6 +15,8 @@
 //   session.dataDir   // 같은 아이디면 어느 컴퓨터에서든 같은 데이터 (서버와 동기화)
 //   session.localDir  // 이 컴퓨터에만 두는 데이터
 //   session.academyDir  // 학원 공간: 같은 학원 사람들이 함께 쓰는 데이터 (매니페스트에 shared, 학원이 없으면 '')
+//   session.libraryDir  // 마고 공용 책장 (받기 전용, 쓰지 않으면 '')
+//   await cloud.requestLibraryFiles(session, ['books/b1/a.pdf']) // 공용 책장의 열 때만 받는 파일
 //   await cloud.requestFiles(session, ['books/b1/a.pdf'])  // 학원 공간의 '열 때만 받는' 파일 받기
 //   await cloud.removeFiles(session, ['books/b1/a.pdf'])   // 받지 않은 파일을 서버에서 지우기 (교재를 지울 때)
 //
@@ -106,6 +108,7 @@ function check(appId, { packaged = true, env = process.env } = {}) {
       dataDir: env.MAGOEDU_DATA_DIR || path.join(base, 'sync'),
       localDir: env.MAGOEDU_LOCAL_DIR || path.join(base, 'local'),
       academyId: env.MAGOEDU_ACADEMY_ID || '',
+      libraryDir: env.MAGOEDU_LIBRARY_DIR || '',
       academyDir: env.MAGOEDU_ACADEMY_DIR || '',
       requestDir: env.MAGOEDU_REQUEST_DIR || '',
       academyInfoFile: env.MAGOEDU_ACADEMY_INFO || '',
@@ -144,6 +147,7 @@ function check(appId, { packaged = true, env = process.env } = {}) {
     dataDir: env.MAGOEDU_DATA_DIR,
     localDir: env.MAGOEDU_LOCAL_DIR,
     academyId: env.MAGOEDU_ACADEMY_ID || '',
+    libraryDir: env.MAGOEDU_LIBRARY_DIR || '',
     academyDir: env.MAGOEDU_ACADEMY_DIR || '', // 학원이 없거나 학원 공간을 쓰지 않는 프로그램은 ''
     requestDir: env.MAGOEDU_REQUEST_DIR || '',
     academyInfoFile: env.MAGOEDU_ACADEMY_INFO || '', // 학원 학생 명단·학원 AI (매니페스트 academyInfo, 학원이 없으면 '')
@@ -175,6 +179,15 @@ async function requestFiles(session, paths, { timeoutMs = 120000 } = {}) {
   if (!need.length) return { ok: true, missing: [] };
   if (!session.requestDir) return { ok: false, missing: need, error: '학원 공간을 쓰지 않아요.' };
   return ask(session, { paths: need }, timeoutMs);
+}
+
+/** 공용 책장의 열 때만 받는 파일 요청. → { ok, missing, error? } */
+async function requestLibraryFiles(session, paths, { timeoutMs = 120000 } = {}) {
+  const want = [...new Set(paths.map((p) => String(p).replace(/\\/g, '/')))];
+  const need = want.filter((p) => !session.libraryDir || !fs.existsSync(path.join(session.libraryDir, ...p.split('/'))));
+  if (!need.length) return { ok: true, missing: [] };
+  if (!session.libraryDir || !session.requestDir) return { ok: false, missing: need, error: '공용 책장을 쓰지 않아요.' };
+  return ask(session, { library: true, paths: need }, timeoutMs);
 }
 
 /**
@@ -366,6 +379,7 @@ module.exports = {
   check,
   reason,
   requestFiles,
+  requestLibraryFiles,
   removeFiles,
   academyInfo,
   academyAi,
