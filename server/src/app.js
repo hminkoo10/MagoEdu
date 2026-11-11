@@ -37,6 +37,7 @@ function loadConfig(env = process.env, overrides = {}) {
     port: intOr(env.PORT, 8470, 0, 65535),
     host: env.HOST || '0.0.0.0',
     dataDir: path.resolve(env.DATA_DIR || path.join(__dirname, '..', 'data')),
+    libraryDir: path.resolve(env.LIBRARY_DIR || '/var/lib/mago-library'),
     adminUsername: env.ADMIN_USERNAME || 'admin',
     adminPassword: env.ADMIN_PASSWORD || '',
     githubToken: env.GITHUB_TOKEN || '',
@@ -148,6 +149,7 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/ci').register(router, deps);
   require('./routes/sync').register(router, deps);
   require('./routes/shared').register(router, deps);
+  require('./routes/library').register(router, deps);
   require('./routes/students').register(router, deps);
   require('./routes/schools').register(router, deps);
   require('./routes/student-accounts').register(router, deps);

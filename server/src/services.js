@@ -223,6 +223,9 @@ function createServices({ db, config, log }) {
     }
     const path = String(ctx.path || '').replace(/\/$/, '');
     const method = ctx.req.method === 'HEAD' ? 'GET' : ctx.req.method;
+    if (/^\/api\/sync\/[^/]+\/library(?:\/file)?$/.test(path)) {
+      throw forbidden('학생은 마고 공용 책장을 쓸 수 없어요.', 'library_forbidden');
+    }
     const basic = (method === 'GET' && path === '/api/me')
       || (method === 'PATCH' && path === '/api/me/password')
       || (method === 'POST' && path === '/api/auth/logout');
