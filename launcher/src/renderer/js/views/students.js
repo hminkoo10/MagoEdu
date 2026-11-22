@@ -21,14 +21,18 @@ function schoolGrade(s) {
 let pickedAcademy = ''; // 운영자가 마지막에 고른 학원 (학생 명단·학원 AI 가 같이 씀)
 
 /** 운영자: 볼 학원 고르기. ready 는 처음 고른 학원 ID (학원이 없으면 '') */
-export function academyPicker(cloud, onChange) {
+export function academyPicker(cloud, onChange, { all = false } = {}) {
   const sel = select([['', '학원 불러오는 중']], '', { cls: 'page', style: 'width: 200px' });
   sel.disabled = true;
   sel.addEventListener('change', () => {
-    pickedAcademy = sel.value;
+    if (!all) pickedAcademy = sel.value; // '모든 학원'은 학생 명단·학원 AI 가 기억할 학원이 아님
     onChange(sel.value);
   });
   const ready = cloud.api('GET', '/api/academies').then((r) => {
+    if (all) {
+      put(sel, h('option', { value: '' }, '모든 학원'), ...r.academies.map((a) => h('option', { value: String(a.id) }, a.name)));
+      sel.value = ''; sel.disabled = false; return '';
+    }
     if (!r.academies.length) {
       put(sel, h('option', { value: '' }, '학원이 없어요'));
       return '';

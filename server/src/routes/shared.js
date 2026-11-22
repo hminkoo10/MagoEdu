@@ -35,8 +35,9 @@ function register(router, deps) {
     const app = db.get('SELECT * FROM apps WHERE id = ?', String(ctx.params.appId));
     if (!app) throw notFound('프로그램을 찾을 수 없어요.');
     if (!svc.canUseApp(user, app.id)) throw forbidden('이 프로그램을 쓸 권한이 없어요.');
-    if (!user.academy_id) throw notFound('학원에 속한 계정만 학원 공간을 쓸 수 있어요.', 'no_academy');
-    return { user, session, app, aca: user.academy_id };
+    const aca = user.role === 'admin' && ctx.query.has('academy') ? svc.operatorAcademy(ctx) : user.academy_id;
+    if (!aca) throw notFound('학원에 속한 계정만 학원 공간을 쓸 수 있어요.', 'no_academy');
+    return { user, session, app, aca };
   }
 
   const current = (aca, appId, p) => db.get('SELECT * FROM shared_files WHERE academy_id = ? AND app_id = ? AND path = ?', aca, appId, p);

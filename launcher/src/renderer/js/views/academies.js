@@ -147,7 +147,8 @@ export class AcademySettingsView extends AcademyActions {
             h('div', { class: 'row' }, h('div', { class: 'grow' }, `계약 과목 · ${subjectText(a.subjects)}`), this.isAdmin ? controls.subjects : null),
             this.isAdmin ? null : h('p', { class: 'card-desc' }, '과목 변경은 운영자에게 문의하세요.')),
           h('section', { class: 'card' }, h('h2', { class: 'card-title' }, ic('drive', 18), '학원 공간'),
-            h('div', { class: 'row' }, h('div', { class: 'grow' }, `${bytes(a.usageBytes)} / ${a.quotaBytes ? bytes(a.quotaBytes) : '제한 없음'}`), this.isAdmin ? controls.quota : null)),
+            h('div', { class: 'row' }, h('div', { class: 'grow' }, `${bytes(a.usageBytes)} / ${a.quotaBytes ? bytes(a.quotaBytes) : '제한 없음'}`), this.isAdmin ? controls.quota : null),
+            this.isAdmin ? btn('자료 보기', { iconName: 'folder', onClick: () => this.go('academy-files', { academy: a.id }) }) : null),
           this.ai.el,
           this.isAdmin ? btn('학원 지우기', { iconName: 'trash', variant: 'danger', onClick: () => controls.del.click() }) : null));
       if (this.opts.section === 'academy-ai') this.ai.el.scrollIntoView({ block: 'start' });

@@ -176,6 +176,7 @@ function createCloudServer(config = loadConfig()) {
       params: {},
       auth: null,
     };
+    let status;
     try {
       if (ctx.path.startsWith('/api/')) svc.guardStudentSession(ctx);
       const m = router.match(req.method, url.pathname);
@@ -209,9 +210,20 @@ function createCloudServer(config = loadConfig()) {
       const result = await m.handler(ctx);
       if (result !== undefined && !res.headersSent) sendJson(res, 200, result);
     } catch (err) {
+      status = err instanceof HttpError ? err.status : 500;
       if (!(err instanceof HttpError)) log.error('[오류]', req.method, url.pathname, err);
       if (!res.headersSent) sendError(res, err);
       else res.destroy();
+    } finally {
+      if (ctx.operatorAcademy) {
+        try {
+          const detail = { status: status ?? res.statusCode };
+          if (ctx.query.has('path')) detail.file = ctx.query.get('path');
+          if (ctx.params.appId) detail.app = ctx.params.appId;
+          svc.audit(ctx, ['GET', 'HEAD'].includes(req.method) ? 'operator.view' : 'operator.change',
+            `${req.method} ${url.pathname}`, detail, ctx.operatorAcademy);
+        } catch (err) { log.error('[운영자 활동 기록]', err); }
+      }
     }
   }
 

@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('cloud', {
   inquiryPhotoGet: (id, photoId) => call('inquiry:photo', id, photoId),
   inquiryRefresh: () => call('inquiry:refresh'),
   inquiryViewing: (id) => call('inquiry:viewing', id),
+  academyFileDownload: (app, academy, file) => call('academy:fileDownload', app, academy, file),
+  academyFileReplace: (app, academy, file, baseRev) => call('academy:fileReplace', app, academy, file, baseRev),
   getState: () => call('state:get'),
   getReleaseNotes: () => call('releaseNotes:get'),
   onState: (cb) => on('state', cb),

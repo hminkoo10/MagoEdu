@@ -134,6 +134,8 @@ function register(router, deps) {
     const action = str(ctx.query.get('action'), 40);
     const where = [];
     const args = [];
+    const academy = intOr(ctx.query.get('academy'), null, 1);
+    if (academy) { where.push('academy_id = ?'); args.push(academy); }
     if (before) {
       where.push('id < ?');
       args.push(before);
