@@ -37,6 +37,7 @@ function loadConfig(env = process.env, overrides = {}) {
     port: intOr(env.PORT, 8470, 0, 65535),
     host: env.HOST || '0.0.0.0',
     dataDir: path.resolve(env.DATA_DIR || path.join(__dirname, '..', 'data')),
+    libraryDir: path.resolve(env.LIBRARY_DIR || '/var/lib/mago-library'),
     adminUsername: env.ADMIN_USERNAME || 'admin',
     adminPassword: env.ADMIN_PASSWORD || '',
     githubToken: env.GITHUB_TOKEN || '',
@@ -148,6 +149,7 @@ function createCloudServer(config = loadConfig()) {
   require('./routes/ci').register(router, deps);
   require('./routes/sync').register(router, deps);
   require('./routes/shared').register(router, deps);
+  require('./routes/library').register(router, deps);
   require('./routes/students').register(router, deps);
   require('./routes/schools').register(router, deps);
   deps.guardianKey = loadOrCreateSecret(path.join(config.dataDir, 'keys'), 'guardian.key');
@@ -176,6 +178,7 @@ function createCloudServer(config = loadConfig()) {
       params: {},
       auth: null,
     };
+    let status;
     try {
       svc.guardStudentSession(ctx);
       const m = router.match(req.method, url.pathname);
@@ -209,9 +212,20 @@ function createCloudServer(config = loadConfig()) {
       const result = await m.handler(ctx);
       if (result !== undefined && !res.headersSent) sendJson(res, 200, result);
     } catch (err) {
+      status = err instanceof HttpError ? err.status : 500;
       if (!(err instanceof HttpError)) log.error('[오류]', req.method, url.pathname, err);
       if (!res.headersSent) sendError(res, err);
       else res.destroy();
+    } finally {
+      if (ctx.operatorAcademy) {
+        try {
+          const detail = { status: status ?? res.statusCode };
+          if (ctx.query.has('path')) detail.file = ctx.query.get('path');
+          if (ctx.params.appId) detail.app = ctx.params.appId;
+          svc.audit(ctx, ['GET', 'HEAD'].includes(req.method) ? 'operator.view' : 'operator.change',
+            `${req.method} ${url.pathname}`, detail, ctx.operatorAcademy);
+        } catch (err) { log.error('[운영자 활동 기록]', err); }
+      }
     }
   }
 

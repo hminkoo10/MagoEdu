@@ -1,3 +1,81 @@
+# 마고 공용 책장
+
+모든 학원에 같은 시험 책을 배포하는 읽기 전용 공간이다. 학원 공간·개인 공간과 별개이며 DB 마이그레이션은 없다. 런처는 받아 두기만 하며 SDK에서 폴더와 지연 수신 요청을 쓴다.
+
+## 저장 형식과 운영
+
+`LIBRARY_DIR`로 루트를 정한다(기본 `/var/lib/mago-library`). 서버는 이 루트를 읽기만 하며, 올리기 명령은 별도 처리기 계정으로 실행한다. 서버 계정에는 공유 그룹의 읽기·탐색 권한을 준다. 새 폴더는 0750(위 폴더의 setgid 는 이어 받음), 파일은 0640으로 명시 설정한다. 기존 폴더의 소유권·권한은 바꾸지 않는다.
+
+처음 한 번, 루트와 그 아래 폴더를 처리기 계정 소유·서버 그룹·setgid 로 만들어 두면 새 파일이 서버 그룹으로 생긴다:
+
+```sh
+install -d -o <처리기 계정> -g <서버 그룹> -m 2750 <LIBRARY_DIR> <LIBRARY_DIR>/blobs <LIBRARY_DIR>/ohdapnote
+```
+
+```text
+<LIBRARY_DIR>/blobs/<sha256>
+<LIBRARY_DIR>/<appId>/index.json
+<LIBRARY_DIR>/<appId>/.lock
+```
+
+색인은 `{ format: 1, appId, seq, updatedAt, entries }`이며 항목은 `{ path, rev, seq, sha256, size, mtime, deleted, subject, book }`이다. `path`는 `books/<공용 책 id>/<파일 이름>`, `subject`는 계약 과목 키, `book`은 공용 책 id다. 시각은 Unix 밀리초. 삭제 항목은 `deleted: true, sha256: null, size: 0`으로 유지한다. seq는 앱별 단조 증가, rev는 경로별 증가다.
+
+서버는 색인의 mtime·크기가 달라질 때만 다시 읽는다. 없거나 잘못된 색인은 로그 한 줄과 빈 책장으로 처리한다. 게시자는 blob을 먼저 임시 파일 → rename으로 저장하고 마지막에 색인을 임시 파일 → rename으로 교체한다. 미사용 blob 정리는 하지 않는다.
+
+## 읽기 API와 권한
+
+로그인과 프로그램 사용 권한이 필요하다. 원장·선생님은 소속 학원의 `academies.subjects`만, 운영자는 학원 없이 모든 과목을 본다. 학생은 `403 library_forbidden`, 소속 학원 없는 원장·선생님은 `404 no_academy`다. 쓰기 API는 없다.
+
+```http
+GET /api/sync/ohdapnote/library?since=0
+Authorization: Bearer <로그인 토큰>
+
+GET /api/sync/ohdapnote/library/file?path=books%2Fexam-0123456789abcdef%2Fbook.json
+Authorization: Bearer <로그인 토큰>
+```
+
+목록은 `{ appId, seq, full, subjects, entries }`. `full`은 since=0일 때 true다. `subjects`는 계약 과목 목록(운영자는 색인에 존재하는 모든 과목), entries는 `seq > since`이면서 볼 수 있는 과목의 항목이다. 삭제 항목도 동일한 과목 필터를 적용한다. 항목은 기존 `publicEntry` 형태에 `subject`를 더한다. 전역 앱 seq는 보이지 않는 과목의 변경도 포함할 수 있다.
+
+파일은 GET·HEAD를 지원한다. 응답 헤더는 `x-rev`, `x-sha256`, `cache-control: no-store`. 없는 파일·삭제 파일은 404, 계약하지 않은 과목의 파일은 403, 잘못된 경로는 `400 invalid_path`다. 파일 내용 경로는 64자리 소문자 SHA-256으로만 정한다.
+
+## 올리기 명령
+
+저장소 루트에서 실행한다. 꺾쇠 안은 운영 환경에서 대체할 자리표시자다.
+
+```sh
+node server/scripts/library-publish.js --library <LIBRARY_DIR> --app ohdapnote <결과폴더1> <결과폴더2>
+node server/scripts/library-publish.js --library <LIBRARY_DIR> --app ohdapnote --remove exam-0123456789abcdef
+```
+
+각 결과 폴더는 오답노트 처리기(`--exam-out`)의 출력으로 `summary.json`과 `books/<원본 id>/`를 가진다. summary 는 `{ "exams": [{ "name": "...", "bookId": "<원본 id>", "done": true, "error": null, ... }] }`이며 `done: true` 이고 error 가 없는 책만 올린다. 깨진 summary·완료 책은 건너뛰고 나머지는 계속한다. 실패한 책의 기존 게시본은 보존한다. 심볼릭 링크 입력은 받지 않는다.
+
+공용 id는 `book.json.exam`의 `[exam, year, schoolYear, month, grade, subject, selection, form]` 순서 배열을 JSON 직렬화한 SHA-256 앞 16자에 `exam-`을 붙인다. 없는 선택 필드는 null로 통일한다. 필드는 문자열·숫자·null이며 exam·year·subject는 필수다. 같은 시험의 필드 값과 타입을 유지하면 원본 책 id와 무관하게 같은 공용 id가 된다. `book.json.id`와 `createdBy`만 공용 값으로 바꾸고 나머지 파일은 바이트 그대로 저장한다.
+
+같은 내용은 rev·seq·mtime을 유지한다. 바뀐 내용과 복원 파일만 rev+1·새 seq, 이번 책에 없는 이전 파일은 삭제 표시한다. `--remove`도 같은 삭제 표시 방식이며 재실행은 무변경이다.
+
+표준 출력은 한 줄 JSON: `{"books":1,"changed":3,"deleted":0,"seq":3}`. books는 성공적으로 처리한 책 수(무변경 포함), changed는 신규·변경·복원 파일 수, deleted는 새로 삭제 표시한 파일 수다. 진단은 표준 오류로만 출력한다.
+
+| 종료 코드 | 뜻 |
+| --- | --- |
+| 0 | 성공 |
+| 1 | 일부 결과 폴더·완료 책 실패, 나머지 게시 완료 |
+| 2 | 인자·저장소·색인 오류 또는 색인 저장 실패 |
+| 3 | 같은 앱의 `.lock`이 이미 존재함 |
+
+잠금에는 PID와 시작 시각을 남긴다. 오래되었다는 이유로 자동 제거하지 않는다. 운영자가 해당 앱의 게시 프로세스가 없음을 확인한 뒤 `.lock`만 수동 제거하고 재실행한다. 앱별 게시 잠금이며 다른 앱은 동시에 게시 가능하다.
+
+## B2 런처 연결 메모
+
+매니페스트에 `"library": { "include": ["**"], "exclude": [], "lazy": ["books/*/*.pdf"] }`를 둔다. shared와 같은 포함·제외·지연 수신 규칙이다. 학원 소속 원장·선생님 또는 운영자만 사용한다. 학생과 학원 없는 원장·선생님은 사용하지 않는다.
+
+앱별 계정 폴더에서 `academy/` 옆 `library/`에 받고 `.library-sync-state.json`에 상태를 둔다. `MAGOEDU_LIBRARY_DIR` → Node `session.libraryDir`, Python `session.library_dir`(미사용 시 빈 값). 개발 모드도 같은 환경 변수로 바꾼다. 공용 책 id를 개인·학원 책 id와 섞지 않는다.
+
+런처는 앱 실행 전과 일반 동기화 때 목록을 조회한다. 평소엔 `since=<마지막 seq>` 로 바뀐 것만 받고, 계약 과목 축소를 반영하도록 6시간에 한 번(처음 포함) `since=0` 전체 목록으로 맞춘다(동기화는 자주 돌고, 다 찬 목록은 1MB 남짓). 목록에서 빠진 파일·삭제 파일·서버에 없는 로컬 파일은 지우고 로컬 수정은 보관 없이 서버 것으로 되돌린다. 올리기·서버 삭제 요청은 보내지 않으며 drop도 무시한다. 403·404는 로그 한 줄로 건너뛰고 수신 실패도 앱 실행을 막지 않는다. 공용 게시 SSE 알림은 없다.
+
+Node에서 `await cloud.requestLibraryFiles(session, ['books/<공용 책 id>/problem-1.pdf'])` → `{ ok, missing, error? }`. 처음에는 lazy 외 파일만 받고, 한 번 받은 lazy 파일은 계속 맞춘다. 직접 요청하려면 `requests/<rid>.json`에 `{ "library": true, "paths": ["books/<공용 책 id>/problem-1.pdf"] }`를 임시 파일 → rename으로 쓴다. 같은 폴더 `<rid>.done.json`으로 `{ ok, missing, error? }` 답을 받고 읽은 답은 지운다. Python SDK는 폴더 값만 제공한다.
+
+처음 받는 양은 include/lazy 규칙에 달려 있다. 큰 원본 PDF는 lazy로 두고 열 때 요청한다. 화면(C 단계)은 이 폴더를 읽기 전용으로 쓰며 로컬 편집 결과는 개인·학원 공간에 따로 저장한다.
+
 # CI 릴리스 알림
 
 기본 배포 경로는 **GitHub Actions → 서버 알림**이다. `GITHUB_TOKEN`을 비우면 서버는 GitHub 릴리스 API를 폴링하지 않는다. DB와 `data/github-cache.json`에 저장된 버전은 재시작 후에도 유지된다. 로컬 `packages/` 갱신은 계속 동작한다. 토큰을 설정하면 기존 API 조회가 대체 경로로 활성화된다.

@@ -12,6 +12,7 @@ import { ServerView } from './views/server.js';
 import { SettingsView } from './views/settings.js';
 import { updateInstallButton } from './update-install.js';
 import { StudentsView } from './views/students.js';
+import { AcademyFilesView } from './views/academy-files.js';
 import { AcademySettingsView, AcademiesView } from './views/academies.js';
 import { StudentNotesView, StudentNaviView, StudentJoinView } from './views/student.js';
 
@@ -88,6 +89,7 @@ const VIEWS = {
   people: PeopleView,
   students: StudentsView,
   'academy-settings': AcademySettingsView,
+  'academy-files': AcademyFilesView,
   academies: AcademiesView,
   'apps-admin': AppsAdminView,
   audit: AuditView,
@@ -236,7 +238,7 @@ class Shell {
   }
 
   markNav(animate = true) {
-    const el = this.navEls.get(this.current) || this.navEls.get(this.current === 'academy-settings' ? 'academies' : this.current === 'people' ? 'teachers' : 'home');
+    const el = this.navEls.get(this.current) || this.navEls.get(['academy-settings', 'academy-files'].includes(this.current) ? 'academies' : this.current === 'people' ? 'teachers' : 'home');
     for (const [, n] of this.navEls) n.classList.toggle('active', n === el);
     this.topTitle.textContent = el?.querySelector('span')?.textContent || '';
     if (!el) return;
@@ -247,7 +249,7 @@ class Shell {
 
   go(id, opts = {}) {
     const old = id;
-    if (id === 'academy-settings' && !opts.academy && store.state.web) opts = { ...opts, academy: new URLSearchParams(location.hash.split('?')[1] || '').get('academy') };
+    if (['academy-settings', 'academy-files'].includes(id) && !opts.academy && store.state.web) opts = { ...opts, academy: new URLSearchParams(location.hash.split('?')[1] || '').get('academy') };
     id = redirectView(id, store.state.user);
     if (old === 'account' && id === 'settings') opts = { ...opts, section: 'account' };
     if (old === 'codes') opts = { ...opts, section: 'codes' };
@@ -266,15 +268,16 @@ class Shell {
     } else if (id === 'my-notes' || id === 'student-navi') id = 'home';
     if (!VIEWS[id]) id = 'home';
     if (id === 'people' && store.state.user.role === 'director') id = 'teachers';
+    if (id === 'academy-files' && user.role !== 'admin') id = 'home';
     if (id === 'academies' && user.role !== 'admin') id = 'home';
     if (id === 'academy-settings' && !(user.role === 'admin' || (user.role === 'director' && user.academy))) id = 'home';
-    const same = id === this.current && this.view && (id !== 'academy-settings' || String(opts.academy) === String(this.currentOpts?.academy));
+    const same = id === this.current && this.view && (!['academy-settings', 'academy-files'].includes(id) || String(opts.academy) === String(this.currentOpts?.academy));
     this.currentOpts = opts;
     this.current = id;
     this.toggleNav(false);
     if (store.state.web && (!opts.fromHistory || old !== id)) {
       // 웹: 주소에 화면을 남겨 뒤로 가기가 되게
-      const hash = `#/${id}${id === 'academy-settings' && opts.academy ? `?academy=${encodeURIComponent(opts.academy)}` : ''}`;
+      const hash = `#/${id}${['academy-settings', 'academy-files'].includes(id) && opts.academy ? `?academy=${encodeURIComponent(opts.academy)}` : ''}`;
       if (location.hash !== hash) {
         if (opts.replace || opts.fromHistory) history.replaceState(null, '', hash);
         else history.pushState(null, '', hash);
@@ -723,7 +726,7 @@ function render(force = false) {
 function hashView(user) {
   const m = /^#\/([\w-]+)(?:\?academy=\d+)?$/.exec(location.hash);
   const id = m && redirectView(m[1], user);
-  return id && (navFor(user).some((it) => it.id === id) || (id === 'academy-settings' && user.role === 'admin')) ? m[1] : null;
+  return id && (navFor(user).some((it) => it.id === id) || (['academy-settings', 'academy-files'].includes(id) && user.role === 'admin')) ? m[1] : null;
 }
 
 async function start() {

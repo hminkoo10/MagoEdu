@@ -468,6 +468,7 @@ GET  /api/apps/<id>/download?version=…&dl=…     (로그인 정보 없이, 10
 3. 실시간 알림을 열어 두고, `change` 가 오면 `since` 로 바뀐 것만 받아요.
 4. 학원 공간(4-1번): `GET /api/sync/<앱 ID>/academy?since=…`, `GET|PUT|DELETE /api/sync/<앱 ID>/academy/file?path=…&baseRev=…`.
    규칙은 같고, 고칠 권한이 없으면 403 `not_owner`, 학원이 없는 계정은 404 `no_academy`. 목록에는 볼 수 있는 파일만 있고 파일마다 `updatedBy` 가 붙어요.
+   운영자는 `?academy=<학원 ID>`로 그 학원 공간을 원장과 같은 규칙으로 쓰고, 그때마다 활동 기록에 남아요.
 
 ### 서버 실시간 알림
 

@@ -15,6 +15,8 @@
 //         .sync-state.json
 //         academy\                          학원 공간 (같은 학원 사람들이 함께 쓰는 파일, 매니페스트에 shared 가 있을 때)
 //         conflicts\academy\  .academy-sync-state.json   학원 공간에서 밀려난 파일, 맞춘 상태
+//         library\                          마고 공용 책장 (받기 전용)
+//         .library-sync-state.json            공용 책장 맞춤 상태
 //         requests\                         프로그램이 '이 파일 받아 줘'를 적는 곳 (학원 공간의 lazy 파일)
 //
 //   %LOCALAPPDATA%\MagoEduCloud\
@@ -61,6 +63,8 @@ function makePaths({ userData, localData }) {
             academy: path.join(a, 'academy'),
             academyConflicts: path.join(a, 'conflicts', 'academy'),
             academyState: path.join(a, '.academy-sync-state.json'),
+            library: path.join(a, 'library'),
+            libraryState: path.join(a, '.library-sync-state.json'),
             requests: path.join(a, 'requests'),
             academyInfo: path.join(a, 'academy-info.json'),
           };

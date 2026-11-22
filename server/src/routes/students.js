@@ -14,7 +14,7 @@
 // 원장·선생님은 자기 학원, 운영자는 ?academy=<학원 ID>. 웹 프로그램 전용 세션도 쓸 수 있다 (AI 설정 고치기는 빼고).
 
 const { readJson } = require('../http');
-const { forbidden, notFound, bad, intOr } = require('../util');
+const { forbidden, notFound, bad } = require('../util');
 const { publicAi } = require('./ai-relay');
 
 function register(router, deps) {
@@ -25,9 +25,7 @@ function register(router, deps) {
     const { user, session } = svc.authenticate(ctx, { app: true });
     let aca = user.academy_id;
     if (user.role === 'admin') {
-      aca = intOr(ctx.query.get('academy'), null, 1);
-      if (!aca) throw bad('학원을 골라 주세요.', 'academy_required');
-      if (!db.get('SELECT 1 FROM academies WHERE id = ?', aca)) throw notFound('학원을 찾을 수 없어요.');
+      aca = svc.operatorAcademy(ctx);
     }
     if (!aca) throw notFound('학원에 속한 계정만 학생 명단을 쓸 수 있어요.', 'no_academy');
     return { user, session, aca };

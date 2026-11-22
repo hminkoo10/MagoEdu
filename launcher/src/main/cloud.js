@@ -731,10 +731,41 @@ class Cloud extends EventEmitter {
     });
   }
 
+  _usesLibrary(id) {
+    return !!(this.installed[id]?.manifest.library && this.user &&
+      (this.user.role === 'admin' || (['director', 'teacher'].includes(this.user.role) && this.user.academy)));
+  }
+
+  _libraryEngine(id) {
+    if (!this._usesLibrary(id)) return null;
+    const dirs = this.paths.account(this.user.id).app(id);
+    return new SyncEngine({
+      api: this.api, appId: id, base: `/api/sync/${encodeURIComponent(id)}/library`,
+      readOnly: true, dirs: { sync: dirs.library, state: dirs.libraryState },
+      rules: compileRules(this.installed[id].manifest.library), log: this.log,
+    });
+  }
+
+  async _syncLibrary(id, onProgress) {
+    const engine = this._libraryEngine(id);
+    if (!engine) return null;
+    const dir = this.paths.account(this.user.id).app(id).requests;
+    const reqs = (await readRequests(dir)).filter((r) => !r.op && r.body?.library === true);
+    try {
+      const r = await engine.run({ onProgress, want: new Set(reqs.flatMap((q) => q.paths)) });
+      await answerRequests(dir, reqs, r.missing);
+      return r;
+    } catch (err) {
+      await answerRequests(dir, reqs, null, err.message).catch(() => {});
+      this.log.warn?.(`[공용 책장] ${id}: ${[403, 404].includes(err.status) ? '건너뜀' : err.message}`);
+      return null; // 공용 책장을 못 받아도 프로그램은 켠다.
+    }
+  }
+
   /** 프로그램이 requests/ 로 부탁할 수 있는지: 학원 공간·학생 명단·웹 로그인 코드 중 하나라도 쓰면 */
   _usesRequests(id) {
     const m = this.installed[id]?.manifest;
-    return !!m && (this._usesAcademy(id) || !!(m.academyInfo && this.user?.academy) || !!m.sso);
+    return !!m && (this._usesAcademy(id) || this._usesLibrary(id) || !!(m.academyInfo && this.user?.academy) || !!m.sso);
   }
 
   /**
@@ -746,7 +777,7 @@ class Cloud extends EventEmitter {
     const engine = this._academyEngine(id);
     if (!engine) return null;
     const dir = this.paths.account(this.user.id).app(id).requests;
-    const reqs = (await readRequests(dir)).filter((r) => !r.op);
+    const reqs = (await readRequests(dir)).filter((r) => !r.op && r.body?.library !== true);
     try {
       const r = await engine.run({ onProgress, want: new Set(reqs.flatMap((q) => q.paths)), drop: new Set(reqs.flatMap((q) => q.remove)) });
       await answerRequests(dir, reqs, r.missing);
@@ -787,12 +818,13 @@ class Cloud extends EventEmitter {
             this.emitState();
           }
         };
+        const library = await this._syncLibrary(id, onProgress);
         const r = await engine.run({ onProgress });
         const a = await this._syncAcademy(id, onProgress);
         this._online(true);
         const moved = (x) => x.uploaded + x.downloaded + x.deletedLocal + x.deletedRemote;
         const conflicts = [...r.conflicts, ...(a ? a.conflicts : [])];
-        const errors = [...r.errors, ...(a ? a.errors : [])];
+        const errors = [...r.errors, ...(a ? a.errors : []), ...(library?.errors || [])];
         this.syncInfo[id] = {
           status: errors.length ? 'partial' : 'ok',
           at: r.at,
@@ -800,7 +832,7 @@ class Cloud extends EventEmitter {
           conflicts: conflicts.length ? conflicts : prev.conflicts || [],
           quotaExceeded: r.quotaExceeded || !!a?.quotaExceeded,
           errors: errors.slice(0, 5),
-          moved: moved(r) + (a ? moved(a) : 0),
+          moved: moved(r) + (a ? moved(a) : 0) + (library ? moved(library) : 0),
           seq: r.seq,
           academySeq: a ? a.seq : null, // 학원 공간은 따로 (실시간 알림 scope: 'academy')
         };
@@ -1186,8 +1218,10 @@ class Cloud extends EventEmitter {
         await fsp.mkdir(dirs.sync, { recursive: true });
         await fsp.mkdir(dirs.local, { recursive: true });
         const academy = this._usesAcademy(id);
+        const library = this._usesLibrary(id);
         const requests = this._usesRequests(id);
         const manifest = this.installed[id].manifest;
+        if (library) await fsp.mkdir(dirs.library, { recursive: true });
         if (academy) await fsp.mkdir(dirs.academy, { recursive: true });
         if (requests) {
           await fsp.mkdir(dirs.requests, { recursive: true });
@@ -1209,6 +1243,7 @@ class Cloud extends EventEmitter {
           user: this.user,
           appDirs: dirs,
           academy,
+          library,
           requests,
           academyInfo,
           ssoCode,

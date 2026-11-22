@@ -3,7 +3,7 @@
 // 마고에듀 통합 클라우드 - 구현민 개발
 // Electron 메인 프로세스: 창, 트레이, 자동 실행, 화면과 주고받는 기능(IPC)
 
-const { Notification, app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage, clipboard, safeStorage, powerMonitor, screen } = require('electron');
+const { dialog, Notification, app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage, clipboard, safeStorage, powerMonitor, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const log = require('electron-log/main');
@@ -268,6 +268,26 @@ function handle(channel, fn) {
 }
 
 function registerIpc() {
+  handle('academy:fileDownload', async (appId, academy, file) => {
+    if (cloud.user?.role !== 'admin') throw new Error('운영자만 쓸 수 있어요.');
+    if (!Number.isSafeInteger(Number(academy)) || Number(academy) < 1 || typeof file !== 'string' || typeof appId !== 'string') throw new Error('잘못된 요청이에요.');
+    const picked = await dialog.showSaveDialog(win, { defaultPath: path.basename(file) });
+    if (picked.canceled || !picked.filePath) return false;
+    await cloud.api.download(`/api/sync/${encodeURIComponent(appId)}/academy/file?academy=${encodeURIComponent(academy)}&path=${encodeURIComponent(file)}`, picked.filePath);
+    return true;
+  });
+  handle('academy:fileReplace', async (appId, academy, file, baseRev) => {
+    if (cloud.user?.role !== 'admin') throw new Error('운영자만 쓸 수 있어요.');
+    if (!Number.isSafeInteger(Number(academy)) || Number(academy) < 1 || typeof file !== 'string' || typeof appId !== 'string' || !Number.isSafeInteger(baseRev) || baseRev < 0) throw new Error('잘못된 요청이에요.');
+    const picked = await dialog.showOpenDialog(win, { properties: ['openFile'] });
+    if (picked.canceled || !picked.filePaths?.length) return false;
+    const confirm = await dialog.showMessageBox(win, { type: 'question', title: '파일 바꾸기', message: `${file}을(를) 고른 파일로 바꿀까요? 이 학원 PC에도 바뀐 파일이 내려가요.`, buttons: ['취소', '바꾸기'], defaultId: 0, cancelId: 0 });
+    if (confirm.response !== 1) return false;
+    const local = picked.filePaths[0];
+    const sha256 = await require('../core/fsutil').sha256File(local);
+    await cloud.api.upload(`/api/sync/${encodeURIComponent(appId)}/academy/file?academy=${encodeURIComponent(academy)}&path=${encodeURIComponent(file)}&baseRev=${baseRev}`, local, { sha256 });
+    return true;
+  });
   handle('inquiry:refresh', () => cloud.refreshInquiries());
   handle('inquiry:viewing', id => { cloud.viewingInquiry = Number(id) || null; });
   handle('inquiry:upload', async bytes => {
