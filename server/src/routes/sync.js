@@ -103,18 +103,20 @@ function register(router, deps) {
       user.id,
     );
     // 학원 공간 (같은 학원 사람들이 함께 쓰는 파일, 예: 오답노트 교재) — 계정 용량과 따로 센다
+    //   운영자는 ?academy=<학원 ID> 로 그 학원 공간을 본다 (학원 자료 화면)
     let academy = null;
-    if (user.academy_id) {
+    const aca = user.role === 'admin' && ctx.query.has('academy') ? svc.operatorAcademy(ctx) : user.academy_id;
+    if (aca) {
       const shared = db.all(
         `SELECT app_id, COUNT(*) AS files, COALESCE(SUM(size), 0) AS bytes, MAX(updated_at) AS last_change
          FROM shared_files WHERE academy_id = ? AND deleted = 0 GROUP BY app_id`,
-        user.academy_id,
+        aca,
       );
       academy = {
-        id: user.academy_id,
-        name: svc.academyName(user.academy_id),
-        usageBytes: svc.academyUsageBytes(user.academy_id),
-        quotaBytes: svc.academyQuotaBytes(user.academy_id),
+        id: aca,
+        name: svc.academyName(aca),
+        usageBytes: svc.academyUsageBytes(aca),
+        quotaBytes: svc.academyQuotaBytes(aca),
         apps: shared.map((r) => ({ appId: r.app_id, files: r.files, bytes: r.bytes, lastChange: r.last_change })),
       };
     }

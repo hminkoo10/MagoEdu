@@ -1,7 +1,11 @@
 // 활동 기록 (운영자): 누가 언제 계정을 만들고 지웠는지, 코드를 만들었는지 등
 import { errorText, h, ic, btn, busy, input, select, pill, date, bytes, reveal, put, subjectText } from '../ui.js';
 
+import { academyPicker } from './students.js';
+
 const LABEL = {
+  'operator.view': ['운영자 열람', 'grey'],
+  'operator.change': ['운영자 변경', 'yellow'],
   'teacher.invite.create': ['선생님 초대 만듦', 'green'],
   'teacher.invite.renew': ['선생님 초대 다시 만듦', ''],
   'teacher.invite.revoke': ['선생님 초대 취소', 'red'],
@@ -40,6 +44,7 @@ const LABEL = {
 
 function detailText(e) {
   const d = e.detail;
+  if (e.action.startsWith('operator.')) return [d?.file, d?.status >= 200 && d?.status < 300 ? '' : `실패 ${d?.status}`].filter(Boolean).join(' · ');
   if (!d) return '';
   if (e.action === 'academy.subjects') return `${subjectText(d.subjects)} (전: ${subjectText(d.before)})`;
   if (e.action === 'storage.cold_evict' || e.action === 'storage.cold_run') return `${d.groups || 0}묶음 · 파일 ${d.files || 0}개 · ${bytes(d.bytes || 0)}`;
@@ -89,11 +94,13 @@ export class AuditView {
       this.action = kind.value;
       this.load();
     });
+    const picker = academyPicker(cloud, (id) => { this.academy = id; this.load(); }, { all: true });
+    picker.ready.catch(() => {});
     this.el = h(
       'div',
       {},
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '활동 기록'), h('div', { class: 'subtitle' }, ''))),
-      h('div', { class: 'toolbar' }, kind, search),
+      h('div', { class: 'toolbar' }, picker.el, kind, search),
       this.table,
       h('div', { style: { display: 'flex', justifyContent: 'center', marginTop: '14px' } }, this.moreBtn),
     );
@@ -102,6 +109,7 @@ export class AuditView {
 
   async load(more = false) {
     const qs = new URLSearchParams({ limit: '100' });
+    if (this.academy) qs.set('academy', this.academy);
     if (this.q) qs.set('q', this.q);
     if (this.action) qs.set('action', this.action);
     if (more && this.entries.length) qs.set('before', String(this.entries[this.entries.length - 1].id));

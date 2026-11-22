@@ -4,7 +4,7 @@
 
 const crypto = require('node:crypto');
 const { readJson } = require('../http');
-const { DAY, bad, notFound, intOr, normalizeUsername, validatePassword, randomPassword, randomToken, sha256Hex } = require('../util');
+const { DAY, bad, notFound, normalizeUsername, validatePassword, randomPassword, randomToken, sha256Hex } = require('../util');
 const { hashPassword } = require('../security');
 
 function register(router, deps) {
@@ -12,7 +12,13 @@ function register(router, deps) {
 
   function who(ctx, codeOnly = false) {
     const user = svc.requireRole(ctx, ...(codeOnly ? ['admin', 'director'] : ['admin', 'director', 'teacher']));
-    const aca = user.role === 'admin' ? intOr(ctx.query.get('academy'), null, 1) : user.academy_id;
+    let aca = user.academy_id;
+    if (user.role === 'admin') {
+      try { aca = svc.operatorAcademy(ctx); } catch (err) {
+        if (err.code === 'academy_required') throw bad('학원을 골라야 해요.', 'academy_required');
+        throw err;
+      }
+    }
     if (!aca) throw bad('학원을 골라야 해요.', 'academy_required');
     const academy = db.get('SELECT id, name, code FROM academies WHERE id = ?', aca);
     if (!academy) throw notFound('학원을 찾을 수 없어요.');

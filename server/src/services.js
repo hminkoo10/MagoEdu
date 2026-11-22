@@ -2,7 +2,7 @@
 
 // 여러 라우트가 함께 쓰는 기능: 설정, 활동 기록, 로그인 세션, 계정 도우미
 
-const { DAY, HttpError, forbidden, notFound, randomToken, sha256Hex, jsonParse, intOr, parseSubjects } = require('./util');
+const { DAY, HttpError, bad, forbidden, notFound, randomToken, sha256Hex, jsonParse, intOr, parseSubjects } = require('./util');
 
 const DEFAULT_SETTINGS = {
   defaultQuotaMb: 2048, // 계정마다 서버에 둘 수 있는 기본 용량
@@ -66,6 +66,14 @@ function createServices({ db, config, log }) {
   }
 
   // ---------------- 계정 ----------------
+  function operatorAcademy(ctx) {
+    const aca = intOr(ctx.query.get('academy'), null, 1);
+    if (!aca) throw bad('학원을 골라 주세요.', 'academy_required');
+    if (!db.get('SELECT 1 FROM academies WHERE id = ?', aca)) throw notFound('학원을 찾을 수 없어요.');
+    ctx.operatorAcademy = aca;
+    return aca;
+  }
+
   function academyName(id) {
     if (!id) return null;
     return db.get('SELECT name FROM academies WHERE id = ?', id)?.name || null;
@@ -311,6 +319,7 @@ function createServices({ db, config, log }) {
     meta,
     setMeta,
     audit,
+    operatorAcademy,
     academyName,
     usageBytes,
     quotaBytes,
