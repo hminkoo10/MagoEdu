@@ -287,3 +287,31 @@ test('목록 동의 포함과 학원·담당별 수집동의 요약', async (t) 
   ok(await s.rq('DELETE', '/api/students/' + unassigned.id, { token: s.dir }));
   assert.equal((await summary(s.dir)).length, 1);
 });
+
+test('운영자: 고른 학원의 보호자·동의를 보고 고치면 활동 기록에 학원과 함께 남음', async (t) => {
+  const s = await setup(t);
+  const A = s.d.academy.id;
+  const B = s.db.get("SELECT academy_id FROM users WHERE username = 'director-b'").academy_id;
+  const rows = () => s.db.all("SELECT * FROM audit WHERE action LIKE 'operator.%' ORDER BY id");
+  for (const q of ['', '?academy=abc', '?academy=99999']) {
+    const r = await s.rq('GET', s.root + q, { token: s.admin });
+    assert.equal(r.status, 400, q);
+    assert.equal(r.data.error.code, 'academy_required');
+  }
+  assert.equal(rows().length, 0, '학원이 정해지지 않으면 운영자 기록 없음');
+  assert.equal(ok(await s.rq('GET', `${s.root}?academy=${A}`, { token: s.admin })).guardians[0].id, s.g.id);
+  assert.equal((await s.rq('GET', `${s.root}?academy=${B}`, { token: s.admin })).status, 404, '다른 학원으로는 그 학생이 없음');
+  ok(await s.rq('PATCH', `${s.root}/${s.g.id}?academy=${A}`, { token: s.admin, body: { relation: '아버지', rev: s.g.rev } }));
+  ok(await s.rq('GET', `/api/guardians/consent-summary?academy=${A}&q=${encodeURIComponent('자녀')}`, { token: s.admin }));
+  const view = (r) => ({ action: r.action, academy: r.academy_id, target: r.target, status: JSON.parse(r.detail).status });
+  assert.deepEqual(rows().map(view), [
+    { action: 'operator.view', academy: A, target: `GET ${s.root}`, status: 200 },
+    { action: 'operator.view', academy: B, target: `GET ${s.root}`, status: 404 },
+    { action: 'operator.change', academy: A, target: `PATCH ${s.root}/${s.g.id}`, status: 200 },
+    { action: 'operator.view', academy: A, target: 'GET /api/guardians/consent-summary', status: 200 },
+  ]);
+  assert.ok(rows().every((r) => !r.detail.includes('자녀')), '검색어 같은 다른 query 값은 안 남김');
+  const dirRows = rows().length;
+  ok(await s.rq('GET', `${s.root}?academy=${B}`, { token: s.dir }));
+  assert.equal(rows().length, dirRows, '원장은 ?academy= 를 무시하고 운영자 기록도 없음');
+});

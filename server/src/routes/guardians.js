@@ -13,7 +13,6 @@ const {
   validateName,
   randomToken,
   sha256Hex,
-  intOr,
 } = require('../util');
 const { hashPassword, seal, unseal } = require('../security');
 const CONSENT_VERSION = '2026-11-09';
@@ -36,7 +35,16 @@ function register(router, deps) {
   function who(ctx, write = false) {
     const { user } = svc.authenticate(ctx, { app: true });
     if (!(write ? ['admin', 'director'] : ['admin', 'director', 'teacher']).includes(user.role)) throw forbidden();
-    const aca = user.role === 'admin' ? intOr(ctx.query.get('academy'), null, 1) : user.academy_id;
+    let aca = user.academy_id;
+    if (user.role === 'admin') {
+      // 운영자는 svc.operatorAcademy 로 고른 학원 (활동 기록에 남음). 이 API 는 없는 학원도 400 으로 알린다
+      try {
+        aca = svc.operatorAcademy(ctx);
+      } catch (err) {
+        if (err instanceof HttpError && [400, 404].includes(err.status)) throw bad('학원을 골라 주세요.', 'academy_required');
+        throw err;
+      }
+    }
     if (!aca || !db.get('SELECT 1 FROM academies WHERE id = ?', aca)) throw bad('학원을 골라 주세요.', 'academy_required');
     return { user, aca };
   }
