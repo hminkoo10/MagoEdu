@@ -4,6 +4,7 @@ import { errorText, h, ic, btn, busy, input, select, pill, date, bytes, reveal, 
 import { academyPicker } from './students.js';
 
 const LABEL = {
+  'operator.open': ['운영자 보기', 'grey'],
   'operator.view': ['운영자 열람', 'grey'],
   'operator.change': ['운영자 변경', 'yellow'],
   'teacher.invite.create': ['선생님 초대 만듦', 'green'],
@@ -44,6 +45,7 @@ const LABEL = {
 
 function detailText(e) {
   const d = e.detail;
+  if (e.action === 'operator.open') return '보기 전용으로 열기';
   if (e.action.startsWith('operator.')) return [d?.file, d?.status >= 200 && d?.status < 300 ? '' : `실패 ${d?.status}`].filter(Boolean).join(' · ');
   if (!d) return '';
   if (e.action === 'academy.subjects') return `${subjectText(d.subjects)} (전: ${subjectText(d.before)})`;

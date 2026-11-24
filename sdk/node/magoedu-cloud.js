@@ -98,6 +98,7 @@ function check(appId, { packaged = true, env = process.env } = {}) {
     const s = {
       appId,
       dev: true,
+      viewOnly: env.MAGOEDU_VIEW_ONLY === '1',
       user: {
         id: env.MAGOEDU_USER_ID || 'dev',
         username: env.MAGOEDU_USERNAME || 'dev',
@@ -132,8 +133,12 @@ function check(appId, { packaged = true, env = process.env } = {}) {
     return null;
   }
   const payload = verifyTicket(env.MAGOEDU_TICKET, keys, { appId });
-  if (!payload) {
+  if (!payload || !['app', 'view'].includes(payload.typ)) {
     lastReason = '실행 허가가 확인되지 않았어요. 통합 클라우드에서 다시 켜 주세요.\n(인터넷 없이 쓸 수 있는 기간이 지났다면 인터넷에 연결해 주세요.)';
+    return null;
+  }
+  if (payload.typ === 'view' && String(payload.aca ?? '') !== String(env.MAGOEDU_ACADEMY_ID || '')) {
+    lastReason = '고른 학원이 실행 허가증과 달라요. 통합 클라우드에서 다시 켜 주세요.';
     return null;
   }
   if (!env.MAGOEDU_DATA_DIR || !env.MAGOEDU_LOCAL_DIR) {
@@ -143,6 +148,7 @@ function check(appId, { packaged = true, env = process.env } = {}) {
   const s = {
     appId,
     dev: false,
+    viewOnly: payload.typ === 'view',
     user: { id: payload.sub, username: payload.usr, name: payload.nam, role: payload.rol, academy: env.MAGOEDU_ACADEMY || '' },
     dataDir: env.MAGOEDU_DATA_DIR,
     localDir: env.MAGOEDU_LOCAL_DIR,

@@ -51,6 +51,13 @@ function makePaths({ userData, localData }) {
         root,
         tickets: path.join(root, 'tickets.json'),
         settings: path.join(root, 'settings.json'),
+        view(academyId, appId) {
+          const viewRoot = path.join(root, 'view');
+          const a = path.join(viewRoot, safeId(academyId), safeId(appId));
+          return { root: a, viewRoot, sync: path.join(a, 'sync'), local: path.join(a, 'local'),
+            academy: path.join(a, 'academy'), requests: path.join(a, 'requests'),
+            academyInfo: path.join(a, 'academy-info.json'), academyState: path.join(a, '.academy-sync-state.json') };
+        },
         app(appId) {
           const a = path.join(root, safeId(appId));
           return {

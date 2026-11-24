@@ -36,6 +36,9 @@ function register(router, deps) {
     if (!app) throw notFound('프로그램을 찾을 수 없어요.');
     if (!svc.canUseApp(user, app.id)) throw forbidden('이 프로그램을 쓸 권한이 없어요.');
     const aca = user.role === 'admin' && ctx.query.has('academy') ? svc.operatorAcademy(ctx) : user.academy_id;
+    if (user.role === 'admin' && ctx.query.has('academy') && !['GET', 'HEAD'].includes(ctx.req.method)) {
+      throw forbidden('운영자는 학원 자료를 보기만 할 수 있어요.', 'operator_read_only');
+    }
     if (!aca) throw notFound('학원에 속한 계정만 학원 공간을 쓸 수 있어요.', 'no_academy');
     return { user, session, app, aca };
   }

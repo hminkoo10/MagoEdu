@@ -69,16 +69,14 @@ test('운영자: 학원을 고르면 그 학원 자료를 원장과 같은 범�
     assert.equal(h.headers.get('x-rev'), '1');
   });
 
-  await t.test('학원 공간 올리기·바꾸기·지우기 (원장 규칙)', async () => {
-    const r = ok(await c.put(admin, 'books/b1/book.json', '{"name":"운영자가 고침"}', 1, A));
-    assert.equal(r.entry.rev, 2);
-    assert.equal((await c.get(c.t1, 'books/b1/book.json')).data.toString(), '{"name":"운영자가 고침"}', '그 학원 사람에게 보임');
-    ok(await c.put(admin, 'notice.json', '{"top":1}', 0, A));
-    ok(await c.put(admin, `students/${c.student.id}/notes/n2.json`, '{}', 0, A));
-    error(await c.put(admin, `members/${c.u1.id}/x.json`, '{}', 1, A), 403, 'not_owner');
-    ok(await c.del(admin, 'notice.json', 1, A));
-    assert.ok(!c.paths(await c.list(c.dirA)).includes('notice.json'));
-    assert.deepEqual(c.paths(await c.list(c.dirB)), ['books/bb/book.json'], 'B 학원은 그대로');
+  await t.test('학원 공간 PUT·DELETE 차단, POST·PATCH 미지원, 원본 유지', async () => {
+    error(await c.put(admin, 'books/b1/book.json', '{}', 1, A), 403, 'operator_read_only');
+    error(await c.del(admin, 'books/b1/book.json', 1, A), 403, 'operator_read_only');
+    for (const method of ['POST', 'PATCH']) {
+      error(await rq(method, `/api/sync/ohdapnote/academy/file?path=books/b1/book.json&academy=${A}`, { token: admin, body: {} }), 405);
+    }
+    assert.equal((await c.get(c.t1, 'books/b1/book.json')).data.toString(), '{"name":"A교재"}');
+    assert.equal((await c.get(admin, 'books/b1/book.json', A)).headers.get('x-rev'), '1');
   });
 
   await t.test('학원 공간 요약: 프로그램별 자료 수', async () => {
@@ -140,9 +138,9 @@ test('감사: 운영자 열람·변경마다 학원 ID·상태가 남고, 다른
   const { rq, admin, A, B } = c;
   ok(await c.list(admin, A));
   ok(await c.get(admin, 'books/b1/book.json', A));
-  ok(await c.put(admin, 'books/b1/book.json', '{"v":2}', 1, A));
-  error(await c.put(admin, `members/${c.u1.id}/x.json`, '{}', 1, A), 403, 'not_owner');
-  ok(await c.del(admin, 'books/b1/book.json', 2, A));
+  error(await c.put(admin, 'books/b1/book.json', '{"v":2}', 1, A), 403, 'operator_read_only');
+  error(await c.put(admin, `members/${c.u1.id}/x.json`, '{}', 1, A), 403, 'operator_read_only');
+  error(await c.del(admin, 'books/b1/book.json', 1, A), 403, 'operator_read_only');
   ok(await rq('GET', `/api/students?academy=${A}&q=${encodeURIComponent('홍길동')}`, { token: admin }));
   ok(await c.list(admin, B));
 
@@ -151,9 +149,9 @@ test('감사: 운영자 열람·변경마다 학원 ID·상태가 남고, 다른
   assert.deepEqual(rows.map(view), [
     { action: 'operator.view', academy: A, target: 'GET /api/sync/ohdapnote/academy', detail: { status: 200, app: 'ohdapnote' } },
     { action: 'operator.view', academy: A, target: 'GET /api/sync/ohdapnote/academy/file', detail: { status: 200, file: 'books/b1/book.json', app: 'ohdapnote' } },
-    { action: 'operator.change', academy: A, target: 'PUT /api/sync/ohdapnote/academy/file', detail: { status: 200, file: 'books/b1/book.json', app: 'ohdapnote' } },
+    { action: 'operator.change', academy: A, target: 'PUT /api/sync/ohdapnote/academy/file', detail: { status: 403, file: 'books/b1/book.json', app: 'ohdapnote' } },
     { action: 'operator.change', academy: A, target: 'PUT /api/sync/ohdapnote/academy/file', detail: { status: 403, file: `members/${c.u1.id}/x.json`, app: 'ohdapnote' } },
-    { action: 'operator.change', academy: A, target: 'DELETE /api/sync/ohdapnote/academy/file', detail: { status: 200, file: 'books/b1/book.json', app: 'ohdapnote' } },
+    { action: 'operator.change', academy: A, target: 'DELETE /api/sync/ohdapnote/academy/file', detail: { status: 403, file: 'books/b1/book.json', app: 'ohdapnote' } },
     { action: 'operator.view', academy: A, target: 'GET /api/students', detail: { status: 200 } },
     { action: 'operator.view', academy: B, target: 'GET /api/sync/ohdapnote/academy', detail: { status: 200, app: 'ohdapnote' } },
   ]);
@@ -168,4 +166,44 @@ test('감사: 운영자 열람·변경마다 학원 ID·상태가 남고, 다른
   const all = ok(await rq('GET', '/api/audit?action=operator.&limit=500', { token: admin })).entries;
   assert.ok(all.length >= 7, '학원을 안 고르면 모든 학원');
   ok(await rq('GET', '/api/audit?academy=abc', { token: admin }));
+});
+
+test('보기 허가증: 운영자·학원·프로그램 검사, typ view·10분·운영자 기기·jti·서버 거절', async (t) => {
+  const c = await setup(t);
+  const ticket = (token, id, viewAcademy) => c.rq('POST', `/api/apps/${id}/ticket`, { token, body: { viewAcademy } });
+  error(await ticket(c.dirA, 'ohdapnote', c.A), 403);
+  error(await ticket(c.admin, 'ohdapnote', ''), 400);
+  error(await ticket(c.admin, 'ohdapnote', 999999), 404);
+  ok(await ticket(c.admin, 'tajong', c.A));
+  ok(await c.rq('POST', '/api/admin/apps', { token: c.admin, body: { id: 'shared-app', name: '학원 프로그램', source: { type: 'local' } } }));
+  ok(await ticket(c.admin, 'shared-app', c.A));
+  ok(await c.rq('POST', '/api/admin/apps', { token: c.admin, body: { id: 'web-app', name: '웹 프로그램', platform: 'web', url: 'https://example.com' } }));
+  error(await ticket(c.admin, 'web-app', c.A), 400);
+  error(await ticket(c.dirA, 'web-app', c.A), 403);
+  const r = ok(await ticket(c.admin, 'ohdapnote', c.A));
+  const payload = require('../../sdk/node/magoedu-cloud').verifyTicket(r.ticket, c.s.app.deps.trustKeys(), { appId: 'ohdapnote' });
+  assert.equal(payload.ro, 1); assert.equal(payload.aca, c.A); assert.equal(payload.rol, 'admin');
+  assert.equal(payload.typ, 'view');
+  assert.equal(payload.exp - payload.iat, 10 * 60);
+  const user = ok(await c.rq('GET', '/api/me', { token: c.admin })).user;
+  const session = c.db.get('SELECT device_id FROM sessions WHERE user_id = (SELECT id FROM users WHERE uid = ?)', user.id);
+  assert.equal(payload.sub, user.id); assert.equal(payload.usr, user.username); assert.equal(payload.dev, session.device_id);
+  assert.match(payload.jti, /^[A-Za-z0-9_-]{20,}$/);
+  const second = ok(await ticket(c.admin, 'ohdapnote', c.A));
+  assert.notEqual(JSON.parse(Buffer.from(second.ticket.split('.')[1], 'base64url')).jti, payload.jti);
+  for (const url of ['/api/ai/relay/ohdapnote/v1/models', '/api/me', `/api/sync/ohdapnote/academy?academy=${c.A}`]) error(await c.rq('GET', url, { token: r.ticket }), 401);
+  const opening = c.operatorRows().find((r) => r.action === 'operator.open' && JSON.parse(r.detail).jti === payload.jti);
+  assert.deepEqual(JSON.parse(opening.detail), { app: 'ohdapnote', jti: payload.jti });
+  assert.equal(c.operatorRows().filter((r) => r.action === 'operator.open' && r.target === 'ohdapnote').length, 2);
+  const normal = ok(await c.rq('POST', '/api/apps/ohdapnote/ticket', { token: c.admin }));
+  assert.equal(JSON.parse(Buffer.from(normal.ticket.split('.')[1], 'base64url')).ro, undefined);
+});
+
+test('학원 공간 open: GET·HEAD 외 모든 메서드는 operator_read_only', () => {
+  let handler;
+  const router = { get: (url, fn) => { if (url === '/api/sync/:appId/academy') handler = fn; }, put() {}, delete() {} };
+  require('../src/routes/shared').register(router, { db: { get: () => ({ id: 'notes' }) }, svc: {
+    authenticate: () => ({ user: { role: 'admin' }, session: {} }), canUseApp: () => true, operatorAcademy: () => 1,
+  } });
+  for (const method of ['PUT', 'DELETE', 'POST', 'PATCH', 'OPTIONS', 'TRACE']) assert.throws(() => handler({ req: { method }, query: new URLSearchParams({ academy: '1' }), params: { appId: 'notes' } }), (err) => err.status === 403 && err.code === 'operator_read_only');
 });

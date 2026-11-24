@@ -148,7 +148,7 @@ export class AcademySettingsView extends AcademyActions {
             this.isAdmin ? null : h('p', { class: 'card-desc' }, '과목 변경은 운영자에게 문의하세요.')),
           h('section', { class: 'card' }, h('h2', { class: 'card-title' }, ic('drive', 18), '학원 공간'),
             h('div', { class: 'row' }, h('div', { class: 'grow' }, `${bytes(a.usageBytes)} / ${a.quotaBytes ? bytes(a.quotaBytes) : '제한 없음'}`), this.isAdmin ? controls.quota : null),
-            this.isAdmin ? btn('자료 보기', { iconName: 'folder', onClick: () => this.go('academy-files', { academy: a.id }) }) : null),
+            this.viewControl(a)),
           this.ai.el,
           this.isAdmin ? btn('학원 지우기', { iconName: 'trash', variant: 'danger', onClick: () => controls.del.click() }) : null));
       if (this.opts.section === 'academy-ai') this.ai.el.scrollIntoView({ block: 'start' });
@@ -157,6 +157,15 @@ export class AcademySettingsView extends AcademyActions {
       controls.quota.replaceChildren(ic('drive', 16), '용량 바꾸기');
       for (const b of [controls.edit, controls.subjects, controls.quota]) b.classList.remove('subtle');
     } catch (e) { put(this.el, h('div', { class: 'empty' }, errorText(e))); }
+  }
+  viewControl(a) {
+    if (!this.isAdmin || this.store.state.web) return null;
+    const apps = (this.store.state.apps || []).filter((app) => app.installed && (app.installed.manifest?.shared || app.id === 'ohdapnote'));
+    const app = apps.find((app) => app.installed.manifest?.shared && app.installed.manifest.viewOnly === true);
+    if (!app) return h('p', { class: 'card-desc' }, apps.length ? '오답노트를 새 버전으로 업데이트해 주세요.' : '오답노트를 설치하면 이 학원 자료를 볼 수 있어요.');
+    return btn(`${app.name}로 보기`, { iconName: 'folder', onClick: async () => {
+      try { await this.cloud.academyView(app.id, a.id); } catch (e) { toast(errorText(e), 'error'); }
+    } });
   }
   update(s) { this.ai?.update(s); }
   onNav(opts = {}) {
