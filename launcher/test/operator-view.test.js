@@ -88,6 +88,25 @@ test('보기 단추: PC·운영자·shared·viewOnly, 옛 버전 안내, 이전 
   for (const name of ['main/main.js','main/preload.js','renderer/js/web-cloud.js','renderer/js/app.js']) assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'../src',name),'utf8'), /academyFileDownload|academyFileReplace|academy:fileDownload|academy:fileReplace|academy-files/);
 });
 
+test('로그인 끊김: 보기 전용으로 켠 것만 끄고, 같은 계정으로 보통으로 켠 프로그램은 그대로', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'view-authlost-'));
+  const paths = makePaths({ userData: root, localData: path.join(root, 'local') });
+  const c = new Cloud({ paths, store: new Store({ paths }), version: '1', log: { warn() {} } });
+  t.after(() => { c.shutdown(); fs.rmSync(root, { recursive: true, force: true }); });
+  c.phase = 'ready';
+  c.user = { id: 'operator', role: 'admin', username: 'admin', name: '운영자' };
+  c.installed = { notes: {}, other: {} };
+  const running = { notes: true, other: true };
+  const info = { notes: { userId: 'operator', viewOnly: true }, other: { userId: 'operator', viewOnly: false } };
+  c.runner = { isRunning: (id) => running[id], runningInfo: (id) => info[id], stop: (id) => { running[id] = false; return true; } };
+  c.views.set('notes', { userId: 'operator', academyId: 1 });
+  c._authLost({ code: 'unauthorized', message: '다시 로그인해 주세요.' });
+  for (let i = 0; i < 20 && running.notes; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(running.notes, false, '보기 전용 실행은 끔');
+  assert.equal(running.other, true, '보통으로 켠 프로그램은 그대로');
+  assert.equal(c.phase, 'login');
+});
+
 test('시작 정리: 로그인 전 잔여 view만 삭제, 실행 중 보기·불명 모드는 보존', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'view-startup-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

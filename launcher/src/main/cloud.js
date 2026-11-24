@@ -472,7 +472,7 @@ class Cloud extends EventEmitter {
       const uid = this.user?.id;
       this._stopApps((info) => !info.userId || info.userId === uid).catch(() => {});
     }
-    this._stopApps((info) => [...this.views.values()].some((v) => v.userId === info.userId)).catch(() => {});
+    this._stopApps((info) => info.viewOnly === true).catch(() => {}); // 보기 전용으로 켠 것만 끔 (보통으로 켠 프로그램은 그대로)
     this._stopTimers();
     this._stopRealtime();
     this.settled = false;
