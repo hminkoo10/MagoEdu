@@ -16,7 +16,7 @@ const OPEN_WAIT = 1600;
 const AUTH_LOST = ['session_invalid', 'account_suspended', 'auth_required'];
 const OFFLINE = '서버에 연결하지 못했어요. 인터넷 연결을 확인하세요.';
 const APP_ONLY = 'PC의 통합 클라우드 앱에서 할 수 있어요.';
-const APP_ONLY_METHODS = ['academyFileDownload', 'academyFileReplace', 'install', 'uninstall', 'stop', 'sync', 'syncAll', 'setAutoLaunch', 'setDesktopShortcut', 'legacyDetect', 'legacyImport', 'legacyDismiss', 'dataInfo', 'openData', 'checkUpdate', 'installUpdate', 'quit'];
+const APP_ONLY_METHODS = ['academyView', 'install', 'uninstall', 'stop', 'sync', 'syncAll', 'setAutoLaunch', 'setDesktopShortcut', 'legacyDetect', 'legacyImport', 'legacyDismiss', 'dataInfo', 'openData', 'checkUpdate', 'installUpdate', 'quit'];
 
 function cloudError(message, code = null, status = null, extra = null) {
   const e = new Error(message);

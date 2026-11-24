@@ -46,6 +46,7 @@ function normalizeManifest(raw, fallback = {}) {
     },
     // 학원 공간 (같은 학원 사람들이 함께 쓰는 파일). 없으면 쓰지 않음
     shared: normalizeSpace(m.shared),
+    viewOnly: m.viewOnly === true,
     library: normalizeSpace(m.library),
     legacy: (Array.isArray(m.legacy) ? m.legacy : [])
       .filter((l) => l && l.from && l.to)

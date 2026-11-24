@@ -123,14 +123,20 @@ function register(router, deps) {
     };
   });
 
-  router.post('/api/apps/:id/ticket', (ctx) => {
+  router.post('/api/apps/:id/ticket', async (ctx) => {
     const { user, app } = usable(ctx);
+    const body = await readJson(ctx.req);
+    if (Object.hasOwn(body, 'viewAcademy') && user.role !== 'admin') throw forbidden('운영자만 쓸 수 있어요.');
     if (app.platform !== 'windows') {
       const msg =
         app.platform === 'web'
           ? '웹 프로그램은 실행 허가증 없이 브라우저에서 열어요.'
           : '휴대폰용 프로그램은 통합 클라우드에서 켜지 않아요. 휴대폰에서 내려받아 설치해 주세요.';
       throw new HttpError(400, msg, 'wrong_platform');
+    }
+    let viewAcademy = null;
+    if (Object.hasOwn(body, 'viewAcademy')) {
+      viewAcademy = svc.operatorAcademy({ ...ctx, query: new URLSearchParams({ academy: String(body.viewAcademy ?? '') }) });
     }
     const days = svc.getSettings().ticketDays;
     const iat = Math.floor(Date.now() / 1000);
@@ -148,6 +154,10 @@ function register(router, deps) {
       iat,
       exp: iat + days * 24 * 60 * 60,
     };
+    if (viewAcademy) {
+      Object.assign(payload, { typ: 'view', ro: 1, aca: viewAcademy, exp: iat + 10 * 60, jti: randomToken(16) });
+      svc.audit(ctx, 'operator.open', app.id, { app: app.id, jti: payload.jti }, viewAcademy);
+    }
     return { ticket: signTicket(keys, payload), expiresAt: payload.exp * 1000 };
   });
 

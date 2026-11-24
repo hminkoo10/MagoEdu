@@ -113,6 +113,7 @@ class Cloud extends EventEmitter {
     this.autoLaunchPending = startedAtLogin;
     this.phase = 'boot'; // boot | setup | login | ready
     this.user = null;
+    this.views = new Map();
     this.dataKey = null; // 설정 파일 서명 키 (서버마다 하나, 로그인 정보와 함께 암호화해 둠)
     this.authMessage = null;
     this.online = true;
@@ -148,7 +149,11 @@ class Cloud extends EventEmitter {
     this.installer = new Installer({ paths, log });
     this.runner = new Runner({ paths, log });
     this.runner.on('exit', (id, info) => this._onAppExit(id, info));
-    this.runner.on('error', (id, err) => this._toast(`${this._name(id)}을(를) 켜지 못했어요: ${err.message}`, 'error'));
+    this.runner.on('error', (id, err) => {
+      const view = this.views.get(id);
+      if (view) this._cleanView(id, view).catch((e) => this.log.warn?.('[보기 종료]', e.message));
+      this._toast(`${this._name(id)}을(를) 켜지 못했어요: ${err.message}`, 'error');
+    });
     this.api = this._makeApi(store.config.serverUrl, null);
     this._emitTimer = null;
   }
@@ -212,7 +217,7 @@ class Cloud extends EventEmitter {
       icon: this.icons[a.id] || null,
       release: a.release,
       coldStorage: a.coldStorage,
-      installed: inst ? { version: inst.version, installedAt: inst.installedAt } : null,
+      installed: inst ? { version: inst.version, installedAt: inst.installedAt, manifest: { shared: !!inst.manifest.shared, viewOnly: inst.manifest.viewOnly === true } } : null,
       running,
       runningVersion: runInfo?.version || null,
       restartForUpdate: !!(running && inst && runInfo?.version && runInfo.version !== inst.version),
@@ -267,6 +272,7 @@ class Cloud extends EventEmitter {
     await this.installer.recover();
     this.installed = await this.installer.listInstalled();
     for (const id of Object.keys(this.installed)) if (this.runner.isRunning(id)) this.adopted.set(id, this.runner.runningInfo(id) || {});
+    await this._clearStaleViews();
     const session = this.store.loadSession();
     const cfg = this.store.config;
     if (session && session.token && normalizeServerUrl(session.serverUrl) === normalizeServerUrl(cfg.serverUrl)) {
@@ -282,6 +288,24 @@ class Cloud extends EventEmitter {
       await this._clearOtherTickets();
       this.phase = cfg.serverUrl ? 'login' : 'setup';
       this.emitState();
+    }
+  }
+
+  async _clearStaleViews() {
+    // 예전 실행 기록에 모드가 없으면 보기일 수도 있으므로 남겨 둔다.
+    if (this.views.size || Object.keys(this.installed).some((id) => this.runner.isRunning(id) && this.runner.runningInfo(id)?.viewOnly !== false)) return;
+    const accounts = path.resolve(this.paths.userData, 'accounts');
+    const entries = await fsp.readdir(accounts, { withFileTypes: true }).catch((err) => { if (err.code === 'ENOENT') return []; throw err; });
+    if (!entries.length) return;
+    const realUserData = await fsp.realpath(this.paths.userData);
+    if (await fsp.realpath(accounts) !== path.join(realUserData, 'accounts')) throw new Error('계정 폴더 경로가 올바르지 않아요.');
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const view = path.join(accounts, entry.name, 'view');
+      const stat = await fsp.lstat(view).catch((err) => { if (err.code === 'ENOENT') return null; throw err; });
+      if (!stat?.isDirectory() || stat.isSymbolicLink()) continue;
+      if (path.relative(accounts, view) !== path.join(entry.name, 'view') || await fsp.realpath(view) !== path.join(realUserData, 'accounts', entry.name, 'view')) throw new Error('보기 폴더 경로가 올바르지 않아요.');
+      await fsp.rm(view, { recursive: true, force: true });
     }
   }
 
@@ -397,6 +421,8 @@ class Cloud extends EventEmitter {
   }
 
   async logout() {
+    for (const view of this.views.values()) view.cancelled = true;
+    await Promise.all([...this.views.keys()].map((id) => this.locks.get(id)));
     this._stopTimers(); // 종료를 기다리는 사이 예약된 충돌 복구가 실행되지 않게
     // 이 계정으로 켠 프로그램은 끄고, 끄면서 저장한 데이터까지 올린 뒤 로그아웃한다
     // (다른 계정으로 로그인했는데 예전 계정으로 계속 돌고, 통합 클라우드에도 '이미 켜져 있음'으로 남지 않게)
@@ -407,6 +433,7 @@ class Cloud extends EventEmitter {
       // 앱을 끈 뒤 폐기하므로 인터넷 없이 로그아웃해도 허가증이 남지 않는다.
       await fsp.rm(this.paths.account(uid).tickets, { force: true }).catch(() => {});
     }
+    for (const [id, view] of this.views) await this._cleanView(id, view);
     this._stopTimers();
     this._stopRealtime();
     this.settled = false;
@@ -417,6 +444,7 @@ class Cloud extends EventEmitter {
     }
     this.store.clearSession();
     this.user = null;
+    this.views = new Map();
     this.dataKey = null;
     this.apps = [];
     this.notices = [];
@@ -444,6 +472,7 @@ class Cloud extends EventEmitter {
       const uid = this.user?.id;
       this._stopApps((info) => !info.userId || info.userId === uid).catch(() => {});
     }
+    this._stopApps((info) => info.viewOnly === true).catch(() => {}); // 보기 전용으로 켠 것만 끔 (보통으로 켠 프로그램은 그대로)
     this._stopTimers();
     this._stopRealtime();
     this.settled = false;
@@ -1156,6 +1185,81 @@ class Cloud extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- 실행
+  async viewAcademy(id, academyId) {
+    if (this.user?.role !== 'admin') throw new Error('운영자만 쓸 수 있어요.');
+    const installed = this.installed[id];
+    if (!installed?.manifest.viewOnly || !installed.manifest.shared || !isDesktop(this._app(id))) throw new Error('오답노트를 새 버전으로 업데이트해 주세요.');
+    if (!Number.isSafeInteger(academyId) || academyId < 1) throw new Error('학원을 골라 주세요.');
+    return this._lock(id, async () => {
+      if (this.runner.isRunning(id) || this.views.has(id)) throw new Error(`${this._name(id)}를 먼저 닫아 주세요.`);
+      const user = this.user;
+      const dirs = this.paths.account(user.id).view(academyId, id);
+      const view = { dirs, userId: user.id, timer: null, job: Promise.resolve() };
+      this.views.set(id, view);
+      const sameUser = () => { if (view.cancelled || this.user?.id !== user.id || this.views.get(id) !== view) throw new Error('로그인한 계정이 바뀌었어요.'); };
+      try {
+        await this._removeViewFolder(dirs);
+        for (const dir of [dirs.sync, dirs.local, dirs.academy, dirs.requests]) await fsp.mkdir(dir, { recursive: true });
+        const api = { get: (url, opts) => this.api.get(`${url}&academy=${academyId}`, opts),
+          download: (url, ...args) => this.api.download(`${url}&academy=${academyId}`, ...args) };
+        view.engine = new SyncEngine({ api, appId: id, base: `/api/sync/${encodeURIComponent(id)}/academy`, readOnly: true,
+          dirs: { sync: dirs.academy, state: dirs.academyState }, rules: compileRules(installed.manifest.shared), log: this.log });
+        const synced = await view.engine.run();
+        if (synced.errors.length) throw new Error('학원 자료를 받지 못했어요. 다시 열어 주세요.');
+        const qs = `?academy=${academyId}`;
+        const [info, list, members] = await Promise.all([this.api.get(`/api/academy${qs}`), this.api.get(`/api/students${qs}`), this.api.get(`/api/academy/members${qs}`)]);
+        await writeJson(dirs.academyInfo, { format: 1, academy: info.academy, me: { id: user.id, name: user.name, role: user.role },
+          students: list.students, members: members.members, purged: list.purged, purgeDays: list.purgeDays, ai: null, updatedAt: Date.now() });
+        sameUser();
+        if (this._usesLibrary(id)) await this._syncLibrary(id);
+        sameUser();
+        const { ticket } = await this._call(() => this.api.post(`/api/apps/${encodeURIComponent(id)}/ticket`, { viewAcademy: academyId }));
+        sameUser();
+        dirs.library = this.paths.account(user.id).app(id).library;
+        const env = buildEnv({ ticket, appId: id, user: { ...user, academy: info.academy }, appDirs: dirs,
+          academy: true, academyInfo: true, requests: true, library: this._usesLibrary(id), viewOnly: true,
+          serverUrl: this.store.config.serverUrl, launcherVersion: this.version, trustFile: this.paths.trustFile });
+        this.runner.launch({ appId: id, installed, env });
+        view.timer = setInterval(() => {
+          if (view.busy) return;
+          view.busy = true;
+          view.job = this._viewRequests(id, view).catch((err) => this.log.warn?.('[보기 요청]', err.message)).finally(() => { view.busy = false; });
+        }, REQUEST_DELAY);
+        view.timer.unref?.();
+        return { started: true };
+      } catch (err) { await this._cleanView(id, view); throw err; }
+    });
+  }
+
+  async _viewRequests(id, view) {
+    for (const r of await readRequests(view.dirs.requests)) {
+      let answer;
+      if (r.op || r.remove.length) answer = { ok: false, error: '보기 전용이라 고칠 수 없어요.', errorCode: 'view_only' };
+      else {
+        try {
+          const engine = r.body?.library ? this._libraryEngine(id) : view.engine;
+          const result = engine ? await engine.run({ want: new Set(r.paths) }) : { missing: r.paths };
+          answer = { ok: !result.missing?.length, missing: result.missing || [] };
+        } catch (err) { answer = { ok: false, error: err.message }; }
+      }
+      await writeJson(path.join(view.dirs.requests, `${r.rid}.done.json`), answer);
+      await fsp.rm(path.join(view.dirs.requests, `${r.rid}.json`), { force: true });
+    }
+  }
+
+  async _cleanView(id, view) {
+    clearInterval(view.timer);
+    await view.job;
+    await this._removeViewFolder(view.dirs);
+    if (this.views.get(id) === view) this.views.delete(id);
+  }
+
+  async _removeViewFolder(dirs) {
+    const relative = path.relative(dirs.viewRoot, dirs.root);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('보기 폴더 경로가 올바르지 않아요.');
+    await fsp.rm(dirs.root, { recursive: true, force: true });
+  }
+
   async _ticket(id, uid) {
     const store = new TicketStore(this.paths.account(uid).tickets, this.store);
     try {
@@ -1300,6 +1404,12 @@ class Cloud extends EventEmitter {
   }
 
   _onAppExit(id, info) {
+    const view = this.views.get(id);
+    if (view) {
+      this._cleanView(id, view).catch((err) => this.log.warn?.('[보기 종료]', err.message));
+      this.emitState();
+      return;
+    }
     this.emitState();
     const sameUser = !this.quitting && this.user && info.userId === this.user.id;
     const crashed = !info.stopped && !info.restart && typeof info.code === 'number' && info.code !== 0 && info.code !== 75;

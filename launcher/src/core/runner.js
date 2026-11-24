@@ -91,6 +91,7 @@ function sanitizeRunning(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   if (!Number.isSafeInteger(value.pid) || value.pid <= 0 || value.pid > 0x7fffffff) return null;
   const out = { pid: value.pid };
+  if (typeof value.viewOnly === 'boolean') out.viewOnly = value.viewOnly;
   if (Number.isSafeInteger(value.startedAt) && value.startedAt >= 0 && value.startedAt <= Date.now() + 24 * 60 * 60 * 1000) out.startedAt = value.startedAt;
   if (typeof value.version === 'string' && /^[0-9A-Za-z._-]{1,80}$/.test(value.version)) out.version = value.version;
   if (typeof value.userId === 'string' && value.userId.length <= 80 && !/[\u0000-\u001f]/.test(value.userId)) out.userId = value.userId;
@@ -101,10 +102,11 @@ function readRunning(file) {
   return sanitizeRunning(readJsonSync(file, null));
 }
 
-function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, library = false, requests = academy || library, academyInfo = false, ssoCode = '', dataKey = '', serverUrl, launcherVersion, trustFile }) {
+function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = false, library = false, requests = academy || library, academyInfo = false, viewOnly = false, ssoCode = '', dataKey = '', serverUrl, launcherVersion, trustFile }) {
   return {
     ...base,
     MAGOEDU_TICKET: ticket,
+    MAGOEDU_VIEW_ONLY: viewOnly ? '1' : '',
     MAGOEDU_APP_ID: appId,
     MAGOEDU_USER_ID: user.id,
     MAGOEDU_USERNAME: user.username,
@@ -119,7 +121,7 @@ function buildEnv({ base = process.env, ticket, appId, user, appDirs, academy = 
     MAGOEDU_SSO_CODE: ssoCode || '', // 웹 프로그램 일회용 로그인 코드 (매니페스트 sso, 60초)
     MAGOEDU_DATA_DIR: appDirs.sync,
     MAGOEDU_LOCAL_DIR: appDirs.local,
-    MAGOEDU_DATA_KEY: dataKey || '', // 설정 파일 서명 키 (매니페스트 dataSigning 인 프로그램만, 아니면 빈 값)
+    MAGOEDU_DATA_KEY: viewOnly ? '' : dataKey || '', // 설정 파일 서명 키 (매니페스트 dataSigning 인 프로그램만, 아니면 빈 값)
     MAGOEDU_SERVER: serverUrl,
     MAGOEDU_TRUST_FILE: trustFile,
     MAGOEDU_LAUNCHER_VERSION: launcherVersion,
@@ -162,7 +164,7 @@ class Runner extends EventEmitter {
 
   runningInfo(appId) {
     const r = this.running.get(appId);
-    if (r) return { pid: r.pid, startedAt: r.startedAt, version: r.version, userId: r.userId };
+    if (r) return { pid: r.pid, startedAt: r.startedAt, version: r.version, userId: r.userId, viewOnly: r.viewOnly };
     const rec = readRunning(this.paths.app(appId).running);
     return rec && this.isRunning(appId) ? rec : null;
   }
@@ -179,7 +181,7 @@ class Runner extends EventEmitter {
       stdio: 'ignore',
       windowsHide: false,
     });
-    const rec = { pid: child.pid, startedAt: Date.now(), userId: env.MAGOEDU_USER_ID, version: installed.version };
+    const rec = { pid: child.pid, startedAt: Date.now(), userId: env.MAGOEDU_USER_ID, version: installed.version, viewOnly: env.MAGOEDU_VIEW_ONLY === '1' };
     this.running.set(appId, { ...rec, child, env, installed });
     try {
       writeJsonSync(this.paths.app(appId).running, rec);
