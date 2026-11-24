@@ -9,6 +9,11 @@ function row(title, desc, right) {
   return h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { class: 'row-title' }, title), desc ? h('div', { class: 'row-desc' }, desc) : null), right);
 }
 
+// 위의 ‘내 계정’ 묶음과 나눠 보이게 하는 제목
+function groupTitle() {
+  return h('h2', { class: 'card-title settings-group' }, ic('sliders', 18), '통합 클라우드');
+}
+
 export class SettingsView {
   constructor({ cloud, store }) {
     this.cloud = cloud;
@@ -37,6 +42,7 @@ export class SettingsView {
       'div',
       {},
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '설정'))),
+      groupTitle(),
       h(
         'div',
         { class: 'grid2' },
@@ -89,6 +95,7 @@ export class SettingsView {
       'div',
       {},
       h('div', { class: 'page-head' }, h('div', { class: 'tt' }, h('h1', { class: 'title' }, '설정'))),
+      groupTitle(),
       h(
         'div',
         { class: 'grid2' },

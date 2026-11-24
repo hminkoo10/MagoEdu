@@ -142,6 +142,7 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; colo
 .grid2 > .card + .card { margin-top: 0; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .stack > .card + .card { margin-top: 0; }
+.card-title.settings-group { margin: 32px 0 16px; }
 .row {
   display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--grey100);
 }
