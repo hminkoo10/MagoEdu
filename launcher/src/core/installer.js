@@ -11,7 +11,7 @@ const fsp = fs.promises;
 const path = require('node:path');
 const { readJson, writeJson } = require('./fsutil');
 const { extractZip } = require('./zip');
-const { readManifest, normalizeManifest } = require('./manifest');
+const { readManifest, normalizeManifest, MANIFEST } = require('./manifest');
 const { compareVersions } = require('./version');
 
 const DOWNLOAD_RE = /^[A-Za-z0-9._-]+-[A-Za-z0-9._-]+\.zip(?:\.part)?$/;
@@ -67,6 +67,16 @@ class Installer {
     const ap = this.paths.app(appId);
     const info = sanitizeInstalled(await readJson(ap.installed, null), appId, ap.root);
     if (!info || !fs.existsSync(info.dir) || !fs.existsSync(path.join(info.dir, ...info.manifest.exe.split('/')))) return null;
+    // installed.json은 설치 당시 런처가 이해한 매니페스트만 담을 수 있다.
+    // 새 런처가 viewOnly 같은 새 키를 보려면 설치 폴더에서 다시 읽어야 한다.
+    try {
+      if (!fs.existsSync(path.join(info.dir, MANIFEST))) return info;
+      const manifest = readManifest(info.dir, { id: appId, version: info.version, exe: info.manifest.exe });
+      const fresh = sanitizeInstalled({ ...info, manifest }, appId, ap.root);
+      if (fresh && fresh.manifest.exe === info.manifest.exe) return fresh;
+    } catch {
+      /* 기존 정보 사용 */
+    }
     return info;
   }
 
