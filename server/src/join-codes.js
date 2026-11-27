@@ -24,6 +24,13 @@ function createJoinCodes(db) {
         JOIN academies a ON a.id = i.academy_id WHERE i.code_hash = ? AND i.expires_at > ?`,
       sha256Hex(String(code || '').trim()), Date.now());
     },
+    guardian(code) {
+      return db.get(`SELECT i.*, a.name AS academy_name, s.name AS student_name, s.id AS student_id
+        FROM guardian_invites i JOIN guardians g ON g.id = i.guardian_id AND g.academy_id = i.academy_id
+        JOIN academies a ON a.id = i.academy_id JOIN students s ON s.id = g.student_id AND s.academy_id = i.academy_id
+        WHERE i.code_hash = ? AND i.used_at IS NULL AND i.expires_at > ? AND g.user_id IS NULL
+        AND s.deleted_at IS NULL AND s.purged_at IS NULL`, sha256Hex(String(code || '').trim()), Date.now());
+    },
     student(code) {
       return db.get(`SELECT i.*, a.name AS academy_name, s.name AS student_name FROM student_invites i
         JOIN academies a ON a.id = i.academy_id JOIN students s ON s.id = i.student_id AND s.academy_id = i.academy_id

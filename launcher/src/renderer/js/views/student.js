@@ -86,7 +86,7 @@ export class StudentNaviView {
 }
 
 export class StudentJoinView {
-  constructor({ cloud, code = '', verified = null, back }) {
+  constructor({ cloud, code = '', verified = null, showInvite = false, back }) {
     const invite = input({ value: code, placeholder: '선생님께 받은 초대 코드', autocomplete: 'off' });
     const username = input({ placeholder: '영문 소문자·숫자·._- 3~32자', autocomplete: 'username' });
     const password = passwordInput({ placeholder: '6자 이상', autocomplete: 'new-password' });
@@ -131,7 +131,7 @@ export class StudentJoinView {
         toast('가입했어요.', 'success');
       } catch (e) { showError(e); }
     }));
-    this.el = h('div', {}, verified ? null : [field('학생 초대 코드', invite), check], info, fields, error, h('div', { style: { height: '20px' } }), join,
+    this.el = h('div', {}, (verified && !showInvite) ? null : [field('학생 초대 코드', invite), check], info, fields, error, h('div', { style: { height: '20px' } }), join,
       h('div', { class: 'auth-links' }, h('button', { class: 'link', onClick: back }, '로그인으로 돌아가기')));
     if (verified) showAccount(verified, code);
     else if (code) check.click();

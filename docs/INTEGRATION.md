@@ -298,6 +298,69 @@ PC 에서 웹 프로그램을 창으로 여는 프로그램(예: 마고 과목�
 통합 클라우드가 켤 때 코드를 받아 `MAGOEDU_SSO_CODE` 로 넘기고(`session.ssoCode`), 실행 중에 다시 필요하면 `await cloud.ssoCode(session)` → `{ ok, code, expiresAt }` 으로 받아요.
 코드를 웹 프로그램 서버에 넘기면(예: `POST /api/auth/mago/code`) 서버가 3번처럼 바꿔요. 7일짜리 실행 허가증은 웹 프로그램에 넘기지 않아요.
 
+
+## 4-5. 보호자 계정·연락처·동의
+
+보호자 계정은 통합 클라우드에만 둡니다. 시험판은 **계정 하나 = 학원 하나**이며 같은 학원의 여러 자녀를 연결할 수 있습니다.
+원장 관리 화면은 학원운영 앱에서 구현합니다. 아래 관리 API는 일반 세션과 원장·선생님의 앱 전용 세션 모두 받습니다.
+운영자는 `?academy=<학원 ID>` 필수. 원장은 자기 학원, 선생님은 `students.teacher_uid`가 자기 uid인 학생만 조회합니다.
+전화번호 평문은 이 관리 API에서 원장·운영자(학원 지정)·담당 선생님에게만 반환합니다. 자기 정보 API에도 전화번호는 없습니다.
+
+### 관리 API
+
+공통 접두사 `G = /api/students/:sid/guardians`. 보호자 응답은 `{id, academy_id, student_id, name, relation, phone, notify, is_primary, user_id, created_by, created_at, updated_at, rev}`입니다.
+
+| 메서드·경로 | 역할 | 입력 / 응답 |
+| --- | --- | --- |
+| GET G | 원장·담당 선생님·운영자 | `{guardians: [...]}`. 각 보호자에 기존 동의 API와 같은 `consents` 배열(`verified` 포함) |
+| GET /api/guardians/consent-summary | 원장·담당 선생님·운영자 | `{students:[{studentId,collectVerified}]}` |
+| POST G | 원장·운영자 | `{name,relation,phone,notify:boolean,isPrimary:boolean}` → `{guardian}` |
+| PATCH G/:gid | 원장·운영자 | `{rev,...변경 항목}` → `{guardian}`; 충돌 409 |
+| DELETE G/:gid | 원장·운영자 | 연락처와 해당 초대·동의 삭제 → `{ok:true}` |
+| POST G/:gid/invite | 원장·운영자 | `{code,expiresAt}`; 7일, 해시만 저장, 재발급 시 이전 코드 무효 |
+| DELETE G/:gid/invite | 원장·운영자 | 초대 취소 → `{ok:true}` |
+| DELETE G/:gid/account-link | 원장·운영자 | 해당 자녀 연결 끊기, 계정·동의는 보존 → `{ok:true}` |
+| GET G/:gid/consents | 원장·담당 선생님·운영자 | `{consents:[...]}` |
+| POST G/:gid/consents | 원장·운영자 | `{item,version,method?:'paper'}` → `{consent}`; 서명한 종이 확인 후 기록 |
+| POST G/:gid/consents/:cid/withdraw | 원장·운영자 | 선택 동의 철회 → `{ok:true}` |
+| GET /api/guardian-accounts | 원장·운영자 | `{accounts:[{id:uid,username,name,childLinks}]}`; 자녀 없는 계정 포함 |
+| DELETE /api/guardian-accounts/:uid | 원장·운영자 | 계정·세션 삭제, 연락처 연결 해제 → `{ok:true}` |
+
+동의 요약은 삭제·purge 학생 제외. 원장은 학원 전체, 선생님은 자기 담당 학생만, 운영자는 `?academy=` 필수. 유효한 수집 동의(미철회, 종이 또는 문자 확인 완료)가 하나라도 있으면 `collectVerified: true`. 학생 수와 무관한 고정 쿼리 수로 조회합니다. 목록·요약 모두 원장·선생님 앱 세션 허용, 보호자 세션 차단.
+
+대표 보호자는 학생당 최대 한 명. 대표 변경 시 이전 대표의 rev도 증가합니다.
+생성·수정 API에서 user_id를 직접 지정할 수 없습니다. 계정 연결은 초대로만 합니다.
+
+### 가입·자기 정보
+
+- `GET /api/auth/codes/:code`, `GET /api/join/:code`: 보호자 초대이면 `{role:'guardian',academyName,studentName,consentVersion}`. 기존 학생 흐름 보존.
+- `POST /api/join`: `{code,name,username,password,consentVersion,consents:{collect:true,messaging?:boolean}}` → `{token,user,server}`. 현재 판은 `2026-11-09`. 비밀번호는 기존 정책 적용. `overseas_ai`, `marketing` 등 지원하지 않는 동의 항목을 보내면 400으로 거절합니다.
+- 같은 학원 보호자 일반 세션의 Bearer를 붙이면 새 계정 없이 자녀만 연결합니다. 다른 역할·학원은 403이며 로그아웃 후 그 학원용 계정을 만들어야 합니다.
+- 코드 조회·가입 실패 횟수는 기존 joinCodes와 공유합니다. 한 번 쓴 코드는 재사용 불가.
+- `GET /api/me`: `user.role='guardian'`, `academy`, `children:[{studentId,name,guardianId}]`. 지웠거나 purge한 자녀는 제외. 연결 없는 계정도 로그인 가능.
+- `GET /api/me/guardians`: 일반 보호자 세션만. `{guardians:[전화번호 없는 연락처],apps:[{id,name,url}]}`. 앱 목록은 활성 웹 프로그램 중 guardianEnabled와 계정 앱 권한 모두 충족한 것만.
+- `GET /api/me/consents`: 일반·앱 전용 보호자 세션. `{consents:[...]}`.
+- `POST /api/me/consents/:cid/withdraw`: 일반 보호자 세션만. 본인의 선택 동의만 철회. collect는 400 `required_consent`.
+- 일반 보호자는 로그아웃·비밀번호 변경·SSO 외 기존 기능을 사용할 수 없습니다. 중앙 기본 차단이 공개 API와 아직 없는 경로에도 적용됩니다.
+
+### SSO·동의·삭제
+
+프로그램 관리의 **보호자 사용 가능**(`guardianEnabled`, 기본 false)은 웹에만 유효합니다. 기존 앱 생성·수정 API에서 설정합니다.
+SSO 인가·코드 교환 시 모두 재검사하고, 보호자 앱 세션은 이후 요청에서도 앱 허용 여부를 재검사합니다.
+보호자 앱 세션은 `GET /api/me`, `GET /api/me/consents`, `POST /api/auth/logout`만 허용합니다. 로그아웃은 해당 앱 세션을 삭제합니다. 원장·담당 선생님의 앱 세션은 위 관리 API를 각자의 역할 범위에서 사용합니다.
+
+동의 표와 종이 기록의 항목은 `collect`, `messaging`, `overseas_ai`, `marketing`으로 유지합니다. 현재 가입 API와 보호자 화면은 `collect`(필수), `messaging`(선택)만 받거나 보여 줍니다. 해외 이전·광고 동의는 기능 도입 시 받는 곳·국가·내용을 안내하고 따로 받습니다. 응답은 DB 필드와 `verified`를 포함합니다.
+화면의 수집·이용 동의문은 [개인정보 보호법 제15조 제2항](https://www.law.go.kr/LSW/lsLinkProc.do?joLnkStr=%EC%A0%9C15%EC%A1%B0&lsNm=%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4%EB%B3%B4%ED%98%B8%EB%B2%95&mode=11)의 목적·항목·보유 기간·거부 권리와 불이익을 구분해 안내합니다.
+`method='paper'` 또는 `sms_confirmed_at != null`이면 verified=true. 온라인 가입은 항상 문자 확인 전(false)으로 저장합니다.
+`confirmConsentSms(db,id,at?)`는 성공한 확인 문자 발송을 연결할 **내부 함수**이며 HTTP API는 없습니다. 아직 문자 발송은 하지 않습니다.
+만 14세 미만의 법정대리인 확인을 체크박스만으로 완료한 것으로 취급하면 안 됩니다.
+선택 항목의 실제 발송 업체·국가·이전 조건은 후속 기능 도입 전에 확정·고지하고 필요한 별도 동의를 받아야 합니다. 이 작업만으로 알림·해외 이전을 실행하지 않습니다.
+
+학생 purge 시 guardians를 삭제하고 외래 키 CASCADE로 초대·동의를 함께 삭제합니다. 자녀가 없는 보호자 계정은 자동 삭제하지 않습니다.
+연락처는 `<DATA_DIR>/keys/guardian.key`의 AES-256-GCM 키로 암호화합니다. DB와 keys를 함께 백업해야 하며, 키 유실 시 전화번호 복호화 불가입니다.
+마이그레이션 13은 foreign_keys를 트랜잭션 밖에서 끈 뒤 users 재구성·행 복사·색인/트리거 및 증가번호 복원·foreign_key_check 후 커밋합니다. user_version으로 재실행을 방지합니다.
+
+
 ## 5. 업데이트
 
 - 프로그램 안의 자동 업데이트(electron-updater, `update_manager.py`)는 빼요. 통합 클라우드가 새 버전을 **옆 폴더에 받아 두고**, 다음에 켤 때 새 버전으로 켜요.
